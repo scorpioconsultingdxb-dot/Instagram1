@@ -72,13 +72,14 @@ export default async function DashboardSectionPage({
               Download a machine-readable JSON archive of your account profile, preferences, and
               active entitlements.
             </p>
-            <a
+            <Link
               href="/api/auth/export-data"
+              prefetch={false}
               className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#7957FF] px-4 py-2 text-xs font-semibold text-white hover:bg-[#6441f5]"
             >
               <Download className="h-3.5 w-3.5" aria-hidden="true" />
               Download My Data (JSON)
-            </a>
+            </Link>
           </div>
 
           <div className="rounded-2xl border border-rose-200 bg-white p-6 shadow-sm dark:border-rose-900/50 dark:bg-[#131C2E]">

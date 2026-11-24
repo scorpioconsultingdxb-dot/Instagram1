@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
 import { headers } from 'next/headers';
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/config';
+import { getEnv } from '@/lib/env';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
 import { CookieConsentBanner } from '@/components/ui/CookieConsentBanner';
 import './globals.css';
@@ -19,6 +20,7 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(getEnv().NEXT_PUBLIC_APP_URL),
   title: {
     default: 'Viewora — Explore More. Discover More.',
     template: '%s | Viewora',
@@ -34,6 +36,8 @@ const THEME_INIT_SCRIPT = `
     var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     var isDark = stored === 'dark' || ((!stored || stored === 'system') && prefersDark);
     if (isDark) document.documentElement.classList.add('dark');
+    var acc = localStorage.getItem('viewora_accent');
+    if (acc) document.documentElement.setAttribute('data-accent', acc);
   } catch (e) {}
 })();
 `;

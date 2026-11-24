@@ -10,17 +10,21 @@ import {
 } from 'react';
 
 export type ThemePreference = 'light' | 'dark' | 'system';
+export type AccentPreset = 'violet' | 'cyan' | 'emerald' | 'indigo';
 
 interface ThemeContextValue {
   theme: ThemePreference;
   resolvedTheme: 'light' | 'dark';
+  accent: AccentPreset;
   setTheme: (theme: ThemePreference) => void;
   toggleTheme: () => void;
+  setAccent: (accent: AccentPreset) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = 'viewora_theme';
+const ACCENT_KEY = 'viewora_accent';
 
 function getSystemTheme(): 'light' | 'dark' {
   if (typeof window === 'undefined') return 'light';
@@ -37,9 +41,15 @@ function applyThemeClass(resolved: 'light' | 'dark') {
   }
 }
 
+function applyAccentAttr(accent: AccentPreset) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.setAttribute('data-accent', accent);
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemePreference>('system');
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
+  const [accent, setAccentState] = useState<AccentPreset>('violet');
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY) as ThemePreference | null;
@@ -49,6 +59,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeState(initial);
     setResolvedTheme(resolved);
     applyThemeClass(resolved);
+
+    const storedAccent = window.localStorage.getItem(ACCENT_KEY) as AccentPreset | null;
+    if (
+      storedAccent === 'violet' ||
+      storedAccent === 'cyan' ||
+      storedAccent === 'emerald' ||
+      storedAccent === 'indigo'
+    ) {
+      setAccentState(storedAccent);
+      applyAccentAttr(storedAccent);
+    }
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const handleMediaChange = () => {
@@ -77,8 +98,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTheme(next);
   }, [resolvedTheme, setTheme]);
 
+  const setAccent = useCallback((next: AccentPreset) => {
+    setAccentState(next);
+    window.localStorage.setItem(ACCENT_KEY, next);
+    applyAccentAttr(next);
+  }, []);
+
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, toggleTheme }}>
+    <ThemeContext.Provider
+      value={{ theme, resolvedTheme, accent, setTheme, toggleTheme, setAccent }}
+    >
       {children}
     </ThemeContext.Provider>
   );

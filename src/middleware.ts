@@ -17,6 +17,8 @@ export function middleware(request: NextRequest) {
     pathname === '/sitemap.xml' ||
     pathname === '/robots.txt' ||
     pathname === '/favicon.ico' ||
+    pathname === '/icon.svg' ||
+    pathname === '/opengraph-image' ||
     PUBLIC_FILE_PATTERN.test(pathname)
   ) {
     return NextResponse.next();

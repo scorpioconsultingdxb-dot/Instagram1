@@ -3,6 +3,7 @@ import { isSupportedLocale, SUPPORTED_LOCALES, type Locale } from '@/i18n/config
 import { getDictionary } from '@/i18n/get-dictionary';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { SiteFooter } from '@/components/layout/SiteFooter';
+import { CommandPalette } from '@/components/command/CommandPalette';
 
 export function generateStaticParams() {
   return SUPPORTED_LOCALES.map((locale) => ({ locale }));
@@ -29,6 +30,7 @@ export default async function LocaleLayout({
       <SiteHeader locale={typedLocale} dict={dict} />
       <main className="flex-1">{children}</main>
       <SiteFooter locale={typedLocale} dict={dict} />
+      <CommandPalette locale={typedLocale} />
     </div>
   );
 }

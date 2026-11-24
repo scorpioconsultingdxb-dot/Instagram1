@@ -125,21 +125,41 @@ export function AdminConsole({
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="viewora-card flex flex-wrap items-center justify-between gap-4 rounded-2xl p-5">
         <div>
-          <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
-            <h1 className="text-xl font-extrabold text-slate-900 dark:text-white">
-              Viewora Admin Control Plane
+          <div className="flex flex-wrap items-center gap-2">
+            <Shield className="h-5 w-5 text-[#6941EF] dark:text-[#A99AFF]" aria-hidden="true" />
+            <h1 className="font-display text-xl font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
+              Viewora Super Admin Control Center
             </h1>
-            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold uppercase text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold uppercase text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]">
               {actor.role}
             </span>
           </div>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Signed in as {actor.email} · Server-side RBAC enforced on every endpoint · All mutations
+          <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
+            Signed in as {actor.email} · Server-side least-privilege RBAC enforced · All mutations
             recorded in Audit Logs.
           </p>
+        </div>
+        <div className="grid grid-cols-3 gap-3 text-right tabular-nums">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-[#263047] dark:bg-[#0F172A]">
+            <p className="text-[10px] font-semibold text-[#64748B] uppercase">Users</p>
+            <p className="font-display text-base font-extrabold text-[#0F172A] dark:text-white">
+              {users.length}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-[#263047] dark:bg-[#0F172A]">
+            <p className="text-[10px] font-semibold text-[#64748B] uppercase">Open Tickets</p>
+            <p className="font-display text-base font-extrabold text-[#0F172A] dark:text-white">
+              {tickets.filter((t) => t.status === 'open').length}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-[#263047] dark:bg-[#0F172A]">
+            <p className="text-[10px] font-semibold text-[#64748B] uppercase">Audit Entries</p>
+            <p className="font-display text-base font-extrabold text-[#0F172A] dark:text-white">
+              {auditLogs.length}
+            </p>
+          </div>
         </div>
       </div>
 

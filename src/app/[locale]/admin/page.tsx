@@ -47,7 +47,7 @@ export default async function AdminPage({
 
   const user = await getCurrentSessionUser();
   if (!user) {
-    redirect(`/${safeLocale}/auth/login?next=/${safeLocale}/admin`);
+    redirect(`/${safeLocale}/login?next=/${safeLocale}/admin`);
   }
 
   if (!isAdminRole(user.role)) {

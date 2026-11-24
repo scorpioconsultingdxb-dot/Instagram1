@@ -1,22 +1,24 @@
-# Viewora — Transparent Instagram Analytics SaaS
+# Viewora — Explore More. Discover More.
 
-Viewora is a freemium SaaS platform for transparent public Instagram profile analysis, free analytics tools, historical tracking, competitor benchmarking, and multi-workspace agency reporting.
+A privacy-first social intelligence SaaS platform for exploring legitimately accessible public Instagram content, running 12 free analytics & planning tools, analyzing profile performance, and unlocking transparent AI-powered insights.
 
-## Core Principles
+## Highlights
 
-- **Trust-First Data Provenance**: Every data card and export explicitly distinguishes `Live Data`, `Cached Snapshot`, `Estimate`, and `Demo Data`.
-- **No Private Account Access or Prohibited Scraping**: Viewora never claims access to private Instagram accounts and supports only Official Meta APIs, Authorized Connected-Account Insights, Licensed Third-Party Providers, Permitted Public Datasets, and Labeled Demo Fixtures.
-- **Centralized Entitlements**: All plan quotas and premium features flow through `src/lib/entitlements/` backed by database tables.
-- **Internationalized from Day One**: Built with locale-aware URLs (`en`, `pt-BR`, `es`, `de`, `fr`), typed dictionaries, `hreflang` alternates, and a localized `sitemap.xml`.
-- **Stripe-Ready, Payments Disabled by Default**: Demo pricing (`$0`, `$9.99`, `$19.99`, `$39.99`, `$99.99`) with monthly/quarterly/annual discounts; live payments stay disabled until explicitly approved.
+- **Trust-First Provenance**: Every result explicitly identifies `LIVE`, `CACHED`, `ESTIMATED`, `DEMO`, or `UNAVAILABLE` data. Private accounts are never accessed.
+- **12 Free SEO Tools**: Public Viewer, Story Availability Checker, Profile Analyzer, Engagement Calculator, Follower Growth Checker, Bio Analyzer, Hashtag Generator, Competitor Analysis, Influencer Analyzer, Post Analyzer, Caption Generator, and Content Ideas Generator.
+- **5 Initial Markets**: English (`en`), Brazilian Portuguese (`pt-BR`), Spanish (`es`), German (`de`), and French (`fr`) with `hreflang` alternates and localized `sitemap.xml`.
+- **Production-Grade Modular Backend**: Supabase Auth & PostgreSQL RLS, server-controlled `DEMO_MODE_ENABLED=false`, centralized entitlement engine, Meta OAuth/Webhook verifier, Gemini AI with prompt-injection sandboxing & USD cost budgets, durable background jobs, Resend transactional emails, 21-route Super Admin Control Center, and `/api/health`.
+- **Stripe Reserved (Phase 7)**: Payments remain strictly disabled (`PAYMENTS_ENABLED=false`) until separately authorized.
 
-## Quick Start
+## Local Development
 
 ```bash
 cp .env.example .env.local
 npm install
 npm run dev
 ```
+
+To test dashboard & admin flows locally without a Supabase project, set `DEMO_MODE_ENABLED=true` in `.env.local` (never enable in production).
 
 ## Verification Commands
 
@@ -27,9 +29,14 @@ npm run test
 npm run build
 ```
 
-## Documentation
+## Project Documentation
 
-- Environment variables: [docs/ENVIRONMENT.md](./docs/ENVIRONMENT.md)
-- Production deployment & Stripe activation guide: [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)
-- Database schema & RLS migrations: [supabase/migrations/](./supabase/migrations/)
-- Seed data: [supabase/seed.sql](./supabase/seed.sql)
+- [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)
+- [TASKS.md](./TASKS.md)
+- [ARCHITECTURE.md](./ARCHITECTURE.md)
+- [CHANGELOG.md](./CHANGELOG.md)
+- [TEST_REPORT.md](./TEST_REPORT.md)
+- [SECURITY_REVIEW.md](./SECURITY_REVIEW.md)
+- [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md)
+- [docs/ENVIRONMENT.md](./docs/ENVIRONMENT.md)
+- [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)

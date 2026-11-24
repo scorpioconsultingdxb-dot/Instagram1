@@ -41,8 +41,8 @@ export default async function PricingPage({
           Simple, Transparent Plans
         </h1>
         <p className="mt-3 text-base text-slate-600 dark:text-slate-300">
-          Start free with public profile lookups and 10 analytics calculators. Explore clear,
-          entitlement-driven tiers for Personal, Business, and Agency workflows.
+          Start free with public profile lookups and 12 analytics &amp; planning tools. Explore
+          clear, entitlement-driven tiers for Personal, Business, and Agency workflows.
         </p>
       </div>
 

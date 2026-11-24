@@ -182,11 +182,13 @@ export function PricingExperience({
                       : 'No AI reports'}
                   </li>
                   <li>
-                    {plan.entitlements.pdf_export.enabled
-                      ? 'CSV & PDF exports'
-                      : plan.entitlements.csv_export.enabled
-                        ? 'CSV exports only'
-                        : 'No report exports'}
+                    {plan.entitlements.pdf_export.enabled && plan.entitlements.csv_export.enabled
+                      ? 'PDF & CSV exports'
+                      : plan.entitlements.pdf_export.enabled
+                        ? 'PDF exports included'
+                        : plan.entitlements.csv_export.enabled
+                          ? 'CSV exports only'
+                          : 'No report exports'}
                   </li>
                 </ul>
               </div>

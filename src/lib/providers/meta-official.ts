@@ -104,7 +104,7 @@ export class MetaOfficialProvider implements InstagramDataProvider {
     const fields = encodeURIComponent(
       `business_discovery.username(${username}){username,name,biography,website,followers_count,follows_count,media_count,media.limit(6){id,caption,like_count,comments_count,media_type,timestamp}}`
     );
-    const endpoint = `https://graph.facebook.com/${env.META_GRAPH_API_VERSION}/${env.META_INSTAGRAM_BUSINESS_ACCOUNT_ID}?fields=${fields}`;
+    const endpoint = `https://graph.facebook.com/${env.META_API_VERSION}/${env.META_INSTAGRAM_BUSINESS_ACCOUNT_ID}?fields=${fields}`;
 
     try {
       const response = await fetch(endpoint, {

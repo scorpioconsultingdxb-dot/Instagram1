@@ -60,7 +60,7 @@ export default async function HomePage({
           {dict.home.badge}
         </span>
 
-        <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-[#0F172A] sm:text-6xl dark:text-white">
+        <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-[#0F172A] sm:text-5xl lg:text-6xl dark:text-white">
           Explore More.{' '}
           <span className="bg-gradient-to-r from-[#7957FF] to-[#22D3EE] bg-clip-text text-transparent">
             Discover More.

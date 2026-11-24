@@ -25,7 +25,7 @@ export class LicensedThirdPartyProvider implements InstagramDataProvider {
 
   isConfigured(): boolean {
     const env = getEnv();
-    return Boolean(env.LICENSED_PROVIDER_API_URL && env.LICENSED_PROVIDER_API_KEY);
+    return Boolean(env.LICENSED_PROVIDER_API_URL && env.LICENSED_DATA_PROVIDER_API_KEY);
   }
 
   async checkHealth(): Promise<ProviderHealth> {
@@ -70,7 +70,7 @@ export class LicensedThirdPartyProvider implements InstagramDataProvider {
       const url = new URL('/profiles/' + encodeURIComponent(username), env.LICENSED_PROVIDER_API_URL);
       const res = await fetch(url.toString(), {
         headers: {
-          Authorization: `Bearer ${env.LICENSED_PROVIDER_API_KEY}`,
+          Authorization: `Bearer ${env.LICENSED_DATA_PROVIDER_API_KEY}`,
           Accept: 'application/json',
         },
         cache: 'no-store',

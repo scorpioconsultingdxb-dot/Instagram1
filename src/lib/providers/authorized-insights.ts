@@ -20,7 +20,7 @@ export class AuthorizedInsightsProvider implements InstagramDataProvider {
 
   isConfigured(): boolean {
     const env = getEnv();
-    return Boolean(env.META_OAUTH_APP_ID && env.META_OAUTH_APP_SECRET);
+    return Boolean(env.META_APP_ID && env.META_APP_SECRET);
   }
 
   async checkHealth(): Promise<ProviderHealth> {

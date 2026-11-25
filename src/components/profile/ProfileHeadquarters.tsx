@@ -146,6 +146,17 @@ export function ProfileHeadquarters({
   const [fullName, setFullName] = useState(initialPrefs.fullName || user.fullName);
   const [title, setTitle] = useState(initialPrefs.professionalTitle);
   const [organization, setOrganization] = useState(initialPrefs.organization);
+  const [biography, setBiography] = useState(initialPrefs.biography || '');
+  const [interestsRaw, setInterestsRaw] = useState((initialPrefs.interests ?? []).join(', '));
+  const [customAvatarUrl, setCustomAvatarUrl] = useState(initialPrefs.customAvatarUrl || '');
+  const [customCoverUrl, setCustomCoverUrl] = useState(initialPrefs.customCoverUrl || '');
+  const [coverPosition, setCoverPosition] = useState<'top' | 'center' | 'bottom'>(
+    initialPrefs.coverPosition || 'center'
+  );
+  const [defaultLandingSection, setDefaultLandingSection] = useState(
+    initialPrefs.defaultLandingSection || 'overview'
+  );
+  const [uploadingMedia, setUploadingMedia] = useState<'avatar' | 'cover' | null>(null);
   const [avatarPreset, setAvatarPreset] = useState<PersonalProfilePrefs['avatarPreset']>(
     initialPrefs.avatarPreset
   );
@@ -207,6 +218,53 @@ export function ProfileHeadquarters({
   const workspacesLimit = formatQuotaLimit(entitlements.rules.workspaces);
   const historyDaysLimit = formatQuotaLimit(entitlements.rules.historical_analytics_days);
 
+  const handleMediaUpload = async (kind: 'avatar' | 'cover', file: File | null) => {
+    if (!file) return;
+    setErrorNotice(null);
+    setSavedNotice(null);
+    setUploadingMedia(kind);
+    try {
+      const form = new FormData();
+      form.append('kind', kind);
+      form.append('file', file);
+      const res = await fetch('/api/auth/media', { method: 'POST', body: form });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        url?: string;
+        error?: string;
+      } | null;
+      if (!res.ok || !json?.ok || !json.url) {
+        setErrorNotice(json?.error ?? `Failed to upload ${kind} image.`);
+        return;
+      }
+      if (kind === 'avatar') setCustomAvatarUrl(json.url);
+      else setCustomCoverUrl(json.url);
+      setSavedNotice(`Uploaded custom ${kind} image securely (magic-byte verified).`);
+      router.refresh();
+    } catch {
+      setErrorNotice(`Network error uploading ${kind} image.`);
+    } finally {
+      setUploadingMedia(null);
+    }
+  };
+
+  const handleMediaRemove = async (kind: 'avatar' | 'cover') => {
+    setErrorNotice(null);
+    setSavedNotice(null);
+    setUploadingMedia(kind);
+    try {
+      const res = await fetch(`/api/auth/media?kind=${kind}`, { method: 'DELETE' });
+      if (res.ok) {
+        if (kind === 'avatar') setCustomAvatarUrl('');
+        else setCustomCoverUrl('');
+        setSavedNotice(`Removed custom ${kind} image and restored preset.`);
+        router.refresh();
+      }
+    } finally {
+      setUploadingMedia(null);
+    }
+  };
+
   const persistProfile = async () => {
     setErrorNotice(null);
     setSavedNotice(null);
@@ -222,6 +280,11 @@ export function ProfileHeadquarters({
 
     setSaving(true);
     try {
+      const interests = interestsRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 8);
       const profileRes = await fetch('/api/auth/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -229,6 +292,10 @@ export function ProfileHeadquarters({
           fullName: fullName.trim(),
           professionalTitle: title.trim(),
           organization: organization.trim(),
+          biography: biography.trim(),
+          interests,
+          coverPosition,
+          defaultLandingSection,
           avatarPreset,
           avatarEmoji: avatarEmoji.trim().slice(0, 4),
           coverPreset,
@@ -329,8 +396,22 @@ export function ProfileHeadquarters({
       {/* Premium Profile Hero Cover & Identity Card */}
       <section className="viewora-card-elevated overflow-hidden rounded-3xl">
         <div
-          className={`relative h-36 bg-gradient-to-r sm:h-44 ${COVER_STYLES[coverPreset].gradient}`}
+          className={`relative h-36 overflow-hidden bg-gradient-to-r sm:h-44 ${COVER_STYLES[coverPreset].gradient}`}
         >
+          {customCoverUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={customCoverUrl}
+              alt="Custom profile cover banner"
+              className={`h-full w-full object-cover ${
+                coverPosition === 'top'
+                  ? 'object-top'
+                  : coverPosition === 'bottom'
+                    ? 'object-bottom'
+                    : 'object-center'
+              }`}
+            />
+          ) : null}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.16),transparent_55%)]" />
           <div className="absolute top-4 right-4 flex items-center gap-2">
             <span className="rounded-full bg-black/40 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
@@ -343,9 +424,18 @@ export function ProfileHeadquarters({
           <div className="-mt-12 flex flex-wrap items-end justify-between gap-4">
             <div className="flex flex-wrap items-end gap-4">
               <div
-                className={`relative z-10 flex h-24 w-24 shrink-0 items-center justify-center rounded-3xl border-4 border-white bg-gradient-to-br font-display text-2xl font-extrabold text-white shadow-lg dark:border-[#131C2E] ${AVATAR_STYLES[avatarPreset].gradient}`}
+                className={`relative z-10 flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-3xl border-4 border-white bg-gradient-to-br font-display text-2xl font-extrabold text-white shadow-lg dark:border-[#131C2E] ${AVATAR_STYLES[avatarPreset].gradient}`}
               >
-                {avatarDisplay}
+                {customAvatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={customAvatarUrl}
+                    alt={`${fullName} custom avatar`}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  avatarDisplay
+                )}
               </div>
               <div className="pt-14 pb-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -587,6 +677,116 @@ export function ProfileHeadquarters({
                   className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
                 />
               </label>
+              <label className="block text-xs font-semibold text-[#0F172A] sm:col-span-2 dark:text-[#F8FAFC]">
+                Biography &amp; Focus Area (max 400 chars)
+                <textarea
+                  rows={2}
+                  value={biography}
+                  maxLength={400}
+                  onChange={(e) => setBiography(e.target.value)}
+                  placeholder="Briefly describe your research focus, industries, or client niche…"
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                Professional Interests (comma-separated, max 8)
+                <input
+                  type="text"
+                  value={interestsRaw}
+                  onChange={(e) => setInterestsRaw(e.target.value)}
+                  placeholder="e.g. D2C growth, creator vetting, reels retention"
+                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                Default Dashboard Landing Section
+                <select
+                  value={defaultLandingSection}
+                  onChange={(e) =>
+                    setDefaultLandingSection(
+                      e.target.value as PersonalProfilePrefs['defaultLandingSection']
+                    )
+                  }
+                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                >
+                  <option value="overview">Dashboard Overview</option>
+                  <option value="profiles">Saved Profiles</option>
+                  <option value="projects">Research Workspace Pro</option>
+                  <option value="analytics">Interactive Analytics</option>
+                  <option value="competitors">Competitor Studio</option>
+                  <option value="report_builder">Report Builder</option>
+                  <option value="agency">Agency Collaboration</option>
+                  <option value="automation">Automation Center</option>
+                </select>
+              </label>
+            </div>
+
+            {/* Secure Custom Avatar & Cover Media Upload (Stage 23) */}
+            <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-2 dark:border-[#263047] dark:bg-[#0F172A]">
+              <div className="space-y-2 text-xs">
+                <p className="font-bold text-[#0F172A] dark:text-white">
+                  Custom Avatar Upload (PNG, JPEG, WebP · max 2 MB)
+                </p>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  aria-label="Upload custom avatar image"
+                  disabled={uploadingMedia !== null}
+                  onChange={(e) => void handleMediaUpload('avatar', e.target.files?.[0] ?? null)}
+                  className="block w-full rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs dark:border-[#263047] dark:bg-[#080D19]"
+                />
+                {customAvatarUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleMediaRemove('avatar')}
+                    className="text-[11px] font-semibold text-rose-600 hover:underline dark:text-rose-400"
+                  >
+                    Remove custom avatar
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <p className="font-bold text-[#0F172A] dark:text-white">
+                  Custom Cover Banner Upload &amp; Framing
+                </p>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  aria-label="Upload custom cover banner"
+                  disabled={uploadingMedia !== null}
+                  onChange={(e) => void handleMediaUpload('cover', e.target.files?.[0] ?? null)}
+                  className="block w-full rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs dark:border-[#263047] dark:bg-[#080D19]"
+                />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="inline-flex items-center gap-1">
+                    <span className="text-[11px] text-[#64748B]">Position:</span>
+                    {(['top', 'center', 'bottom'] as const).map((pos) => (
+                      <button
+                        key={pos}
+                        type="button"
+                        onClick={() => setCoverPosition(pos)}
+                        className={`rounded-md px-2 py-0.5 text-[11px] font-semibold capitalize ${
+                          coverPosition === pos
+                            ? 'bg-[#7957FF] text-white'
+                            : 'bg-white text-[#64748B] dark:bg-[#131C2E]'
+                        }`}
+                      >
+                        {pos}
+                      </button>
+                    ))}
+                  </div>
+                  {customCoverUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleMediaRemove('cover')}
+                      className="text-[11px] font-semibold text-rose-600 hover:underline dark:text-rose-400"
+                    >
+                      Remove cover
+                    </button>
+                  ) : null}
+                </div>
+              </div>
             </div>
 
             {/* Editable Avatar Picker */}

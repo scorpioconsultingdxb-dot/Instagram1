@@ -34,6 +34,7 @@ export async function getDbProfilePrefs(
         .safeParse(pref?.personalShortcuts ?? defaults.personalShortcuts);
 
       return {
+        ...defaults,
         fullName: user.fullName || undefined,
         professionalTitle: pref?.professionalTitle ?? defaults.professionalTitle,
         organization: pref?.organization ?? defaults.organization,

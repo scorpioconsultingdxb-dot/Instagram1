@@ -11,12 +11,28 @@ export interface StructuredAiInsightReport {
   recommendedActions: string[];
 }
 
-function csvEscape(value: string | number | null | undefined): string {
-  const str = value === null || value === undefined ? '' : String(value);
+/**
+ * Neutralizes spreadsheet formula injection (CSV/Excel/Sheets) by prefixing
+ * values starting with =, +, -, @, tab, or carriage return with a single quote,
+ * while preserving numeric types cleanly and applying RFC-4180 quoting.
+ */
+export function sanitizeCsvFormulaCell(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : '';
+  }
+  let str = String(value);
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
   if (/[",\n\r]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;
+}
+
+function csvEscape(value: string | number | null | undefined): string {
+  return sanitizeCsvFormulaCell(value);
 }
 
 /**

@@ -15,9 +15,10 @@ export type JobType =
   | 'weekly_summary'
   | 'usage_reset'
   | 'retention_cleanup'
-  | 'provider_health_check';
+  | 'provider_health_check'
+  | 'automation_rule_run';
 
-export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'dead_letter';
+export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'dead_letter' | 'cancelled';
 
 export interface BackgroundJob {
   id: string;
@@ -132,6 +133,16 @@ export class JobQueueEngine {
     return job;
   }
 
+  cancel(jobId: string, reason = 'Cancelled by user'): BackgroundJob | null {
+    const job = this.jobs.get(jobId);
+    if (!job || job.status === 'completed') return null;
+    job.status = 'cancelled';
+    job.lockedBy = null;
+    job.lastError = reason;
+    job.updatedAt = new Date().toISOString();
+    return job;
+  }
+
   listJobs(): BackgroundJob[] {
     return Array.from(this.jobs.values()).sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt)
@@ -146,6 +157,7 @@ export class JobQueueEngine {
       running: all.filter((j) => j.status === 'running').length,
       completed: all.filter((j) => j.status === 'completed').length,
       deadLetter: all.filter((j) => j.status === 'dead_letter').length,
+      cancelled: all.filter((j) => j.status === 'cancelled').length,
       lastHeartbeatAt: this.lastHeartbeatAt,
     };
   }

@@ -1,49 +1,62 @@
-# Viewora — Automated & Browser Test Report
+# Viewora — Automated & Browser Test Report (Phase 3 — Stage 30)
 
 **Date:** 2026-11-25  
-**Scope:** Cumulative verification across Phase 1 (Stages 1–10) and Phase 2 (Stages 11–20)
+**Environment:** Windows Workstation · Node.js `v24` · Next.js `15.5.29` · Vitest `3.2.7` · Headless Google Chrome (CDP)
 
 ---
 
-## 1. Local Automated Verification Summary
+## 1. Static Analysis, Unit & Integration Suites
 
-| Suite / Command | Status | Actual Measured Result |
-| :--- | :--- | :--- |
-| `npm.cmd run lint` (`eslint .`) | **PASS (Locally tested)** | `0` errors, `0` warnings |
-| `npm.cmd run typecheck` (`tsc --noEmit`) | **PASS (Locally tested)** | `0` TypeScript errors |
-| `npm.cmd run test` (`vitest run`) | **PASS (Locally tested)** | **13/13 test files, 66/66 tests passed** (`0` skipped) |
-| `npm.cmd run build` (`next build`) | **PASS (Locally tested)** | Compiled in `4.5s`; **296/296 static pages** generated cleanly |
-| `npm.cmd run test:db` (`postgres.integration.test.ts`) | **Pending infrastructure** | Mandatory fail-closed gate verified locally (exits `1` when `TEST_DATABASE_URL` is absent); ready for live PostgreSQL 16 execution |
+| Check | Command | Result | Details |
+| --- | --- | --- | --- |
+| **ESLint** | `npm.cmd run lint` | **PASS** | `0` errors, `0` warnings |
+| **TypeScript** | `npm.cmd run typecheck` | **PASS** | `tsc --noEmit` — `0` errors |
+| **Automated Vitest Suite** | `npm.cmd run test` | **PASS** | **15 / 15 test files · 77 / 77 tests passed** |
+| **Production Build** | `npm.cmd run build` | **PASS** | **302 / 302 static pages generated** cleanly |
+| **Live PostgreSQL 16 Suite** | `npm.cmd run test:db` | **Pending Infrastructure (Local)** | Local Docker/PostgreSQL 16 not installed on workstation; PG16 migrations + 2× seed + `viewora_app` RLS previously verified in CI Run `45636280310` |
 
-### Vitest Unit, Security & Repository Harness Breakdown (`66/66` Passed)
-1. `src/lib/tools/engines.test.ts` — 7 tests (deterministic engagement, growth, bio, hashtag, competitor, influencer, caption/ideas engines)
-2. `src/lib/providers/registry.test.ts` — 5 tests (provenance invariants, private account refusal, demo fixture boundaries)
-3. `src/lib/providers/phase4.test.ts` — 6 tests (resilience cache/rate-limit/circuit-breaker, Meta webhook HMAC, AI prompt sandboxing, job queue, email dedupe, referrals)
-4. `src/lib/entitlements/entitlements.test.ts` — 6 tests (5-tier `$0`/`$9.99`/`$19.99`/`$39.99`/`$99.99` pricing, 15%/30% discounts, overrides, feature flag kill-switches, disabled Stripe checkout)
-5. `src/lib/admin/admin.test.ts` — 3 tests (RBAC 401/403, locked `payments_enabled`, immutable audit logs)
-6. `src/lib/reports/export.test.ts` — 2 tests (provenance-stamped PDF & CSV export generation)
-7. `src/i18n/i18n.test.ts` — 4 tests (5-locale resolution, dictionary integrity)
-8. `src/lib/instagram/normalize.test.ts` — 4 tests (username/URL normalization & validation)
-9. `src/lib/integration/api.test.ts` — 4 tests (signed cookies, disabled payments, sitemap hreflang coverage across all 12 tools & 11 info pages, `robots.txt` private disallows)
-10. `src/lib/auth/auth-security.test.ts` — 7 tests (production `AUTH_SECRET` rejection, zero prod fallbacks/demo mode, CSRF validation, bcrypt cost >= 12, rate limiting, open redirect prevention, PostgreSQL detection)
-11. `src/lib/storage/persistence.test.ts` — 7 tests (local dev file store isolation, Personal HQ prefs, workspace state, synchronized plans, admin RBAC, collision-free user IDs, funnel persistence)
-12. `src/lib/storage/db-persistence.test.ts` — 6 tests (relational Prisma harness: atomic user/workspace creation, email verification & password reset single-use, cross-account/workspace isolation, locked payments flag, session expiration/suspension/role removal/quota rejection, active session listing & cross-user revocation isolation)
-13. `src/lib/integration/stages-3-to-9.test.ts` — 5 tests (CSRF across all mutating endpoints, contact/resend rate limits, admin `manage_users`/`manage_entitlements` RBAC, 5-locale parity & zero Supabase leakage, disabled payments)
+### Phase 3 Test Coverage Additions (+11 New Tests)
+- `src/lib/analytics/engine.test.ts` (**4 tests — PASS**): ERF/ERR null-vs-zero semantics, period growth zero denominators, SMA, statistical summary (`min`/`max`/`mean`/`median`/`stdDev`), format mix, posting consistency, benchmark percentile rank, data completeness.
+- `src/lib/integration/phase3-stages-21-to-29.test.ts` (**7 tests — PASS**): 7 segments & 7 goals schema, external media URL rejection, magic-byte PNG/JPEG/WebP validation & SVG/HTML/oversized/cross-user rejection, CSV importer duplicate/formula/malformed handling, CSV formula-injection sanitization, Template-Generated versioned reports, Agency cross-client isolation, `JobQueueEngine` cancellation & external inactive trigger blocking, referral self/duplicate fraud checks & locked payouts, `maintenance_mode` flag vs locked `payments_enabled`.
 
 ---
 
-## 2. Headless Chromium QA Verification Summary (Stage 20)
+## 2. Headless Chrome End-to-End & Responsive Verification
 
-- **6 Viewports Verified (`0` Horizontal Overflow):** `375x812`, `390x844`, `768x1024`, `1024x768`, `1440x900`, `1920x1080`
-- **5 Locales Verified (`0` Overflow, Single `<h1>`, `0` Supabase Copy):** `en`, `pt-BR`, `es`, `de`, `fr`
-- **Themes Verified:** Light (`#F8FAFC`) & Dark (`#080D19`)
-- **Interactive Stage 11–19 Checks:** All passed (Tools mode filter + count, Pricing Plan Assistant, Glossary JSON-LD, Profile HQ 9 tabs + `My Research`, Dashboard `Customize Layout`, Analytics `Metric formulas`, AI Studio 7-template cards, Admin membership distribution + RBAC Override/Suspend controls)
-- **Errors:** `0` uncaught page errors, `0` unexpected console errors.
-- **Screenshots Captured:** 11 desktop & mobile PNGs saved in the conversation artifact directory.
+### A. Production Server (`next start` — `127.0.0.1:3031`)
+- `/api/auth/login` without `DATABASE_URL`: **`HTTP 503`** (Fail-closed verified)
+- `/api/billing/checkout` (payments disabled): **`HTTP 503`** (Disabled verified)
+- **6 Viewports (`375×812`, `390×844`, `768×1024`, `1024×768`, `1440×900`, `1920×1080`):** `0px` horizontal overflow across all 6.
+- **5 Locales (`en`, `pt-BR`, `es`, `de`, `fr`):** `0px` horizontal overflow and matching `<html lang>` across all 5.
+- **WCAG 2.2 AA DOM Checks:** `h1Count=1`, skip link present, `0` unlabeled buttons, `0` empty links, `0` missing-alt images.
+
+### B. Authenticated Interactive Flows (Isolated Demo Mode — `127.0.0.1:3033`)
+- Sign-in (`admin@viewora.demo`): **PASS** (`authenticated: true`)
+- Stage 21 Onboarding (all 7 segments rendered): **PASS**
+- Stage 22 Research Pro (project created + CSV `@meridian.studio` committed): **PASS**
+- Stage 24 Deterministic Analytics (`Data Completeness`, `Publishing Consistency`, `3-Pt SMA`): **PASS**
+- Stage 25 Report Builder (`TEMPLATE-GENERATED · NOT AI-GENERATED` + saved brief): **PASS**
+- Stage 26 Agency Center (`Nordic Roasters Client` + teammate invite + isolation badge): **PASS**
+- Stage 27 Automation Center (rule created + executed via `JobQueueEngine` → `completed` + auto task): **PASS**
+- Stage 28 Referrals & `/en/r/[code]` landing page (payouts inactive + UTM campaign): **PASS**
+- Stage 23 Profile HQ 2.0 Media Upload: Valid PNG **`HTTP 200`**, malicious SVG **`HTTP 400`** (**PASS**)
+- Stage 29 Enterprise Admin Console (`Background Job Queue Health`, `Isolated Customer File Storage Footprint: 1 file`, `Payouts Disabled`): **PASS**
+- Mobile `390×844` overflow on `/en/dashboard/projects` & `/en/dashboard/report-builder`: **`0px`**
+- Browser Console Errors / Uncaught Page Errors: **`0` / `0`**
 
 ---
 
-## 3. Real PostgreSQL 16 Verification Status (Previously Executed + Pending)
+## 3. Captured Phase 3 Screenshots (Visually Inspected)
 
-- **Independently Verified in CI Run [`45636280310`](https://github.com/scorpioconsultingdxb-dot/Instagram1/actions/runs/45636280310):** PostgreSQL 16 container startup, restricted `viewora_app` role (`NOSUPERUSER NOBYPASSRLS`), all 3 Prisma SQL migrations, double-run `db:seed` idempotency, and `db:health` under `viewora_app`.
-- **Pending Infrastructure (Awaiting Owner Manual Push / Local PG16):** `npm run test:db`, `pg_dump`/`pg_restore` parity (`verify-backup-restore.mjs`), `scripts/e2e-postgres.mjs` with production app restart persistence, and PostgreSQL container restart persistence.
+Saved in `C:\Users\Scorpio\.gemini\antigravity\brain\36811d4f-f53f-4027-a394-ebcca0dde9f6\`:
+1. `phase3_onboarding_1440px.png`
+2. `phase3_research_pro_1440px.png`
+3. `phase3_analytics_1440px.png`
+4. `phase3_report_builder_1440px.png`
+5. `phase3_agency_1440px.png`
+6. `phase3_automation_1440px.png`
+7. `phase3_referrals_1440px.png`
+8. `phase3_profile_hq_1440px.png`
+9. `phase3_admin_1440px.png`
+10. `phase3_research_pro_390px_mobile.png`
+11. `phase3_report_builder_390px_mobile.png`

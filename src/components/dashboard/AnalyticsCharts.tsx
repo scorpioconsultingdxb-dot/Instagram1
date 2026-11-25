@@ -3,6 +3,7 @@
 import { BarChart3, Clock, Info, Table } from 'lucide-react';
 import { useState } from 'react';
 import type { DataClass, PublicProfileData } from '@/lib/providers/types';
+import { analyzeProfileDeterministic, METRIC_DEFINITIONS } from '@/lib/analytics/engine';
 import { EmptyState } from '@/components/ui/Primitives';
 
 export type DateRangeFilter = '30d' | '90d' | 'all';
@@ -93,30 +94,77 @@ export function AnalyticsVisualizations({
   const maxWeekdayCount = Math.max(...weekdayCounts, 1);
 
   const inspected = activeIdx !== null ? coords[activeIdx] : coords[coords.length - 1];
+  const deterministic = analyzeProfileDeterministic(profile, points);
 
   return (
     <div className="space-y-6">
+      {/* Deterministic Statistical & Data Completeness Summary Strip (Stage 24) */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+          <p className="text-[11px] font-semibold text-[#64748B] dark:text-[#94A3B8]">
+            Data Completeness
+          </p>
+          <p className="mt-1 font-mono text-base font-extrabold tabular-nums text-[#0F172A] dark:text-white">
+            {deterministic.completeness.scorePercent}%
+          </p>
+          <p className="text-[10px] text-[#64748B]">
+            {deterministic.completeness.populatedFields}/{deterministic.completeness.totalFields} core fields
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+          <p className="text-[11px] font-semibold text-[#64748B] dark:text-[#94A3B8]">
+            Publishing Consistency
+          </p>
+          <p className="mt-1 font-mono text-base font-extrabold tabular-nums text-[#0F172A] dark:text-white">
+            {deterministic.postingConsistency.consistencyScore !== null
+              ? `${deterministic.postingConsistency.consistencyScore}/100`
+              : 'N/A'}
+          </p>
+          <p className="text-[10px] text-[#64748B]">
+            {deterministic.postingConsistency.label}
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+          <p className="text-[11px] font-semibold text-[#64748B] dark:text-[#94A3B8]">
+            ER Mean / Median
+          </p>
+          <p className="mt-1 font-mono text-base font-extrabold tabular-nums text-[#6941EF] dark:text-[#A99AFF]">
+            {deterministic.engagementStats.mean !== null ? `${deterministic.engagementStats.mean}%` : 'N/A'} /{' '}
+            {deterministic.engagementStats.median !== null ? `${deterministic.engagementStats.median}%` : 'N/A'}
+          </p>
+          <p className="text-[10px] text-[#64748B]">
+            σ = {deterministic.engagementStats.stdDev !== null ? `${deterministic.engagementStats.stdDev}%` : 'N/A'}
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+          <p className="text-[11px] font-semibold text-[#64748B] dark:text-[#94A3B8]">
+            ERR (By Reach)
+          </p>
+          <p className="mt-1 font-mono text-base font-extrabold tabular-nums text-[#0F172A] dark:text-white">
+            {deterministic.engagementRateByReach !== null
+              ? `${deterministic.engagementRateByReach}%`
+              : 'Unavailable'}
+          </p>
+          <p className="text-[10px] text-[#64748B]">
+            {deterministic.engagementRateByReach !== null
+              ? 'From sampled reach'
+              : 'Missing vs. zero preserved'}
+          </p>
+        </div>
+      </div>
+
       {/* Metric Explanations Disclosure (when expanded) */}
       {showMetricGuide ? (
         <div className="grid gap-3 rounded-2xl border border-violet-200 bg-violet-50/40 p-4 text-xs sm:grid-cols-3 dark:border-[#263047] dark:bg-[#192337]/60">
-          <div>
-            <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">Window Δ (Follower Growth)</p>
-            <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
-              Net change between earliest and latest recorded checkpoints inside the selected window.
-            </p>
-          </div>
-          <div>
-            <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">Engagement Rate (ERF)</p>
-            <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
-              Calculated from average public interactions per post divided by total followers × 100.
-            </p>
-          </div>
-          <div>
-            <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">Format &amp; Cadence Mix</p>
-            <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
-              Derived strictly from recent post timestamps and media types (Reels, Carousels, Images).
-            </p>
-          </div>
+          {Object.values(METRIC_DEFINITIONS).map((def) => (
+            <div key={def.id}>
+              <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">{def.label}</p>
+              <p className="mt-0.5 font-mono text-[10px] text-[#6941EF] dark:text-[#A99AFF]">
+                {def.formula}
+              </p>
+              <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">{def.notes}</p>
+            </div>
+          ))}
         </div>
       ) : null}
 
@@ -504,6 +552,7 @@ export function AnalyticsVisualizations({
                   <th className="px-4 py-2.5 font-semibold">Observed Date</th>
                   <th className="px-4 py-2.5 font-semibold">Followers</th>
                   <th className="px-4 py-2.5 font-semibold">Net Change</th>
+                  <th className="px-4 py-2.5 font-semibold">3-Pt SMA</th>
                   <th className="px-4 py-2.5 font-semibold">Total Posts</th>
                   <th className="px-4 py-2.5 font-semibold">Est. ER</th>
                 </tr>
@@ -512,6 +561,7 @@ export function AnalyticsVisualizations({
                 {points.map((pt, idx) => {
                   const prev = idx > 0 ? points[idx - 1] : null;
                   const delta = prev ? pt.followers - prev.followers : null;
+                  const smaVal = deterministic.followersMovingAvg3[idx] ?? null;
                   return (
                     <tr key={pt.date}>
                       <td className="px-4 py-2.5 font-mono text-[#0F172A] dark:text-slate-200">
@@ -530,6 +580,9 @@ export function AnalyticsVisualizations({
                         }`}
                       >
                         {delta === null ? '—' : `${delta >= 0 ? '+' : ''}${delta.toLocaleString()}`}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-[#64748B] dark:text-slate-300">
+                        {smaVal !== null ? Math.round(smaVal).toLocaleString() : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-[#64748B] dark:text-slate-300">{pt.posts}</td>
                       <td className="px-4 py-2.5 font-semibold text-[#6941EF] dark:text-[#A99AFF]">

@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
 import {
   loadDbAuditLogs,
@@ -127,6 +129,14 @@ function createDefaultAdminState(): PersistedAdminState {
         locked: false,
         updatedAt: '2026-11-24T00:00:00.000Z',
       },
+      {
+        key: 'maintenance_mode',
+        description:
+          'Displays a platform maintenance notice banner for non-admin sessions when enabled.',
+        enabled: false,
+        locked: false,
+        updatedAt: '2026-11-25T00:00:00.000Z',
+      },
     ],
     cmsItems: [
       {
@@ -220,7 +230,55 @@ function loadAdminState(): PersistedAdminState {
     payFlag.enabled = false;
     payFlag.locked = true;
   }
+  if (!state.featureFlags.some((f) => f.key === 'maintenance_mode')) {
+    state.featureFlags.push({
+      key: 'maintenance_mode',
+      description:
+        'Displays a platform maintenance notice banner for non-admin sessions when enabled.',
+      enabled: false,
+      locked: false,
+      updatedAt: '2026-11-25T00:00:00.000Z',
+    });
+  }
   return state;
+}
+
+export interface StorageUsageSummary {
+  storageRootLabel: string;
+  fileCount: number;
+  totalBytes: number;
+}
+
+export function getLocalStorageUsageSummary(): StorageUsageSummary {
+  const configured = process.env.VIEWORA_STORAGE_DIR || '.viewora-storage';
+  const root = path.isAbsolute(configured) ? configured : path.join(process.cwd(), configured);
+  let fileCount = 0;
+  let totalBytes = 0;
+
+  const walk = (dir: string) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        fileCount += 1;
+        totalBytes += fs.statSync(full).size;
+      }
+    }
+  };
+
+  try {
+    walk(root);
+  } catch {
+    // ignore read errors on absent directories
+  }
+
+  return {
+    storageRootLabel: path.basename(root),
+    fileCount,
+    totalBytes,
+  };
 }
 
 const SAMPLE_API_USAGE: ApiUsageMetric[] = [

@@ -30,8 +30,10 @@ import type {
   CmsContentRecord,
   FeatureFlagRecord,
   SearchAnalyticsMetric,
+  StorageUsageSummary,
   SupportTicketRecord,
 } from '@/lib/admin/store';
+import type { AffiliateApplicationRecord } from '@/lib/referrals/service';
 import type { FunnelEventName } from '@/lib/analytics/funnel';
 import type { ExperimentDefinition } from '@/lib/experiments/ab';
 import { ConfirmDialog, StatusBanner } from '@/components/layout/PageShell';
@@ -70,7 +72,41 @@ export interface AdminConsoleProps {
   initialBroadcasts: BroadcastNotificationRecord[];
   initialAuditLogs: AuditLogRecord[];
   initialFlags: FeatureFlagRecord[];
+  jobQueueSummary?: {
+    total: number;
+    queued: number;
+    running: number;
+    completed: number;
+    deadLetter: number;
+    cancelled: number;
+    lastHeartbeatAt: string | null;
+  };
+  storageUsage?: StorageUsageSummary;
+  referralOverview?: {
+    payoutsEnabled: false;
+    proposedCommissionPercent: number;
+    proposedCommissionMonths: number;
+    codesCount: number;
+    attributionsCount: number;
+    campaignsCount: number;
+    applications: AffiliateApplicationRecord[];
+  };
 }
+
+const SUPPORT_RESPONSE_TEMPLATES = [
+  {
+    label: 'Data Provenance Notice',
+    text: 'Verified: Viewora only displays legitimately available public information or clearly labeled demo/user-provided datasets. Private accounts are never accessed.',
+  },
+  {
+    label: 'Meta API Scope Guidance',
+    text: 'Official Meta Business Discovery requires an Instagram Professional account linked to a Meta App with instagram_basic & pages_show_list permissions.',
+  },
+  {
+    label: 'Entitlement Verified',
+    text: 'Checked account entitlements and workspace quotas. Confirmed active tier limits match published plan configuration (live billing remains disabled).',
+  },
+] as const;
 
 const ASSIGNABLE_ROLES: UserRole[] = [
   'user',
@@ -97,7 +133,13 @@ export function AdminConsole({
   initialBroadcasts,
   initialAuditLogs,
   initialFlags,
+  jobQueueSummary,
+  storageUsage,
+  referralOverview,
 }: AdminConsoleProps) {
+  const [affiliateApps, setAffiliateApps] = useState<AffiliateApplicationRecord[]>(
+    referralOverview?.applications ?? []
+  );
   const [tab, setTab] = useState<AdminTab>(initialTab);
   const [users, setUsers] = useState(initialUsers);
   const [userSearch, setUserSearch] = useState('');
@@ -1039,6 +1081,23 @@ export function AdminConsole({
                       </select>
                     </div>
                     <p className="mt-2 text-[#64748B] dark:text-slate-300">{t.message}</p>
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-bold uppercase text-[#64748B]">
+                        Response Templates:
+                      </span>
+                      {SUPPORT_RESPONSE_TEMPLATES.map((tpl) => (
+                        <button
+                          key={tpl.label}
+                          type="button"
+                          onClick={() =>
+                            setTicketNotesDraft({ ...ticketNotesDraft, [t.id]: tpl.text })
+                          }
+                          className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#6941EF] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-[#A99AFF]"
+                        >
+                          + {tpl.label}
+                        </button>
+                      ))}
+                    </div>
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                       <input
                         type="text"
@@ -1392,33 +1451,164 @@ export function AdminConsole({
         ) : null}
 
         {tab === 'providers' ? (
-          <div>
-            <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-white">
-              Live Operational Status &amp; Provider Health
-            </h2>
-            <div className="mt-4 space-y-2.5">
-              {providerHealth.map((p) => (
-                <div
-                  key={p.providerId}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]"
-                >
-                  <div>
-                    <p className="font-semibold text-[#0F172A] dark:text-white">
-                      {p.providerLabel}
-                    </p>
-                    <p className="mt-0.5 text-[#64748B] dark:text-[#94A3B8]">{p.message}</p>
-                  </div>
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase ${
-                      p.status === 'healthy'
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]'
-                        : 'bg-slate-200 text-slate-700 dark:bg-[#192337] dark:text-slate-300'
-                    }`}
+          <div className="space-y-6">
+            <div>
+              <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-white">
+                Live Operational Status &amp; Provider Health
+              </h2>
+              <div className="mt-4 space-y-2.5">
+                {providerHealth.map((p) => (
+                  <div
+                    key={p.providerId}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]"
                   >
-                    {p.status}
-                  </span>
+                    <div>
+                      <p className="font-semibold text-[#0F172A] dark:text-white">
+                        {p.providerLabel}
+                      </p>
+                      <p className="mt-0.5 text-[#64748B] dark:text-[#94A3B8]">{p.message}</p>
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase ${
+                        p.status === 'healthy'
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]'
+                          : 'bg-slate-200 text-slate-700 dark:bg-[#192337] dark:text-slate-300'
+                      }`}
+                    >
+                      {p.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Stage 29 Operational Telemetry: Job Queue, Storage Footprint & Partner Review */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                <h3 className="font-bold text-[#0F172A] dark:text-white">
+                  Background Job Queue Health (Recorded Runtime)
+                </h3>
+                {jobQueueSummary ? (
+                  <p className="mt-2 font-mono text-[11px] text-[#64748B] dark:text-slate-300">
+                    Total: {jobQueueSummary.total} · Queued: {jobQueueSummary.queued} · Running:{' '}
+                    {jobQueueSummary.running} · Completed: {jobQueueSummary.completed} · Dead-letter:{' '}
+                    {jobQueueSummary.deadLetter} · Cancelled: {jobQueueSummary.cancelled}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-[11px] text-[#64748B]">
+                  Worker heartbeat: {jobQueueSummary?.lastHeartbeatAt ?? 'No jobs executed in this process yet'}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                <h3 className="font-bold text-[#0F172A] dark:text-white">
+                  Isolated Customer File Storage Footprint
+                </h3>
+                {storageUsage ? (
+                  <p className="mt-2 font-mono text-[11px] text-[#64748B] dark:text-slate-300">
+                    Root: {storageUsage.storageRootLabel} · Files: {storageUsage.fileCount} · Bytes:{' '}
+                    {(storageUsage.totalBytes / 1024).toFixed(1)} KB
+                  </p>
+                ) : null}
+                <p className="mt-1 text-[11px] text-[#64748B]">
+                  Private customer research notes are strictly isolated and excluded from admin views.
+                </p>
+              </div>
+            </div>
+
+            {/* Affiliate & Partner Applications Review (Payouts Disabled) */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-bold text-[#0F172A] dark:text-white">
+                  Referral &amp; Partner Program Governance
+                </h3>
+                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold uppercase text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                  Payouts Disabled
+                </span>
+              </div>
+              {referralOverview ? (
+                <p className="mt-1.5 text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+                  Active Codes: {referralOverview.codesCount} · Attributions:{' '}
+                  {referralOverview.attributionsCount} · UTM Campaigns:{' '}
+                  {referralOverview.campaignsCount} · Proposed Terms:{' '}
+                  {referralOverview.proposedCommissionPercent}% /{' '}
+                  {referralOverview.proposedCommissionMonths} mo (Inactive)
+                </p>
+              ) : null}
+
+              {affiliateApps.length === 0 ? (
+                <p className="mt-2 text-[11px] text-[#64748B]">
+                  No partner applications submitted yet.
+                </p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {affiliateApps.map((app) => (
+                    <div
+                      key={app.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-[#263047] dark:bg-[#131C2E]"
+                    >
+                      <div>
+                        <p className="font-semibold text-[#0F172A] dark:text-white">
+                          {app.organization} ({app.email})
+                        </p>
+                        <p className="text-[11px] text-[#64748B]">
+                          {app.channelUrl} · Status: {app.status}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const res = await runAction(
+                              {
+                                type: 'review_affiliate_application',
+                                id: app.id,
+                                status: 'approved_inactive_payouts',
+                              },
+                              `Approved partner ${app.organization} (payouts remain inactive).`
+                            );
+                            if (res.ok) {
+                              setAffiliateApps((prev) =>
+                                prev.map((x) =>
+                                  x.id === app.id
+                                    ? { ...x, status: 'approved_inactive_payouts' }
+                                    : x
+                                )
+                              );
+                            }
+                          }}
+                          className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white"
+                        >
+                          Approve (No Payouts)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const res = await runAction(
+                              {
+                                type: 'review_affiliate_application',
+                                id: app.id,
+                                status: 'declined',
+                              },
+                              `Declined partner application ${app.organization}.`
+                            );
+                            if (res.ok) {
+                              setAffiliateApps((prev) =>
+                                prev.map((x) =>
+                                  x.id === app.id ? { ...x, status: 'declined' } : x
+                                )
+                              );
+                            }
+                          }}
+                          className="rounded-lg border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-600 dark:border-rose-900/60 dark:text-rose-300"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           </div>
         ) : null}

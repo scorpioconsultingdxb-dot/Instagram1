@@ -1,25 +1,30 @@
-# Viewora — Production Readiness Assessment
+# Viewora — Commercial Release-Candidate Production Readiness Assessment (Phase 3)
 
 **Date:** 2026-11-25  
-**Overall Verdict:** **FEATURE-COMPLETE & LOCALLY VERIFIED (STAGES 1–20) — NOT YET CLEARED FOR LIVE COMMERCIAL LAUNCH PENDING LIVE POSTGRESQL 16 INTEGRATION, BACKUP/RESTORE, E2E, AND EXTERNAL SERVICE AUTHORIZATION.**
+**Assessment Verdict:** **RELEASE CANDIDATE READY FOR STAGING / INFRASTRUCTURE PROVISIONING** (Not yet live-production deployed; live PostgreSQL Phase 3 tables, cloud object storage, and explicitly excluded external APIs/payments remain pending authorization & infrastructure provisioning).
 
 ---
 
-## 1. Ready & Verified Controls
+## 1. Readiness Matrix (Honest Classification)
 
-| Domain | Status | Evidence |
-| :--- | :--- | :--- |
-| Independent PostgreSQL / Prisma Architecture (Zero Supabase) | **Implemented & Partially Independently Verified** | Zero `@supabase/*` deps; 40 models; 3 SQL migrations + 2× seed + `viewora_app` `db:health` passed on PG16 in CI Run `45636280310` |
-| Application Security & Fail-Closed Production Behavior | **Locally Tested (PASS)** | Strong `AUTH_SECRET` enforced (`503` if missing/weak); `DEMO_MODE_ENABLED` & local fallbacks unconditionally `false` in production; CSRF `Origin` checks on all mutating endpoints; strict production CSP without `'unsafe-eval'`; revocable DB sessions; sliding-window rate limits |
-| Commercial UX, Personalization, Accessibility & Multi-Locale | **Locally Tested (PASS)** | Stages 11–20 complete; `66/66` tests; `296/296` static routes; 6 viewports (`375px`–`1920px`), 5 locales, light & dark themes, `0` console/page errors, `LCP <= 524ms`, `CLS = 0` |
-| Payments & External API Safety | **Locally Tested (PASS)** | `PAYMENTS_ENABLED=false` locked in env, UI, checkout (`503`), and Admin feature flag (`403`); zero card collection; zero unapproved external API calls |
+| Dimension | Status | Evidence & Notes |
+| --- | --- | --- |
+| **Application Build & Static Quality** | **Verified** | `eslint` (`0` errors, `0` warnings), `tsc --noEmit` (`0` errors), `next build` (`302/302` static pages, `103 kB` shared JS). |
+| **Automated Test Coverage** | **Verified (Local)** | `15/15` Vitest suites, `77/77` passing tests covering auth security, Prisma repositories, entitlements, deterministic analytics, CSV formula safety, image magic bytes, agency isolation, automation jobs, referrals, and admin RBAC. |
+| **UI / UX, Responsive & Multi-Locale** | **Verified (Local Chrome)** | `6` viewports (`375px`–`1920px`), `5` locales (`en`, `pt-BR`, `es`, `de`, `fr`), light/dark themes, `0px` horizontal overflow, `0` console/page errors, `11` visually inspected Phase 3 screenshots. |
+| **Core Web Vitals (Local Production)** | **Locally Tested** | Unthrottled LCP `60–304 ms`; cold-cache Slow 4G + 4× CPU LCP `612–2,132 ms`, CLS `≤ 0.0015`. Real-world CDN & Lighthouse CLI runs **Pending Infrastructure**. |
+| **Security & Privacy Hardening** | **Verified (Code + Tests)** | CSRF checks on all mutations, revocable PG sessions, strict magic-byte PNG/JPEG/WebP validation, CSV formula injection neutralization, private note isolation, zero Supabase, `PAYMENTS_ENABLED=false` locked. |
+| **PostgreSQL 16 Phase 1–2 Core Persistence** | **Verified (Prior CI Run `45636280310`)** | 40 Prisma models, 3 SQL migrations, RLS policies, `viewora_app` role. Local PG16 re-run **Pending Infrastructure** (no local Docker/PG16). |
+| **PostgreSQL 16 Phase 3 Extended Stores** | **Pending Infrastructure** | Phase 3 modules currently persist via `VIEWORA_DATA_DIR` JSON stores with DB-ready service shapes; promote to dedicated PG16 Prisma tables + RLS before multi-instance production launch. |
+| **Cloud Storage & Background Workers** | **Pending Infrastructure** | `LocalFileStorage` and `JobQueueEngine` run cleanly on single-node deployments; swap in S3/GCS driver + distributed worker before horizontal autoscaling. |
+| **External APIs (Meta, Gemini, Resend, Stripe)** | **Intentionally Inactive** | Preserved behind clean provider interfaces; strictly excluded until owner authorizes credentials, legal approvals, and Phase 7 billing. |
 
 ---
 
-## 2. Mandatory Pre-Launch Gates Still Pending Infrastructure / Owner Action
+## 2. Pre-Launch Owner Checklist (When Ready for Production Deployment)
 
-1. **[Pending Infrastructure — Mandatory]** Execute `npm run test:db` (`src/lib/db/postgres.integration.test.ts`) against live PostgreSQL 16 under restricted `viewora_app` (`NOSUPERUSER NOBYPASSRLS`).
-2. **[Pending Infrastructure — Mandatory]** Execute `scripts/db/backup.sh` (or `backup.ps1`) + `restore.sh` (or `restore.ps1`) into `viewora_restore_check` and pass `node scripts/db/verify-backup-restore.mjs compare`.
-3. **[Pending Infrastructure — Mandatory]** Execute `node scripts/e2e-postgres.mjs` against production `next start` connected to PostgreSQL 16 (including app restart persistence, admin RBAC, and confirmed account deletion).
-4. **[Pending Infrastructure — Mandatory]** Verify PostgreSQL container restart persistence on a Docker/PostgreSQL 16 host and run a full Lighthouse CLI mobile/desktop audit against staging.
-5. **[Owner Authorization Required Before Commercial Launch]** Legal counsel review of draft Privacy Policy, Terms of Service, and Cookie Policy; manual GitHub sync; production PostgreSQL provisioning; and future phased activation of Meta OAuth, Gemini API, Resend transactional email, and Stripe billing (only when explicitly authorized).
+1. Provision PostgreSQL 16 with `DATABASE_URL` (`viewora_app`) + `DATABASE_MIGRATION_URL`, apply Prisma migrations, and execute `npm run test:db`.
+2. Configure strong random `AUTH_SECRET` (`>= 32` random bytes) and HTTPS `AUTH_URL` / `NEXT_PUBLIC_APP_URL`.
+3. Confirm `DEMO_MODE_ENABLED=false` and `PAYMENTS_ENABLED=false` (until billing is explicitly authorized).
+4. Run Lighthouse CI and manual screen-reader QA against the deployed HTTPS staging URL.
+5. Push owner-approved commits to GitHub manually (all GitHub operations remain strictly owner-managed).

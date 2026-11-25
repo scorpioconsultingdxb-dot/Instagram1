@@ -9,6 +9,7 @@ import { loadConfiguredPlans } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import {
   getApiUsageMetrics,
+  getLocalStorageUsageSummary,
   getSearchAnalyticsMetrics,
   loadAuditLogs,
   loadBroadcastNotifications,
@@ -18,6 +19,8 @@ import {
 } from '@/lib/admin/store';
 import { loadFunnelSummary } from '@/lib/analytics/funnel';
 import { DEFAULT_EXPERIMENTS } from '@/lib/experiments/ab';
+import { defaultJobQueue } from '@/lib/jobs/queue';
+import { getReferralOverview } from '@/lib/referrals/service';
 import { AdminConsole } from '@/components/admin/AdminConsole';
 
 export const dynamic = 'force-dynamic';
@@ -112,6 +115,9 @@ export default async function AdminPage({
       initialBroadcasts={initialBroadcasts}
       initialAuditLogs={initialAuditLogs}
       initialFlags={initialFlags}
+      jobQueueSummary={defaultJobQueue.getSummary()}
+      storageUsage={getLocalStorageUsageSummary()}
+      referralOverview={getReferralOverview()}
     />
   );
 }

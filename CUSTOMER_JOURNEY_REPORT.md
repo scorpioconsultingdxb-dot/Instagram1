@@ -1,28 +1,24 @@
-# Viewora — Customer Journey Report
+# Viewora — Customer Journey Report (Updated for Phase 3)
 
 **Date:** 2026-11-25  
-**Primary Commercial Conversion Flow:**  
-`Visitor → Free Profile Search / 12 Free Tools → Transparent Public/Demo Results → Premium Feature Preview → Registration → Guided Onboarding → Personal Digital HQ & Persistent Workspace → Membership Exploration`
+**Scope:** End-to-end visitor, personal researcher, creator, business team, agency, and administrator journeys across Stages 1–30.
 
----
+## 1. Public Discovery & Acquisition Journey
+- **Landing & Tools (`/[locale]`, `/[locale]/tools`, `/[locale]/pricing`, `/[locale]/resources`, `/[locale]/glossary`):** Zero horizontal overflow across 6 viewports (`375px`–`1920px`) and 5 locales (`en`, `pt-BR`, `es`, `de`, `fr`), transparent `LIVE`/`CACHED`/`ESTIMATE`/`DEMO` disclosures, and interactive Plan Comparison Assistant preserving exact demo pricing (`$0`–`$99.99/mo`).
+- **Referral Invitation Landing (`/[locale]/r/[code]`):** New Stage 28 localized referral landing page validates referral code, records consent-aware visits and UTM campaign clicks, discloses that billing/payouts are disabled, and routes visitors into `/[locale]/register?ref=CODE`.
 
-## Verified End-to-End Customer Journeys
+## 2. Intelligent Onboarding & Activation (Stage 21)
+- **4-Step Save-and-Resume Wizard (`/[locale]/onboarding`):** Supports all **7 customer segments** (`Individual Researcher`, `Content Creator`, `Influencer & Talent`, `Social Media Manager`, `Marketing Professional`, `Brand / Business Team`, `Agency & Multi-Client Team`) and **7 selectable goals**. Progress checkpoints persist on step navigation; users can skip and return later.
+- **Getting-Started Checklist (`/[locale]/dashboard`):** Dynamically reflects real account milestones (onboarding completed, first profile/CSV saved, HQ bio/avatar customized, first report drafted) with zero fabricated activity and a dismissible card.
 
-1. **First-Time Visitor Discovery (`/[locale]`):**
-   - Purpose understood within 5 seconds: `"Explore More. Discover More. See Beyond the Profile."` with prominent username/URL search bar, labeled demo chips (`@viewora.studio`, `@aurora.coffee`, `@private.sample`), and 3-tier ladder anchors (`Free Forever`, `Professional Analytics`, `Premium Membership`).
-   - Educational preview (`Resource Center`, `Analytics Glossary`, `Guides`) and interactive FAQ accordion answer trust/privacy questions without invented testimonials or fake user counts.
+## 3. Daily Retention & Productivity Loops (Stages 22–28)
+- **Research Workspace Pro (`/[locale]/dashboard/projects`):** Nested research projects, pin/favorite/archive/restore, saved filters, bulk tagging, and validated user-provided CSV import (`User-Provided CSV Import` provenance).
+- **Personal Digital HQ 2.0 (`/[locale]/dashboard/profile`):** Custom magic-byte verified PNG/JPEG/WebP avatar & cover uploads, cover vertical framing (`top`/`center`/`bottom`), biography, interests, default landing section, active sessions, and GDPR/LGPD/UAE PDPL export/deletion.
+- **Deterministic Intelligence (`/[locale]/dashboard/analytics`):** Displays Data Completeness (`%`), Publishing Consistency (`0–100`), ER mean/median/`σ`, ERR (missing vs. zero preserved), 3-Pt SMA column, and expandable 6-formula methodology panel.
+- **Report Builder (`/[locale]/dashboard/report-builder`):** 9 `Template-Generated` report types, reorderable sections, immutable revision history, agency white-label header (Agency tier), formula-safe CSV, Markdown, and printable layouts.
+- **Agency & Team Collaboration (`/[locale]/dashboard/agency`):** Isolated client workspaces, team invitations with server-side seat/workspace quota enforcement, shared projects, internal team comments separated from personal notes, and workspace activity logs.
+- **Workflow & Automation (`/[locale]/dashboard/automation`):** Templates, internal reminders/tasks, timezone rules executed via `JobQueueEngine`, and honest blocking of inactive external email/live IG triggers.
+- **Referrals & Growth (`/[locale]/dashboard/referrals`):** Unique code, UTM link builder, partner application workflow, and explicit inactive payouts disclosure.
 
-2. **Zero-Signup Utility Conversion (`/[locale]/tools` & `/[locale]/[slug]`):**
-   - Visitors filter all 12 tools by category (`Viewer`, `Analytics`, `Optimization`, `Research`, `Creation`), execution mode (`Instant Calculators`, `Public Lookups`, `Status Checks`), and search query.
-   - Each tool displays consistent provenance disclosure, privacy boundary, interactive inputs, related tools, and a contextual Premium Feature Preview linking cleanly to registration and membership tiers.
-
-3. **Registration → Onboarding → Clean Customer Workspace:**
-   - `/register` provides a 4-level password strength meter, segment picker (`Personal`, `Business`, `Agency`), transparent email preferences, and legal links.
-   - `/onboarding` greets the authenticated customer, tailors the default workspace name to their segment, lets them set Light/Dark/System theme, and defaults to a **clean empty workspace** (never silently injecting demo profiles into real accounts) while offering optional explicit Demo Preview Mode.
-
-4. **Ongoing Research, Personalization & Account Control:**
-   - **Personal Digital HQ (`/dashboard/profile`):** 9 tabs covering Overview, Workspace, My Research, Reports, Membership (quota progress bars), Avatar & Theme (custom covers, avatars, 4 accent presets, 5 locales), Notifications, Security (inline Change Password, Active Sessions list + remote sign-out, Email Verification resend), and Privacy (GDPR/LGPD/PDPL JSON export & inline confirmed account deletion).
-   - **Dynamic Workspace (`/dashboard`):** Customizable overview widgets, tag-filtered saved profiles, private notes (strictly owner-isolated), editable/sortable competitor comparison matrices with CSV export, interactive analytics with metric formula explanations, and 7-template AI Studio with Markdown brief copy.
-
-5. **Membership & Upgrade Transparency (`/pricing`):**
-   - Five synchronized tiers (`$0`, `$9.99`, `$19.99`, `$39.99`, `$99.99`/mo) with Monthly/Quarterly/Annual switcher and honest Plan Comparison Assistant. Checkout stays strictly disabled (`503`) with zero payment card collection.
+## Verification Status
+All journeys **Locally Tested & Visually Verified** in headless Google Chrome at `1440x900` and `390x844` with `0` console errors and `0` page errors (`phase3_*.png`).

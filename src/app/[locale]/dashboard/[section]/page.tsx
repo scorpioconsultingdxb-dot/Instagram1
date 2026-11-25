@@ -23,11 +23,16 @@ export const dynamic = 'force-dynamic';
 
 const SECTION_TO_TAB: Record<string, DashboardTab> = {
   profiles: 'profiles',
+  projects: 'projects',
   analytics: 'analytics',
   activity: 'timeline',
   calendar: 'calendar',
   competitors: 'competitors',
   'ai-insights': 'ai',
+  'report-builder': 'report_builder',
+  agency: 'agency',
+  automation: 'automation',
+  referrals: 'referrals',
   reports: 'exports',
   notifications: 'notifications',
   subscription: 'billing',

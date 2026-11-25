@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAdminApi } from '@/lib/admin/rbac';
 import {
   getApiUsageMetrics,
+  getLocalStorageUsageSummary,
   getSearchAnalyticsMetrics,
   loadAuditLogs,
   loadBroadcastNotifications,
@@ -14,6 +15,8 @@ import { loadConfiguredPlans } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { loadFunnelSummary } from '@/lib/analytics/funnel';
 import { DEFAULT_EXPERIMENTS } from '@/lib/experiments/ab';
+import { defaultJobQueue } from '@/lib/jobs/queue';
+import { getReferralOverview } from '@/lib/referrals/service';
 
 export async function GET() {
   try {
@@ -57,6 +60,9 @@ export async function GET() {
       broadcastNotifications,
       auditLogs,
       featureFlags,
+      jobQueueSummary: defaultJobQueue.getSummary(),
+      storageUsage: getLocalStorageUsageSummary(),
+      referralOverview: getReferralOverview(),
     });
   } catch {
     return NextResponse.json(

@@ -21,6 +21,7 @@ import {
   persistConfiguredPlan,
   persistPlanEntitlement,
 } from '@/lib/entitlements/service';
+import { reviewAffiliateApplication } from '@/lib/referrals/service';
 import type { FeatureKey } from '@/lib/entitlements/types';
 
 const featureKeySchema = z.enum([
@@ -117,6 +118,11 @@ const adminActionSchema = z.discriminatedUnion('type', [
     enabled: z.boolean(),
     numericLimit: z.number().int().min(0).max(100_000).nullable(),
     reason: z.string().trim().max(300).optional(),
+  }),
+  z.object({
+    type: z.literal('review_affiliate_application'),
+    id: z.string().min(1),
+    status: z.enum(['approved_inactive_payouts', 'declined']),
   }),
 ]);
 
@@ -457,6 +463,31 @@ async function handleAdminActionPost(request: NextRequest) {
       },
     });
     return NextResponse.json({ ok: true, userId: action.userId, featureKey: action.featureKey, audit });
+  }
+
+  if (action.type === 'review_affiliate_application') {
+    if (!hasAdminCapability(actor.role, 'manage_users')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot review affiliate partner applications.` },
+        { status: 403 }
+      );
+    }
+    const updated = reviewAffiliateApplication(action.id, action.status, actor.email);
+    if (!updated) {
+      return NextResponse.json(
+        { ok: false, error: 'Affiliate application not found.' },
+        { status: 404 }
+      );
+    }
+    const audit = await persistAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'admin.affiliate_application.reviewed',
+      targetType: 'affiliate_application',
+      targetId: action.id,
+      diff: { status: action.status, payoutsEnabled: false },
+    });
+    return NextResponse.json({ ok: true, application: updated, audit });
   }
 
   // update_cms

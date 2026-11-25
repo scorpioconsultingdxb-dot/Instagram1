@@ -13,14 +13,12 @@ import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';
 import { EmptyState, UpgradePreviewCard } from '@/components/ui/Primitives';
 import { ConfirmDialog, StatusBanner } from '@/components/layout/PageShell';
 
+import { sanitizeCsvFormulaCell } from '@/lib/reports/export';
+
 type SortField = 'followers' | 'er' | 'delta' | 'cadence';
 
 function escapeCsvCell(value: string | number | null | undefined): string {
-  const str = String(value ?? '');
-  if (/[",\n\r]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
+  return sanitizeCsvFormulaCell(value);
 }
 
 export function CompetitorStudio({

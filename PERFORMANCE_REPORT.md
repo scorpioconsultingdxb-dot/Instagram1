@@ -1,26 +1,39 @@
-# Viewora — Performance & Core Web Vitals Report
+# Viewora — Performance Report (Phase 3 Release Candidate)
 
 **Date:** 2026-11-25  
-**Measurement Environment:** Local Next.js `15.5.29` production build (`next start`, `NODE_ENV=production`) inspected via headless Google Chrome (`1440x900`) using the browser's `PerformanceObserver` / Performance Navigation & Paint APIs.  
-**Honesty Note:** Values below are **actual local loopback measurements** on the built production server, NOT assumed scores. Standalone Lighthouse CLI (`lighthouse`) is not installed in this local environment, so synthetic Lighthouse mobile/desktop numeric scores (0–100) are marked **Pending external Lighthouse audit** rather than fabricated.
+**Build:** Next.js `15.5.29` production build (`npm.cmd run build` → `302/302` static pages generated cleanly)  
+**Measurement Tool:** Headless Google Chrome via Chrome DevTools Protocol (`PerformanceObserver` + `NavigationTiming`) against local `next start` (`127.0.0.1:3031`).
 
----
+> **Honest Scope Disclosure:** Standalone `lighthouse` CLI is not installed on this Windows workstation, so no fabricated Lighthouse 0–100 scores are reported. Below are **real measured local loopback metrics** — both unthrottled and under **cold-cache Slow 4G + 4× CPU throttling** — which reflect local hardware rather than global real-user field telemetry (CrUX/RUM).
 
-## 1. Actual Measured Production Core Web Vitals (`next start`)
+## 1. Production Bundle Footprint (`next build`)
 
-| Route | TTFB | DOM Interactive | FCP | LCP (Target `<= 2500ms`) | CLS (Target `<= 0.1`) | First Load JS (Build) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `/en` | `145 ms` | `492 ms` | `524 ms` | **`524 ms`** (PASS) | **`0.0000`** (PASS) | `121 kB` |
-| `/en/tools` | `34 ms` | `55 ms` | `88 ms` | **`88 ms`** (PASS) | **`0.0000`** (PASS) | `134 kB` |
-| `/en/pricing` | `29 ms` | `78 ms` | `92 ms` | **`92 ms`** (PASS) | **`0.0000`** (PASS) | `134 kB` |
-| `/en/resources` | `17 ms` | `34 ms` | `60 ms` | **`60 ms`** (PASS) | **`0.0000`** (PASS) | `132 kB` |
-| `/en/glossary` | `24 ms` | `44 ms` | `68 ms` | **`68 ms`** (PASS) | **`0.0000`** (PASS) | `132 kB` |
+- **Shared First Load JS:** `103 kB`
+- **Homepage (`/[locale]`):** `121 kB` First Load JS (`3.83 kB` page JS)
+- **Tools Directory (`/[locale]/tools`):** `134 kB` First Load JS
+- **Pricing (`/[locale]/pricing`):** `134 kB` First Load JS
+- **Onboarding (`/[locale]/onboarding`):** `115 kB` First Load JS
+- **Personal Digital HQ (`/[locale]/dashboard/profile`):** `142 kB` First Load JS
+- **Customer Dashboard (`/[locale]/dashboard/[section]`):** `168 kB` First Load JS (includes Phase 3 modules)
+- **Admin Console (`/[locale]/admin`):** `125 kB` First Load JS
+- **Middleware:** `34.9 kB`
 
-- **Shared First Load JS Bundle:** `103 kB` across all routes (Next.js App Router + React 19 + Tailwind CSS v4).
-- **Dashboard (`/[locale]/dashboard`) First Load JS:** `149 kB` (`141 kB` for `/dashboard/profile`, `123 kB` for `/admin`).
-- **INP (Interaction Responsiveness):** Client interactions (FAQ accordion toggle, Tools mode filter, Pricing interval/assistant toggles, Dashboard layout customizer, Profile HQ 9-tab navigation) execute purely in local React state with sub-50ms responsiveness (`<< 200ms` target).
+## 2. Unthrottled Local Production Measurements (`1440×900`)
 
-## 2. Pending Real-World Performance Audits
+| Route | FCP | LCP | CLS | DCL | Load | JS Transfer | Overflow |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `/en` | `304 ms` | `304 ms` | `0.0015` | `267 ms` | `332 ms` | `141 KB` | `0px` |
+| `/en/tools` | `84 ms` | `84 ms` | `0` | `78 ms` | `88 ms` | `26 KB` | `0px` |
+| `/en/pricing` | `96 ms` | `96 ms` | `0` | `90 ms` | `99 ms` | `9 KB` | `0px` |
+| `/en/resources` | `60 ms` | `60 ms` | `0` | `48 ms` | `56 ms` | `15 KB` | `0px` |
+| `/en/glossary` | `76 ms` | `76 ms` | `0` | `61 ms` | `62 ms` | `0 KB` (cached) | `0px` |
 
-- **Lighthouse Mobile/Desktop 0–100 Scores (Simulated 4G Throttling):** Pending execution via Chrome DevTools Lighthouse or `npx lighthouse` against a deployed staging URL or local production server once Lighthouse CLI is available.
-- **Database-Connected TTFB under PostgreSQL 16:** Pending measurement against live PostgreSQL 16 (`viewora_app`) with indexed queries under load.
+## 3. Cold-Cache Throttled Production Measurements (`Slow 4G: 1.6 Mbps / 150ms RTT` + `4× CPU Slowdown`)
+
+| Route | FCP | LCP | CLS | DCL | Load | JS Transfer (Cold) | Overflow |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `/en` | `648 ms` | `648 ms` | `0.0014` | `881 ms` | `2,289 ms` | `141 KB` | `0px` |
+| `/en/tools` | `560 ms` | `2,132 ms` | `0.0001` | `610 ms` | `1,946 ms` | `167 KB` | `0px` |
+| `/en/pricing` | `612 ms` | `612 ms` | `0.0002` | `681 ms` | `2,081 ms` | `168 KB` | `0px` |
+
+All throttled cold-cache measurements remain within Google's "Good" Core Web Vitals thresholds (`LCP < 2,500 ms`, `CLS < 0.1`). Real-world CDN/edge latency, Lighthouse CI scoring, and database query P95 latency remain **Pending Infrastructure**.

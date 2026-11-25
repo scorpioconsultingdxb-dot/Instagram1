@@ -15,6 +15,9 @@ import {
   CreditCard,
   Eye,
   FileDown,
+  FileText,
+  FolderKanban,
+  Gift,
   GitCompare,
   LifeBuoy,
   LogOut,
@@ -26,6 +29,7 @@ import {
   Sparkles,
   User,
   Users,
+  Workflow,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Locale } from '@/i18n/config';
@@ -52,15 +56,25 @@ import { CompetitorStudio } from './CompetitorStudio';
 import { NotificationsSupportModule } from './NotificationsSupportModule';
 import { ActivityCalendarModule } from './ActivityCalendarModule';
 import { ReportsLibraryModule } from './ReportsLibraryModule';
+import { ResearchProModule } from './ResearchProModule';
+import { ReportBuilderModule } from './ReportBuilderModule';
+import { AgencyCollaborationModule } from './AgencyCollaborationModule';
+import { AutomationCenterModule } from './AutomationCenterModule';
+import { ReferralGrowthModule } from './ReferralGrowthModule';
 
 export type DashboardTab =
   | 'overview'
   | 'profiles'
+  | 'projects'
   | 'analytics'
   | 'timeline'
   | 'calendar'
   | 'competitors'
   | 'ai'
+  | 'report_builder'
+  | 'agency'
+  | 'automation'
+  | 'referrals'
   | 'notifications'
   | 'exports'
   | 'billing'
@@ -112,11 +126,15 @@ export function CustomerDashboard({
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [showAddWorkspace, setShowAddWorkspace] = useState(false);
   const [showWidgetConfig, setShowWidgetConfig] = useState(false);
+  const [walkthroughDismissed, setWalkthroughDismissed] = useState(
+    profilePrefs.walkthroughDismissed ?? false
+  );
   const [widgetVisibility, setWidgetVisibility] = useState({
-    kpis: true,
-    quickActions: true,
-    shortcuts: true,
-    analyticsPreview: true,
+    checklist: profilePrefs.widgetVisibility?.checklist ?? true,
+    kpis: profilePrefs.widgetVisibility?.kpis ?? true,
+    quickActions: profilePrefs.widgetVisibility?.quickActions ?? true,
+    shortcuts: profilePrefs.widgetVisibility?.shortcuts ?? true,
+    analyticsPreview: profilePrefs.widgetVisibility?.analyticsPreview ?? true,
   });
 
   useEffect(() => {
@@ -244,6 +262,7 @@ export function CustomerDashboard({
       items: [
         { id: 'overview', label: td.tabOverview, icon: Activity },
         { id: 'profiles', label: td.tabProfiles, icon: Users },
+        { id: 'projects', label: 'Research Pro', icon: FolderKanban },
         { id: 'analytics', label: td.tabAnalytics, icon: BarChart3 },
         { id: 'ai', label: td.tabAi, icon: Sparkles },
       ],
@@ -254,12 +273,16 @@ export function CustomerDashboard({
         { id: 'timeline', label: td.tabTimeline, icon: Clock },
         { id: 'calendar', label: td.tabCalendar, icon: Calendar },
         { id: 'competitors', label: td.tabCompetitors, icon: GitCompare },
+        { id: 'report_builder', label: 'Report Builder', icon: FileText },
         { id: 'exports', label: td.tabExports, icon: FileDown },
       ],
     },
     {
       group: td.groupWorkspace,
       items: [
+        { id: 'agency', label: 'Agency & Team', icon: Building2 },
+        { id: 'automation', label: 'Automation', icon: Workflow },
+        { id: 'referrals', label: 'Referrals', icon: Gift },
         { id: 'notifications', label: td.tabNotifications, icon: Bell },
         { id: 'billing', label: td.tabBilling, icon: CreditCard },
         { id: 'support', label: td.tabSupport, icon: LifeBuoy },
@@ -692,6 +715,7 @@ export function CustomerDashboard({
                   </span>
                   {(
                     [
+                      ['checklist', 'Getting-Started Checklist'],
                       ['kpis', 'Usage & Quota KPIs'],
                       ['quickActions', 'Quick Actions Bar'],
                       ['shortcuts', 'Personal Shortcuts'],
@@ -729,6 +753,117 @@ export function CustomerDashboard({
                   ))}
                 </div>
               ) : null}
+
+              {/* Stage 21 Personalized Getting-Started Checklist (computed from genuine account state) */}
+              {widgetVisibility.checklist && !walkthroughDismissed ? (() => {
+                const steps = [
+                  {
+                    id: 'onboarding',
+                    label: 'Complete personalized role & goal onboarding',
+                    done: Boolean(profilePrefs.onboardingCompleted || user.onboardingCompleted),
+                    href: `/${locale}/onboarding`,
+                  },
+                  {
+                    id: 'profile',
+                    label: 'Save your first public profile or CSV dataset',
+                    done: workspace.savedProfiles.length > 0,
+                    onClick: () => setActiveTab('projects'),
+                  },
+                  {
+                    id: 'hq',
+                    label: 'Personalize your Digital HQ bio or avatar',
+                    done: Boolean(profilePrefs.biography || profilePrefs.customAvatarUrl),
+                    href: `/${locale}/dashboard/profile`,
+                  },
+                  {
+                    id: 'report',
+                    label: 'Draft a template-generated report or AI brief',
+                    done: workspace.reports.length > 0 || workspace.exports.length > 0,
+                    onClick: () => setActiveTab('report_builder'),
+                  },
+                ];
+                const completedCount = steps.filter((s) => s.done).length;
+                return (
+                  <section className="viewora-card rounded-2xl p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                          Getting-Started Checklist ({completedCount}/{steps.length} complete)
+                        </p>
+                        <p className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+                          Tracked strictly from real actions in your account ·{' '}
+                          <Link
+                            href={`/${locale}/resources`}
+                            className="font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+                          >
+                            Help Center &amp; Guides
+                          </Link>
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWalkthroughDismissed(true);
+                          void fetch('/api/auth/profile', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ walkthroughDismissed: true }),
+                          }).catch(() => undefined);
+                        }}
+                        className="text-[11px] font-semibold text-[#64748B] hover:text-[#0F172A] dark:text-[#94A3B8]"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {steps.map((st) =>
+                        st.href ? (
+                          <Link
+                            key={st.id}
+                            href={st.href}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A]"
+                          >
+                            <span
+                              className={
+                                st.done
+                                  ? 'text-[#64748B] line-through'
+                                  : 'font-semibold text-[#0F172A] dark:text-slate-100'
+                              }
+                            >
+                              {st.label}
+                            </span>
+                            <CheckCircle2
+                              className={`h-4 w-4 shrink-0 ${st.done ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'}`}
+                              aria-hidden="true"
+                            />
+                          </Link>
+                        ) : (
+                          <button
+                            key={st.id}
+                            type="button"
+                            onClick={st.onClick}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-left text-xs hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A]"
+                          >
+                            <span
+                              className={
+                                st.done
+                                  ? 'text-[#64748B] line-through'
+                                  : 'font-semibold text-[#0F172A] dark:text-slate-100'
+                              }
+                            >
+                              {st.label}
+                            </span>
+                            <CheckCircle2
+                              className={`h-4 w-4 shrink-0 ${st.done ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'}`}
+                              aria-hidden="true"
+                            />
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </section>
+                );
+              })() : null}
 
               {widgetVisibility.kpis ? (
               <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -831,6 +966,34 @@ export function CustomerDashboard({
               onEnableDemoPreview={() => void toggleDemoPreview(true)}
             />
           ) : null}
+
+          {activeTab === 'projects' ? (
+            <ResearchProModule workspace={workspace} onWorkspaceChange={setWorkspace} />
+          ) : null}
+
+          {activeTab === 'report_builder' ? (
+            <ReportBuilderModule
+              activeProfiles={effectiveProfiles}
+              canCsv={canCsv}
+              canPdf={canPdf}
+              canAgencyBranding={canAgency}
+            />
+          ) : null}
+
+          {activeTab === 'agency' ? (
+            <AgencyCollaborationModule
+              locale={locale}
+              canAgency={canAgency}
+              seatLimit={entitlements.rules.team_seats.numericLimit}
+              workspaceLimit={entitlements.rules.workspaces.numericLimit}
+            />
+          ) : null}
+
+          {activeTab === 'automation' ? (
+            <AutomationCenterModule defaultTimezone={profilePrefs.timezone || 'UTC'} />
+          ) : null}
+
+          {activeTab === 'referrals' ? <ReferralGrowthModule locale={locale} /> : null}
 
           {activeTab === 'analytics' ? (
             <div className="viewora-card rounded-2xl p-6">

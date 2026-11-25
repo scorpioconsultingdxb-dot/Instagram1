@@ -3,6 +3,30 @@ import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
 import { getDbProfilePrefs, saveDbProfilePrefs } from '@/lib/db/repositories/profile-prefs.repo';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 
+export const ONBOARDING_SEGMENTS = [
+  'individual_researcher',
+  'content_creator',
+  'influencer',
+  'social_media_manager',
+  'marketing_professional',
+  'brand_business',
+  'agency',
+] as const;
+
+export type OnboardingSegment = (typeof ONBOARDING_SEGMENTS)[number];
+
+export const CUSTOMER_GOALS = [
+  'track_public_profiles',
+  'analyze_engagement',
+  'compare_competitors',
+  'research_creators',
+  'create_reports',
+  'manage_client_accounts',
+  'explore_free_tools',
+] as const;
+
+export type CustomerGoal = (typeof CUSTOMER_GOALS)[number];
+
 export const personalShortcutSchema = z.object({
   id: z.string().min(1).max(40),
   label: z.string().min(1).max(48),
@@ -18,36 +42,128 @@ export const personalShortcutSchema = z.object({
 
 export type PersonalShortcut = z.infer<typeof personalShortcutSchema>;
 
+const safeInternalMediaUrlSchema = z
+  .string()
+  .max(180)
+  .refine(
+    (v) => v === '' || v.startsWith('/api/auth/media?kind='),
+    'Custom media URL must reference an internal Viewora media endpoint.'
+  );
+
 export const profilePatchSchema = z.object({
   fullName: z.string().trim().min(2).max(80).optional(),
   professionalTitle: z.string().trim().max(80).optional(),
   organization: z.string().trim().max(80).optional(),
+  biography: z.string().trim().max(400).optional(),
+  interests: z.array(z.string().trim().min(1).max(40)).max(8).optional(),
+  customerGoals: z.array(z.enum(CUSTOMER_GOALS)).max(7).optional(),
+  onboardingSegment: z.enum(ONBOARDING_SEGMENTS).optional(),
+  onboardingStep: z.number().int().min(1).max(4).optional(),
+  onboardingCompleted: z.boolean().optional(),
+  walkthroughDismissed: z.boolean().optional(),
   avatarPreset: z
     .enum(['violet-cyan', 'emerald-teal', 'amber-rose', 'obsidian-indigo', 'custom-emoji'])
     .optional(),
   avatarEmoji: z.string().trim().max(4).optional(),
+  customAvatarUrl: safeInternalMediaUrlSchema.optional(),
+  customAvatarKey: z.string().max(180).optional(),
   coverPreset: z.enum(['aurora', 'midnight', 'emerald', 'obsidian', 'sunset']).optional(),
+  coverPosition: z.enum(['top', 'center', 'bottom']).optional(),
+  customCoverUrl: safeInternalMediaUrlSchema.optional(),
+  customCoverKey: z.string().max(180).optional(),
   preferredLocale: z.enum(['en', 'pt-BR', 'es', 'de', 'fr']).optional(),
   themePreference: z.enum(['light', 'dark', 'system']).optional(),
   accentPreset: z.enum(['violet', 'cyan', 'emerald', 'indigo']).optional(),
   timezone: z.string().trim().min(2).max(60).optional(),
   defaultDateRange: z.enum(['7d', '30d', '90d', 'all']).optional(),
+  defaultLandingSection: z
+    .enum([
+      'overview',
+      'profiles',
+      'projects',
+      'analytics',
+      'competitors',
+      'ai',
+      'report_builder',
+      'agency',
+      'automation',
+      'referrals',
+    ])
+    .optional(),
   dashboardDensity: z.enum(['comfortable', 'compact']).optional(),
   sidebarDefaultCollapsed: z.boolean().optional(),
   workspaceName: z.string().trim().min(2).max(80).optional(),
   personalShortcuts: z.array(personalShortcutSchema).max(6).optional(),
+  widgetOrder: z
+    .array(z.enum(['checklist', 'kpis', 'quickActions', 'shortcuts', 'analyticsPreview']))
+    .max(6)
+    .optional(),
+  widgetVisibility: z
+    .object({
+      checklist: z.boolean().optional(),
+      kpis: z.boolean().optional(),
+      quickActions: z.boolean().optional(),
+      shortcuts: z.boolean().optional(),
+      analyticsPreview: z.boolean().optional(),
+    })
+    .optional(),
 });
-
-export type PersonalProfilePrefs = Required<Omit<z.infer<typeof profilePatchSchema>, 'fullName'>> & {
-  fullName?: string;
-  updatedAt: string;
-};
 
 export type PersonalProfilePatch = z.infer<typeof profilePatchSchema>;
 
+export interface PersonalProfilePrefs {
+  fullName?: string;
+  professionalTitle: string;
+  organization: string;
+  biography: string;
+  interests: string[];
+  customerGoals: CustomerGoal[];
+  onboardingSegment: OnboardingSegment;
+  onboardingStep: number;
+  onboardingCompleted: boolean;
+  walkthroughDismissed: boolean;
+  avatarPreset: 'violet-cyan' | 'emerald-teal' | 'amber-rose' | 'obsidian-indigo' | 'custom-emoji';
+  avatarEmoji: string;
+  customAvatarUrl: string;
+  customAvatarKey: string;
+  coverPreset: 'aurora' | 'midnight' | 'emerald' | 'obsidian' | 'sunset';
+  coverPosition: 'top' | 'center' | 'bottom';
+  customCoverUrl: string;
+  customCoverKey: string;
+  preferredLocale: 'en' | 'pt-BR' | 'es' | 'de' | 'fr';
+  themePreference: 'light' | 'dark' | 'system';
+  accentPreset: 'violet' | 'cyan' | 'emerald' | 'indigo';
+  timezone: string;
+  defaultDateRange: '7d' | '30d' | '90d' | 'all';
+  defaultLandingSection:
+    | 'overview'
+    | 'profiles'
+    | 'projects'
+    | 'analytics'
+    | 'competitors'
+    | 'ai'
+    | 'report_builder'
+    | 'agency'
+    | 'automation'
+    | 'referrals';
+  dashboardDensity: 'comfortable' | 'compact';
+  sidebarDefaultCollapsed: boolean;
+  workspaceName: string;
+  personalShortcuts: PersonalShortcut[];
+  widgetOrder: Array<'checklist' | 'kpis' | 'quickActions' | 'shortcuts' | 'analyticsPreview'>;
+  widgetVisibility: {
+    checklist: boolean;
+    kpis: boolean;
+    quickActions: boolean;
+    shortcuts: boolean;
+    analyticsPreview: boolean;
+  };
+  updatedAt: string;
+}
+
 export const DEFAULT_SHORTCUTS: PersonalShortcut[] = [
   { id: 'sc-dash', label: 'Analytics Dashboard', href: '/dashboard/analytics' },
-  { id: 'sc-ai', label: 'AI Intelligence Studio', href: '/dashboard/ai-insights' },
+  { id: 'sc-proj', label: 'Research Projects', href: '/dashboard/projects' },
   { id: 'sc-tools', label: '12 Free Instagram Tools', href: '/tools' },
 ];
 
@@ -55,31 +171,63 @@ export function createDefaultProfilePrefs(): PersonalProfilePrefs {
   return {
     professionalTitle: 'Social Intelligence Strategist',
     organization: 'Viewora Workspace',
+    biography: '',
+    interests: [],
+    customerGoals: [],
+    onboardingSegment: 'individual_researcher',
+    onboardingStep: 1,
+    onboardingCompleted: false,
+    walkthroughDismissed: false,
     avatarPreset: 'violet-cyan',
     avatarEmoji: '',
+    customAvatarUrl: '',
+    customAvatarKey: '',
     coverPreset: 'aurora',
+    coverPosition: 'center',
+    customCoverUrl: '',
+    customCoverKey: '',
     preferredLocale: 'en',
     themePreference: 'system',
     accentPreset: 'violet',
     timezone: 'UTC',
     defaultDateRange: '30d',
+    defaultLandingSection: 'overview',
     dashboardDensity: 'comfortable',
     sidebarDefaultCollapsed: false,
     workspaceName: 'Primary Workspace',
     personalShortcuts: DEFAULT_SHORTCUTS,
+    widgetOrder: ['checklist', 'kpis', 'quickActions', 'shortcuts', 'analyticsPreview'],
+    widgetVisibility: {
+      checklist: true,
+      kpis: true,
+      quickActions: true,
+      shortcuts: true,
+      analyticsPreview: true,
+    },
     updatedAt: new Date(0).toISOString(),
   };
 }
 
 const PREFS_STORE = 'profile-prefs.json';
 
+function mergePrefs(
+  base: PersonalProfilePrefs,
+  stored?: Partial<PersonalProfilePrefs> | null
+): PersonalProfilePrefs {
+  if (!stored) return base;
+  return {
+    ...base,
+    ...stored,
+    widgetVisibility: {
+      ...base.widgetVisibility,
+      ...(stored.widgetVisibility ?? {}),
+    },
+  };
+}
+
 function readLocalPrefs(userId: string): PersonalProfilePrefs {
   const all = readJsonStore<Record<string, Partial<PersonalProfilePrefs>>>(PREFS_STORE, () => ({}));
-  const stored = all[userId];
-  return {
-    ...createDefaultProfilePrefs(),
-    ...(stored ?? {}),
-  };
+  return mergePrefs(createDefaultProfilePrefs(), all[userId]);
 }
 
 function writeLocalPrefs(userId: string, patch: PersonalProfilePatch): PersonalProfilePrefs {
@@ -88,13 +236,14 @@ function writeLocalPrefs(userId: string, patch: PersonalProfilePatch): PersonalP
     PREFS_STORE,
     () => ({}),
     (current) => {
-      const prev: PersonalProfilePrefs = {
-        ...createDefaultProfilePrefs(),
-        ...(current[userId] ?? {}),
-      };
+      const prev = mergePrefs(createDefaultProfilePrefs(), current[userId]);
       merged = {
         ...prev,
         ...patch,
+        widgetVisibility: {
+          ...prev.widgetVisibility,
+          ...(patch.widgetVisibility ?? {}),
+        },
         updatedAt: new Date().toISOString(),
       };
       return {
@@ -108,7 +257,25 @@ function writeLocalPrefs(userId: string, patch: PersonalProfilePatch): PersonalP
 
 export async function getAccountProfilePrefs(userId: string): Promise<PersonalProfilePrefs> {
   if (isDatabaseConfigured()) {
-    return getDbProfilePrefs(userId);
+    const dbPrefs = await getDbProfilePrefs(userId);
+    const localExtra = isLocalDevFallbackAllowed() ? readLocalPrefs(userId) : null;
+    return mergePrefs(dbPrefs, localExtra ? {
+      biography: localExtra.biography,
+      interests: localExtra.interests,
+      customerGoals: localExtra.customerGoals,
+      onboardingSegment: localExtra.onboardingSegment,
+      onboardingStep: localExtra.onboardingStep,
+      onboardingCompleted: localExtra.onboardingCompleted,
+      walkthroughDismissed: localExtra.walkthroughDismissed,
+      coverPosition: localExtra.coverPosition,
+      customAvatarUrl: localExtra.customAvatarUrl,
+      customAvatarKey: localExtra.customAvatarKey,
+      customCoverUrl: localExtra.customCoverUrl,
+      customCoverKey: localExtra.customCoverKey,
+      defaultLandingSection: localExtra.defaultLandingSection,
+      widgetOrder: localExtra.widgetOrder,
+      widgetVisibility: localExtra.widgetVisibility,
+    } : null);
   }
   if (!isLocalDevFallbackAllowed()) {
     throw new Error('PostgreSQL DATABASE_URL is not configured.');
@@ -123,7 +290,10 @@ export async function saveAccountProfilePrefs(
   if (isDatabaseConfigured()) {
     try {
       const profile = await saveDbProfilePrefs(userId, patch);
-      return { ok: true, profile };
+      if (isLocalDevFallbackAllowed()) {
+        writeLocalPrefs(userId, patch);
+      }
+      return { ok: true, profile: mergePrefs(profile, patch as Partial<PersonalProfilePrefs>) };
     } catch (err) {
       return {
         ok: false,

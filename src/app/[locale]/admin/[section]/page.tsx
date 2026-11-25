@@ -12,6 +12,7 @@ import { listEmailDeliveries } from '@/lib/email/resend';
 import { getReferralOverview } from '@/lib/referrals/service';
 import {
   getApiUsageMetrics,
+  getLocalStorageUsageSummary,
   getSearchAnalyticsMetrics,
   loadAuditLogs,
   loadBroadcastNotifications,
@@ -229,6 +230,9 @@ export default async function AdminSectionPage({
       initialBroadcasts={initialBroadcasts}
       initialAuditLogs={initialAuditLogs}
       initialFlags={initialFlags}
+      jobQueueSummary={defaultJobQueue.getSummary()}
+      storageUsage={getLocalStorageUsageSummary()}
+      referralOverview={getReferralOverview()}
     />
   );
 }

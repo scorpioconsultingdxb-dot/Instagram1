@@ -109,33 +109,45 @@ describe('Phase 4–6 Operational, Security & Automation Controls', () => {
     expect(second.status).toBe('deduplicated');
   });
 
-  it('blocks self-referrals, duplicate attributions, and unsafe open redirects', () => {
-    const ref = createReferralCode('user-owner-1');
-    expect(ref.payoutsEnabled).toBe(false);
+  it('blocks self-referrals, duplicate attributions, and unsafe open redirects', async () => {
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'viewora-p4-ref-'));
+    const prevDir = process.env.VIEWORA_DATA_DIR;
+    process.env.VIEWORA_DATA_DIR = tmpDir;
+    try {
+      const ref = createReferralCode('user-owner-1');
+      expect(ref.payoutsEnabled).toBe(false);
 
-    const selfRef = attributeReferral({
-      code: ref.code,
-      referredUserId: 'user-owner-1',
-      consentVerified: true,
-    });
-    expect(selfRef?.status).toBe('rejected_self_referral');
+      const selfRef = attributeReferral({
+        code: ref.code,
+        referredUserId: 'user-owner-1',
+        consentVerified: true,
+      });
+      expect(selfRef?.status).toBe('rejected_self_referral');
 
-    const valid = attributeReferral({
-      code: ref.code,
-      referredUserId: 'user-friend-2',
-      consentVerified: true,
-    });
-    expect(valid?.status).toBe('attributed_pending_billing');
+      const valid = attributeReferral({
+        code: ref.code,
+        referredUserId: 'user-friend-2',
+        consentVerified: true,
+      });
+      expect(valid?.status).toBe('attributed_pending_billing');
 
-    const dup = attributeReferral({
-      code: ref.code,
-      referredUserId: 'user-friend-2',
-      consentVerified: true,
-    });
-    expect(dup?.status).toBe('rejected_duplicate');
+      const dup = attributeReferral({
+        code: ref.code,
+        referredUserId: 'user-friend-2',
+        consentVerified: true,
+      });
+      expect(dup?.status).toBe('rejected_duplicate');
 
-    expect(sanitizeRedirectPath('/en/dashboard')).toBe('/en/dashboard');
-    expect(sanitizeRedirectPath('//evil.example/phish')).toBe('/en/dashboard');
-    expect(sanitizeRedirectPath('https://evil.example')).toBe('/en/dashboard');
+      expect(sanitizeRedirectPath('/en/dashboard')).toBe('/en/dashboard');
+      expect(sanitizeRedirectPath('//evil.example/phish')).toBe('/en/dashboard');
+      expect(sanitizeRedirectPath('https://evil.example')).toBe('/en/dashboard');
+    } finally {
+      if (prevDir !== undefined) process.env.VIEWORA_DATA_DIR = prevDir;
+      else delete process.env.VIEWORA_DATA_DIR;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

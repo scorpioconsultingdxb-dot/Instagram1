@@ -19,7 +19,9 @@ const DISALLOWED_SECRET_PATTERNS = [
   'example-secret',
 ];
 
-let ephemeralDevSecret: string | null = null;
+const globalForAuthSecret = globalThis as unknown as {
+  __vieworaEphemeralDevSecret?: string;
+};
 
 /**
  * Validates that an authentication secret has sufficient length (>= 32 chars),
@@ -68,10 +70,10 @@ export function getRequiredAuthSecret(
     return 'test-only-ephemeral-secret-9f8e7d6c5b4a3210fedcba9876543210';
   }
 
-  if (!ephemeralDevSecret) {
-    ephemeralDevSecret = randomBytes(32).toString('hex');
+  if (!globalForAuthSecret.__vieworaEphemeralDevSecret) {
+    globalForAuthSecret.__vieworaEphemeralDevSecret = randomBytes(32).toString('hex');
   }
-  return ephemeralDevSecret;
+  return globalForAuthSecret.__vieworaEphemeralDevSecret;
 }
 
 /**

@@ -1,3 +1,8 @@
+import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
+import {
+  readDbUserModuleState,
+  updateDbUserModuleState,
+} from '@/lib/db/repositories/user-module-state.repo';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 import { defaultJobQueue, type BackgroundJob } from '@/lib/jobs/queue';
 import {
@@ -128,6 +133,135 @@ export function executeInternalAutomationRule(params: {
   };
 
   const state = updateUserAutomationState(params.userId, (s) => ({
+    ...s,
+    rules: s.rules.map((r) =>
+      r.id === params.rule.id ? { ...r, lastRunAt: now, runCount: r.runCount + 1 } : r
+    ),
+    tasks:
+      params.rule.action === 'create_research_followup_task' ||
+      params.rule.action === 'queue_report_prep_reminder'
+        ? [
+            {
+              id: `tsk-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+              title: `[Auto] ${params.rule.name}`,
+              dueDate: new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10),
+              category:
+                params.rule.action === 'queue_report_prep_reminder'
+                  ? ('report_prep' as const)
+                  : ('research_followup' as const),
+              completed: false,
+              createdAt: now,
+            },
+            ...s.tasks,
+          ].slice(0, 60)
+        : s.tasks,
+    executions: [log, ...s.executions],
+  }));
+
+  return { ok: true, job, log, state };
+}
+
+export async function loadUserAutomationState(userId: string): Promise<UserAutomationState> {
+  if (isDatabaseConfigured()) {
+    return readDbUserModuleState<UserAutomationState>(userId, 'automation', () =>
+      createInitialState(userId)
+    );
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return getUserAutomationState(userId);
+}
+
+export async function persistUserAutomationState(
+  userId: string,
+  updater: (current: UserAutomationState) => UserAutomationState
+): Promise<UserAutomationState> {
+  if (isDatabaseConfigured()) {
+    return updateDbUserModuleState<UserAutomationState>(
+      userId,
+      'automation',
+      () => createInitialState(userId),
+      (current) => {
+        const next = updater(current);
+        return {
+          ...next,
+          userId,
+          executions: next.executions.slice(0, 50),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+    );
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return updateUserAutomationState(userId, updater);
+}
+
+export async function executePersistedAutomationRule(params: {
+  userId: string;
+  rule: AutomationRuleRecord;
+  idempotencySlot?: string;
+}): Promise<{
+  ok: boolean;
+  job?: BackgroundJob;
+  log: AutomationExecutionLog;
+  state: UserAutomationState;
+}> {
+  if (!isDatabaseConfigured()) {
+    return executeInternalAutomationRule(params);
+  }
+  const now = new Date().toISOString();
+
+  if (params.rule.requiresExternalAuth || isExternalInactiveTrigger(params.rule.trigger)) {
+    const blockedLog: AutomationExecutionLog = {
+      id: `exec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      ruleId: params.rule.id,
+      ruleName: params.rule.name,
+      jobId: 'inactive-external-provider',
+      status: 'blocked_external_inactive',
+      detail:
+        'Execution blocked honestly: external email delivery and live Instagram monitoring require explicit provider authorization.',
+      executedAt: now,
+    };
+    const state = await persistUserAutomationState(params.userId, (s) => ({
+      ...s,
+      executions: [blockedLog, ...s.executions],
+    }));
+    return { ok: false, log: blockedLog, state };
+  }
+
+  const slot = params.idempotencySlot ?? now.slice(0, 16);
+  const { job } = defaultJobQueue.enqueue({
+    jobType: 'automation_rule_run',
+    idempotencyKey: `auto:${params.userId}:${params.rule.id}:${slot}`,
+    payload: {
+      userId: params.userId,
+      ruleId: params.rule.id,
+      action: params.rule.action,
+    },
+    maxAttempts: 3,
+  });
+  defaultJobQueue.recordHeartbeat();
+  const claimed = defaultJobQueue.claimNext(`worker-internal-${params.userId.slice(-6)}`);
+  if (claimed && claimed.id === job.id) {
+    defaultJobQueue.complete(claimed.id);
+  } else if (job.status === 'queued') {
+    defaultJobQueue.complete(job.id);
+  }
+
+  const log: AutomationExecutionLog = {
+    id: `exec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    ruleId: params.rule.id,
+    ruleName: params.rule.name,
+    jobId: job.id,
+    status: 'completed',
+    detail: `Executed internal action "${params.rule.action}" (${params.rule.timezone}) via JobQueueEngine.`,
+    executedAt: now,
+  };
+
+  const state = await persistUserAutomationState(params.userId, (s) => ({
     ...s,
     rules: s.rules.map((r) =>
       r.id === params.rule.id ? { ...r, lastRunAt: now, runCount: r.runCount + 1 } : r

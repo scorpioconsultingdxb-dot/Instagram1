@@ -1,4 +1,9 @@
 import { randomBytes } from 'crypto';
+import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
+import {
+  readDbUserModuleState,
+  updateDbUserModuleState,
+} from '@/lib/db/repositories/user-module-state.repo';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 
 export type WorkspaceMemberRole = 'owner' | 'admin' | 'editor' | 'viewer';
@@ -128,6 +133,48 @@ export function updateAgencyOrgState(
     }
   );
   return nextState;
+}
+
+export async function loadAgencyOrgState(
+  ownerUserId: string,
+  ownerEmail: string
+): Promise<AgencyOrgState> {
+  if (isDatabaseConfigured()) {
+    return readDbUserModuleState<AgencyOrgState>(ownerUserId, 'agencyOrg', () =>
+      createInitialAgencyState(ownerUserId, ownerEmail)
+    );
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return getAgencyOrgState(ownerUserId, ownerEmail);
+}
+
+export async function persistAgencyOrgState(
+  ownerUserId: string,
+  ownerEmail: string,
+  updater: (current: AgencyOrgState) => AgencyOrgState
+): Promise<AgencyOrgState> {
+  if (isDatabaseConfigured()) {
+    return updateDbUserModuleState<AgencyOrgState>(
+      ownerUserId,
+      'agencyOrg',
+      () => createInitialAgencyState(ownerUserId, ownerEmail),
+      (current) => {
+        const updated = updater(current);
+        return {
+          ...updated,
+          ownerUserId,
+          activity: updated.activity.slice(0, 60),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+    );
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return updateAgencyOrgState(ownerUserId, ownerEmail, updater);
 }
 
 export function generateInvitationToken(): string {

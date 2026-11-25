@@ -257,25 +257,7 @@ function writeLocalPrefs(userId: string, patch: PersonalProfilePatch): PersonalP
 
 export async function getAccountProfilePrefs(userId: string): Promise<PersonalProfilePrefs> {
   if (isDatabaseConfigured()) {
-    const dbPrefs = await getDbProfilePrefs(userId);
-    const localExtra = isLocalDevFallbackAllowed() ? readLocalPrefs(userId) : null;
-    return mergePrefs(dbPrefs, localExtra ? {
-      biography: localExtra.biography,
-      interests: localExtra.interests,
-      customerGoals: localExtra.customerGoals,
-      onboardingSegment: localExtra.onboardingSegment,
-      onboardingStep: localExtra.onboardingStep,
-      onboardingCompleted: localExtra.onboardingCompleted,
-      walkthroughDismissed: localExtra.walkthroughDismissed,
-      coverPosition: localExtra.coverPosition,
-      customAvatarUrl: localExtra.customAvatarUrl,
-      customAvatarKey: localExtra.customAvatarKey,
-      customCoverUrl: localExtra.customCoverUrl,
-      customCoverKey: localExtra.customCoverKey,
-      defaultLandingSection: localExtra.defaultLandingSection,
-      widgetOrder: localExtra.widgetOrder,
-      widgetVisibility: localExtra.widgetVisibility,
-    } : null);
+    return getDbProfilePrefs(userId);
   }
   if (!isLocalDevFallbackAllowed()) {
     throw new Error('PostgreSQL DATABASE_URL is not configured.');
@@ -290,10 +272,7 @@ export async function saveAccountProfilePrefs(
   if (isDatabaseConfigured()) {
     try {
       const profile = await saveDbProfilePrefs(userId, patch);
-      if (isLocalDevFallbackAllowed()) {
-        writeLocalPrefs(userId, patch);
-      }
-      return { ok: true, profile: mergePrefs(profile, patch as Partial<PersonalProfilePrefs>) };
+      return { ok: true, profile };
     } catch (err) {
       return {
         ok: false,

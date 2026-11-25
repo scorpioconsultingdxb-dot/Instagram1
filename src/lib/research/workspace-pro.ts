@@ -1,3 +1,8 @@
+import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
+import {
+  readDbUserModuleState,
+  updateDbUserModuleState,
+} from '@/lib/db/repositories/user-module-state.repo';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 import type { PublicProfileData } from '@/lib/providers/types';
 
@@ -90,6 +95,46 @@ export function updateUserResearchProState(
     }
   );
   return saved;
+}
+
+export async function loadUserResearchProState(userId: string): Promise<UserResearchProState> {
+  if (isDatabaseConfigured()) {
+    return readDbUserModuleState<UserResearchProState>(
+      userId,
+      'researchPro',
+      () => createInitialState(userId)
+    );
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return getUserResearchProState(userId);
+}
+
+export async function persistUserResearchProState(
+  userId: string,
+  updater: (current: UserResearchProState) => UserResearchProState
+): Promise<UserResearchProState> {
+  if (isDatabaseConfigured()) {
+    return updateDbUserModuleState<UserResearchProState>(
+      userId,
+      'researchPro',
+      () => createInitialState(userId),
+      (current) => {
+        const next = updater(current);
+        return {
+          ...next,
+          userId,
+          history: next.history.slice(0, 40),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+    );
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return updateUserResearchProState(userId, updater);
 }
 
 export function pushHistory(

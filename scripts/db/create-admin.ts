@@ -10,6 +10,7 @@
 import readline from 'readline';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
+import { validateAdminBootstrapInput } from '../../src/lib/admin/bootstrap-validation';
 
 const prisma = new PrismaClient();
 
@@ -29,30 +30,32 @@ async function main() {
     process.exit(1);
   }
 
-  const email = (
-    process.env.ADMIN_EMAIL || (await prompt('Administrator email: '))
-  )
-    .trim()
-    .toLowerCase();
-  const fullName =
+  const rawEmail = process.env.ADMIN_EMAIL || (await prompt('Administrator email: '));
+  const rawFullName =
     process.env.ADMIN_NAME || (await prompt('Administrator full name: ')) || 'Viewora Administrator';
-  const password = process.env.ADMIN_PASSWORD || (await prompt('Administrator password (min 12 chars): '));
+  const password =
+    process.env.ADMIN_PASSWORD || (await prompt('Administrator password (min 12 chars, mixed classes): '));
 
-  if (!email || !email.includes('@')) {
-    console.error('ERROR: A valid email address is required.');
+  const validation = validateAdminBootstrapInput({
+    email: rawEmail,
+    fullName: rawFullName,
+    password,
+  });
+
+  if (!validation.ok) {
+    for (const msg of validation.errors) {
+      console.error(`ERROR: ${msg}`);
+    }
     process.exit(1);
   }
-  if (!password || password.length < 12) {
-    console.error('ERROR: Administrator password must be at least 12 characters long.');
-    process.exit(1);
-  }
 
+  const { email, fullName } = validation;
   const passwordHash = await bcrypt.hash(password, 12);
 
   const user = await prisma.$transaction(async (tx) => {
     const existing = await tx.user.findUnique({ where: { email } });
     if (existing) {
-      return tx.user.update({
+      const promoted = await tx.user.update({
         where: { id: existing.id },
         data: {
           fullName,
@@ -64,6 +67,17 @@ async function main() {
           onboardingCompleted: true,
         },
       });
+      await tx.auditLog.create({
+        data: {
+          actorId: promoted.id,
+          actorEmail: promoted.email,
+          action: 'admin.bootstrap.promoted',
+          targetType: 'user',
+          targetId: promoted.id,
+          diff: { previousRole: existing.role, role: 'super_admin' },
+        },
+      });
+      return promoted;
     }
 
     const created = await tx.user.create({

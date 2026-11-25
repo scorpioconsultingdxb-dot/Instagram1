@@ -8,6 +8,32 @@ import {
   type PersonalProfilePrefs,
 } from '@/lib/auth/profile-prefs';
 
+type HqExtendedFields = Pick<
+  PersonalProfilePrefs,
+  | 'biography'
+  | 'interests'
+  | 'customerGoals'
+  | 'onboardingSegment'
+  | 'onboardingStep'
+  | 'onboardingCompleted'
+  | 'walkthroughDismissed'
+  | 'coverPosition'
+  | 'customAvatarUrl'
+  | 'customAvatarKey'
+  | 'customCoverUrl'
+  | 'customCoverKey'
+  | 'defaultLandingSection'
+  | 'widgetOrder'
+  | 'widgetVisibility'
+>;
+
+function asRecord(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return {};
+}
+
 export async function getDbProfilePrefs(
   userId: string,
   client: PrismaClient = getPrismaClient()
@@ -21,6 +47,7 @@ export async function getDbProfilePrefs(
         select: {
           fullName: true,
           preferredLocale: true,
+          onboardingCompleted: true,
           updatedAt: true,
           preferences: true,
         },
@@ -33,16 +60,42 @@ export async function getDbProfilePrefs(
         .array(personalShortcutSchema)
         .safeParse(pref?.personalShortcuts ?? defaults.personalShortcuts);
 
+      const notifRoot = asRecord(pref?.notificationPreferences);
+      const ext = asRecord(notifRoot.hqExtended) as Partial<HqExtendedFields>;
+
       return {
         ...defaults,
         fullName: user.fullName || undefined,
         professionalTitle: pref?.professionalTitle ?? defaults.professionalTitle,
         organization: pref?.organization ?? defaults.organization,
+        biography: typeof ext.biography === 'string' ? ext.biography : defaults.biography,
+        interests: Array.isArray(ext.interests) ? ext.interests : defaults.interests,
+        customerGoals: Array.isArray(ext.customerGoals) ? ext.customerGoals : defaults.customerGoals,
+        onboardingSegment: ext.onboardingSegment ?? defaults.onboardingSegment,
+        onboardingStep:
+          typeof ext.onboardingStep === 'number' ? ext.onboardingStep : defaults.onboardingStep,
+        onboardingCompleted:
+          typeof ext.onboardingCompleted === 'boolean'
+            ? ext.onboardingCompleted
+            : Boolean(user.onboardingCompleted),
+        walkthroughDismissed:
+          typeof ext.walkthroughDismissed === 'boolean'
+            ? ext.walkthroughDismissed
+            : defaults.walkthroughDismissed,
         avatarPreset:
           (pref?.avatarPreset as PersonalProfilePrefs['avatarPreset']) ?? defaults.avatarPreset,
         avatarEmoji: pref?.avatarEmoji ?? '',
+        customAvatarUrl:
+          typeof ext.customAvatarUrl === 'string' ? ext.customAvatarUrl : defaults.customAvatarUrl,
+        customAvatarKey:
+          typeof ext.customAvatarKey === 'string' ? ext.customAvatarKey : defaults.customAvatarKey,
         coverPreset:
           (pref?.coverPreset as PersonalProfilePrefs['coverPreset']) ?? defaults.coverPreset,
+        coverPosition: ext.coverPosition ?? defaults.coverPosition,
+        customCoverUrl:
+          typeof ext.customCoverUrl === 'string' ? ext.customCoverUrl : defaults.customCoverUrl,
+        customCoverKey:
+          typeof ext.customCoverKey === 'string' ? ext.customCoverKey : defaults.customCoverKey,
         preferredLocale:
           (user.preferredLocale as PersonalProfilePrefs['preferredLocale']) ??
           defaults.preferredLocale,
@@ -55,6 +108,7 @@ export async function getDbProfilePrefs(
         defaultDateRange:
           (pref?.defaultDateRange as PersonalProfilePrefs['defaultDateRange']) ??
           defaults.defaultDateRange,
+        defaultLandingSection: ext.defaultLandingSection ?? defaults.defaultLandingSection,
         dashboardDensity:
           (pref?.dashboardDensity as PersonalProfilePrefs['dashboardDensity']) ??
           defaults.dashboardDensity,
@@ -66,6 +120,13 @@ export async function getDbProfilePrefs(
         personalShortcuts: shortcutsParsed.success
           ? shortcutsParsed.data
           : defaults.personalShortcuts,
+        widgetOrder: Array.isArray(ext.widgetOrder) ? ext.widgetOrder : defaults.widgetOrder,
+        widgetVisibility: {
+          ...defaults.widgetVisibility,
+          ...(ext.widgetVisibility && typeof ext.widgetVisibility === 'object'
+            ? ext.widgetVisibility
+            : {}),
+        },
         updatedAt: (pref?.updatedAt ?? user.updatedAt).toISOString(),
       };
     },
@@ -85,6 +146,9 @@ export async function saveDbProfilePrefs(
   }
   if (patch.preferredLocale !== undefined) {
     userPatch.preferredLocale = patch.preferredLocale;
+  }
+  if (patch.onboardingCompleted !== undefined) {
+    userPatch.onboardingCompleted = patch.onboardingCompleted;
   }
 
   const prefPatch: Prisma.UserPreferenceUncheckedUpdateInput = {};
@@ -106,6 +170,23 @@ export async function saveDbProfilePrefs(
     prefPatch.personalShortcuts = patch.personalShortcuts as unknown as Prisma.InputJsonValue;
   }
 
+  const hasExtendedPatch =
+    patch.biography !== undefined ||
+    patch.interests !== undefined ||
+    patch.customerGoals !== undefined ||
+    patch.onboardingSegment !== undefined ||
+    patch.onboardingStep !== undefined ||
+    patch.onboardingCompleted !== undefined ||
+    patch.walkthroughDismissed !== undefined ||
+    patch.coverPosition !== undefined ||
+    patch.customAvatarUrl !== undefined ||
+    patch.customAvatarKey !== undefined ||
+    patch.customCoverUrl !== undefined ||
+    patch.customCoverKey !== undefined ||
+    patch.defaultLandingSection !== undefined ||
+    patch.widgetOrder !== undefined ||
+    patch.widgetVisibility !== undefined;
+
   await withUserRlsContext(
     { userId, role: 'user' },
     async (tx) => {
@@ -114,6 +195,58 @@ export async function saveDbProfilePrefs(
           where: { id: userId },
           data: userPatch,
         });
+      }
+
+      let nextNotificationPrefs: Prisma.InputJsonValue | undefined;
+      if (hasExtendedPatch) {
+        const existingPref = await tx.userPreference.findUnique({
+          where: { userId },
+          select: { notificationPreferences: true },
+        });
+        const root = asRecord(existingPref?.notificationPreferences);
+        const prevExt = asRecord(root.hqExtended) as Partial<HqExtendedFields>;
+        const defaults = createDefaultProfilePrefs();
+
+        const nextExt: Partial<HqExtendedFields> = {
+          ...prevExt,
+          ...(patch.biography !== undefined ? { biography: patch.biography } : {}),
+          ...(patch.interests !== undefined ? { interests: patch.interests } : {}),
+          ...(patch.customerGoals !== undefined ? { customerGoals: patch.customerGoals } : {}),
+          ...(patch.onboardingSegment !== undefined
+            ? { onboardingSegment: patch.onboardingSegment }
+            : {}),
+          ...(patch.onboardingStep !== undefined ? { onboardingStep: patch.onboardingStep } : {}),
+          ...(patch.onboardingCompleted !== undefined
+            ? { onboardingCompleted: patch.onboardingCompleted }
+            : {}),
+          ...(patch.walkthroughDismissed !== undefined
+            ? { walkthroughDismissed: patch.walkthroughDismissed }
+            : {}),
+          ...(patch.coverPosition !== undefined ? { coverPosition: patch.coverPosition } : {}),
+          ...(patch.customAvatarUrl !== undefined ? { customAvatarUrl: patch.customAvatarUrl } : {}),
+          ...(patch.customAvatarKey !== undefined ? { customAvatarKey: patch.customAvatarKey } : {}),
+          ...(patch.customCoverUrl !== undefined ? { customCoverUrl: patch.customCoverUrl } : {}),
+          ...(patch.customCoverKey !== undefined ? { customCoverKey: patch.customCoverKey } : {}),
+          ...(patch.defaultLandingSection !== undefined
+            ? { defaultLandingSection: patch.defaultLandingSection }
+            : {}),
+          ...(patch.widgetOrder !== undefined ? { widgetOrder: patch.widgetOrder } : {}),
+          ...(patch.widgetVisibility !== undefined
+            ? {
+                widgetVisibility: {
+                  ...defaults.widgetVisibility,
+                  ...(prevExt.widgetVisibility ?? {}),
+                  ...patch.widgetVisibility,
+                },
+              }
+            : {}),
+        };
+
+        nextNotificationPrefs = {
+          ...root,
+          hqExtended: nextExt,
+        } as unknown as Prisma.InputJsonValue;
+        prefPatch.notificationPreferences = nextNotificationPrefs;
       }
 
       await tx.userPreference.upsert({
@@ -134,6 +267,7 @@ export async function saveDbProfilePrefs(
           dashboardDensity: patch.dashboardDensity ?? 'comfortable',
           sidebarDefaultCollapsed: patch.sidebarDefaultCollapsed ?? false,
           personalShortcuts: (patch.personalShortcuts ?? []) as unknown as Prisma.InputJsonValue,
+          ...(nextNotificationPrefs ? { notificationPreferences: nextNotificationPrefs } : {}),
         },
       });
     },

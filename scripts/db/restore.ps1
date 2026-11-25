@@ -38,6 +38,18 @@ Write-Host "[Viewora Restore] Restoring '$BackupFile' into '$TargetDb'..."
 
 $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
 $pgRestoreCmd = Get-Command pg_restore -ErrorAction SilentlyContinue
+$pgRestoreExe = if ($pgRestoreCmd) { $pgRestoreCmd.Source } else { $null }
+
+if (-not $pgRestoreExe) {
+  foreach ($ver in @("17", "16", "15", "14", "13")) {
+    $candidate = "C:\Program Files\PostgreSQL\$ver\bin\pg_restore.exe"
+    if (Test-Path $candidate) {
+      $pgRestoreExe = $candidate
+      break
+    }
+  }
+}
+
 $dockerRunning = $false
 
 if ($dockerCmd) {
@@ -56,15 +68,22 @@ if ($dockerRunning) {
   & docker exec $ContainerName rm -f $tmpInside | Out-Null
   if ($code -ne 0) { throw "docker exec pg_restore failed with exit code $code" }
 }
-elseif ($pgRestoreCmd) {
-  $env:PGPASSWORD = $env:POSTGRES_ADMIN_PASSWORD
-  $pgHost = if ($env:POSTGRES_HOST) { $env:POSTGRES_HOST } else { "127.0.0.1" }
-  $pgPort = if ($env:POSTGRES_PORT) { $env:POSTGRES_PORT } else { "5432" }
-  & pg_restore -h $pgHost -p $pgPort -U $AdminUser -d $TargetDb --clean --if-exists --no-owner --no-acl $BackupFile
+elseif ($pgRestoreExe) {
+  $connUrl = if ($env:DATABASE_ADMIN_URL) { $env:DATABASE_ADMIN_URL } else { $env:DATABASE_URL }
+  if ($connUrl -and -not $env:POSTGRES_ADMIN_PASSWORD) {
+    $uri = [System.UriBuilder]$connUrl
+    $uri.Path = "/$TargetDb"
+    & $pgRestoreExe -d $uri.Uri.AbsoluteUri --clean --if-exists --no-owner --no-acl $BackupFile
+  } else {
+    $env:PGPASSWORD = $env:POSTGRES_ADMIN_PASSWORD
+    $pgHost = if ($env:POSTGRES_HOST) { $env:POSTGRES_HOST } else { "127.0.0.1" }
+    $pgPort = if ($env:POSTGRES_PORT) { $env:POSTGRES_PORT } else { "5432" }
+    & $pgRestoreExe -h $pgHost -p $pgPort -U $AdminUser -d $TargetDb --clean --if-exists --no-owner --no-acl $BackupFile
+  }
   if ($LASTEXITCODE -ne 0) { throw "pg_restore failed with exit code $LASTEXITCODE" }
 }
 else {
-  throw "Neither running Docker container '$ContainerName' nor local 'pg_restore' was found."
+  throw "Neither running Docker container '$ContainerName' nor local 'pg_restore' (PATH or C:\Program Files\PostgreSQL\<ver>\bin) was found."
 }
 
 Write-Host "[Viewora Restore] Completed restore into '$TargetDb'."

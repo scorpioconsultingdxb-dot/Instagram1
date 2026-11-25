@@ -202,7 +202,7 @@ export async function registerUserWithWorkspace(
           accountStatus: 'active',
           segment: input.segment,
           preferredLocale: input.preferredLocale,
-          onboardingCompleted: true,
+          onboardingCompleted: false,
           emailPreferences: input.emailPreferences as unknown as Prisma.InputJsonValue,
         },
       });

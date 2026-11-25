@@ -20,8 +20,10 @@
     "db:migrate:deploy": "node scripts/db/env-loader.mjs admin npx prisma migrate deploy",
     "db:seed": "node scripts/db/env-loader.mjs admin npx tsx prisma/seed.ts",
     "db:studio": "node scripts/db/env-loader.mjs runtime npx prisma studio --hostname 127.0.0.1 --port 5555",
+    "env:check": "node scripts/db/check-env.mjs",
     "db:health": "node scripts/db/env-loader.mjs runtime node scripts/db/db-health.mjs",
     "db:create-admin": "node scripts/db/env-loader.mjs admin npx tsx scripts/db/create-admin.ts",
+    "db:bootstrap-admin": "node scripts/db/env-loader.mjs admin npx tsx scripts/db/create-admin.ts",
     "db:backup": "node scripts/db/env-loader.mjs backup",
     "db:restore": "node scripts/db/env-loader.mjs restore"
   },

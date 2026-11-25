@@ -22,6 +22,18 @@ Write-Host "[Viewora Backup] Starting PostgreSQL backup for database '$DatabaseN
 
 $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
 $pgDumpCmd = Get-Command pg_dump -ErrorAction SilentlyContinue
+$pgDumpExe = if ($pgDumpCmd) { $pgDumpCmd.Source } else { $null }
+
+if (-not $pgDumpExe) {
+  foreach ($ver in @("17", "16", "15", "14", "13")) {
+    $candidate = "C:\Program Files\PostgreSQL\$ver\bin\pg_dump.exe"
+    if (Test-Path $candidate) {
+      $pgDumpExe = $candidate
+      break
+    }
+  }
+}
+
 $dockerRunning = $false
 
 if ($dockerCmd) {
@@ -39,20 +51,20 @@ if ($dockerRunning) {
   & docker cp "${ContainerName}:${tmpInside}" $outFile
   & docker exec $ContainerName rm -f $tmpInside | Out-Null
 }
-elseif ($pgDumpCmd) {
+elseif ($pgDumpExe) {
   $connUrl = if ($env:DATABASE_ADMIN_URL) { $env:DATABASE_ADMIN_URL } else { $env:DATABASE_URL }
   if ($connUrl) {
-    & pg_dump $connUrl -Fc --no-owner --no-acl -f $outFile
+    & $pgDumpExe $connUrl -Fc --no-owner --no-acl -f $outFile
   } else {
     $env:PGPASSWORD = $env:POSTGRES_ADMIN_PASSWORD
     $pgHost = if ($env:POSTGRES_HOST) { $env:POSTGRES_HOST } else { "127.0.0.1" }
     $pgPort = if ($env:POSTGRES_PORT) { $env:POSTGRES_PORT } else { "5432" }
-    & pg_dump -h $pgHost -p $pgPort -U $AdminUser -d $DatabaseName -Fc --no-owner --no-acl -f $outFile
+    & $pgDumpExe -h $pgHost -p $pgPort -U $AdminUser -d $DatabaseName -Fc --no-owner --no-acl -f $outFile
   }
   if ($LASTEXITCODE -ne 0) { throw "pg_dump failed with exit code $LASTEXITCODE" }
 }
 else {
-  throw "Neither running Docker container '$ContainerName' nor local 'pg_dump' was found."
+  throw "Neither running Docker container '$ContainerName' nor local 'pg_dump' (PATH or C:\Program Files\PostgreSQL\<ver>\bin) was found."
 }
 
 if (-not (Test-Path $outFile) -or (Get-Item $outFile).Length -eq 0) {

@@ -21,9 +21,9 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
     }
 
-    const ownTickets = (await loadSupportTickets()).filter(
-      (t) => t.email.toLowerCase() === user.email.toLowerCase()
-    );
+    const ownTickets = (
+      await loadSupportTickets({ userId: user.id, role: 'user' })
+    ).filter((t) => t.email.toLowerCase() === user.email.toLowerCase());
 
     return NextResponse.json({ ok: true, tickets: ownTickets });
   } catch {

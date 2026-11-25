@@ -1,3 +1,8 @@
+import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
+import {
+  readDbUserModuleState,
+  updateDbUserModuleState,
+} from '@/lib/db/repositories/user-module-state.repo';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 import { sanitizeCsvFormulaCell } from '@/lib/reports/export';
 import type { SavedProfileRecord } from '@/lib/dashboard/store';
@@ -64,6 +69,57 @@ export function deleteUserReport(userId: string, reportId: string): CustomReport
     }
   );
   return nextList;
+}
+
+export async function loadUserReports(userId: string): Promise<CustomReportDocument[]> {
+  if (isDatabaseConfigured()) {
+    return readDbUserModuleState<CustomReportDocument[]>(userId, 'customReports', () => []);
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return listUserReports(userId);
+}
+
+export async function persistUserReport(
+  userId: string,
+  doc: CustomReportDocument
+): Promise<CustomReportDocument[]> {
+  if (isDatabaseConfigured()) {
+    return updateDbUserModuleState<CustomReportDocument[]>(
+      userId,
+      'customReports',
+      () => [],
+      (existing) => {
+        const idx = existing.findIndex((r) => r.id === doc.id);
+        return idx >= 0
+          ? existing.map((r) => (r.id === doc.id ? doc : r))
+          : [doc, ...existing].slice(0, 60);
+      }
+    );
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return saveUserReport(userId, doc);
+}
+
+export async function removeUserReport(
+  userId: string,
+  reportId: string
+): Promise<CustomReportDocument[]> {
+  if (isDatabaseConfigured()) {
+    return updateDbUserModuleState<CustomReportDocument[]>(
+      userId,
+      'customReports',
+      () => [],
+      (existing) => existing.filter((r) => r.id !== reportId)
+    );
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return deleteUserReport(userId, reportId);
 }
 
 export function buildReportMarkdown(

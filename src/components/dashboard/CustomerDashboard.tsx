@@ -137,26 +137,14 @@ export function CustomerDashboard({
     analyticsPreview: profilePrefs.widgetVisibility?.analyticsPreview ?? true,
   });
 
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem('viewora_dash_widgets');
-      if (saved) {
-        const parsed = JSON.parse(saved) as Partial<typeof widgetVisibility>;
-        setWidgetVisibility((prev) => ({ ...prev, ...parsed }));
-      }
-    } catch {
-      // ignore storage errors
-    }
-  }, []);
-
   const toggleWidget = (key: keyof typeof widgetVisibility) => {
     setWidgetVisibility((prev) => {
       const next = { ...prev, [key]: !prev[key] };
-      try {
-        window.localStorage.setItem('viewora_dash_widgets', JSON.stringify(next));
-      } catch {
-        // ignore storage errors
-      }
+      void fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ widgetVisibility: next }),
+      }).catch(() => undefined);
       return next;
     });
   };

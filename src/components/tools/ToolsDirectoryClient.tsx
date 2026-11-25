@@ -28,6 +28,7 @@ export function ToolsDirectoryClient({
   const dict = providedDict ?? getDictionary(locale);
   const t = dict.tools;
   const [category, setCategory] = useState<'All' | ToolDefinition['category']>('All');
+  const [modeFilter, setModeFilter] = useState<'all' | ToolDefinition['mode']>('all');
   const [query, setQuery] = useState('');
 
   const categoryLabel = (cat: 'All' | ToolDefinition['category']) => {
@@ -61,6 +62,7 @@ export function ToolsDirectoryClient({
     const q = query.trim().toLowerCase();
     return FREE_TOOLS.filter((tool) => {
       if (category !== 'All' && tool.category !== category) return false;
+      if (modeFilter !== 'all' && tool.mode !== modeFilter) return false;
       if (!q) return true;
       const localizedCat = categoryLabel(tool.category).toLowerCase();
       return (
@@ -71,7 +73,7 @@ export function ToolsDirectoryClient({
       );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, query, locale]);
+  }, [category, modeFilter, query, locale]);
 
   return (
     <div className="space-y-6">
@@ -115,6 +117,37 @@ export function ToolsDirectoryClient({
         </label>
       </div>
 
+      {/* Mode Filter & Live Count Strip */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(
+            [
+              { id: 'all', label: 'All modes' },
+              { id: 'functional_calculator', label: t.modeCalculator },
+              { id: 'public_provider_lookup', label: t.modeProvider },
+              { id: 'authorized_status_check', label: t.modeStatusCheck },
+            ] as const
+          ).map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              aria-pressed={modeFilter === m.id}
+              onClick={() => setModeFilter(m.id)}
+              className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                modeFilter === m.id
+                  ? 'bg-violet-100 text-[#6941EF] ring-1 ring-[#7957FF]/40 dark:bg-[#192337] dark:text-[#A99AFF]'
+                  : 'border border-slate-200 bg-white text-[#64748B] hover:border-[#7957FF]/40 dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#94A3B8]'
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <span className="font-mono text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+          Showing {filtered.length} of {FREE_TOOLS.length} tools
+        </span>
+      </div>
+
       {filtered.length === 0 ? (
         <EmptyState
           title={t.emptyTitle}
@@ -122,6 +155,7 @@ export function ToolsDirectoryClient({
           actionLabel={t.resetFilters}
           onAction={() => {
             setCategory('All');
+            setModeFilter('all');
             setQuery('');
           }}
         />

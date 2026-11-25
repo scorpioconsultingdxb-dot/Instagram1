@@ -121,6 +121,9 @@ export function ToolPageView({
             <ModeIcon className="h-3 w-3 text-[#22D3EE]" aria-hidden="true" />
             {modeBadge.label}
           </span>
+          <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-[#34D399]">
+            Free · Zero Sign-Up Required
+          </span>
         </div>
         <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-[#0F172A] sm:text-4xl dark:text-[#F8FAFC]">
           {tool.name}
@@ -128,6 +131,36 @@ export function ToolPageView({
         <p className="mt-2 max-w-3xl text-base leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
           {tool.shortDescription}
         </p>
+        <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200/80 bg-white/80 px-3.5 py-2.5 text-xs dark:border-[#263047] dark:bg-[#131C2E]">
+            <span className="block text-[10px] font-bold tracking-wider text-[#64748B] uppercase dark:text-[#94A3B8]">
+              Data Provenance
+            </span>
+            <span className="mt-0.5 block font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+              {tool.mode === 'functional_calculator'
+                ? 'Deterministic formula on your inputs'
+                : tool.mode === 'authorized_status_check'
+                  ? 'Honest authorized availability check'
+                  : 'Authorized public provider or labeled demo'}
+            </span>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white/80 px-3.5 py-2.5 text-xs dark:border-[#263047] dark:bg-[#131C2E]">
+            <span className="block text-[10px] font-bold tracking-wider text-[#64748B] uppercase dark:text-[#94A3B8]">
+              Privacy Boundary
+            </span>
+            <span className="mt-0.5 block font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+              No Instagram password · Public only
+            </span>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white/80 px-3.5 py-2.5 text-xs dark:border-[#263047] dark:bg-[#131C2E]">
+            <span className="block text-[10px] font-bold tracking-wider text-[#64748B] uppercase dark:text-[#94A3B8]">
+              Next Step
+            </span>
+            <span className="mt-0.5 block font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+              Save results &amp; trends in your Workspace
+            </span>
+          </div>
+        </div>
       </header>
 
       <section className="viewora-card-elevated mt-8 rounded-3xl p-5 sm:p-7">

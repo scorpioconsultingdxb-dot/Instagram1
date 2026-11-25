@@ -45,8 +45,18 @@ export function SiteFooter({
                 </Link>
               </li>
               <li>
+                <Link href={`/${locale}/resources`} className="hover:text-[#6941EF] dark:hover:text-[#A99AFF]">
+                  Resource Center
+                </Link>
+              </li>
+              <li>
+                <Link href={`/${locale}/glossary`} className="hover:text-[#6941EF] dark:hover:text-[#A99AFF]">
+                  Analytics Glossary
+                </Link>
+              </li>
+              <li>
                 <Link href={`/${locale}/blog`} className="hover:text-[#6941EF] dark:hover:text-[#A99AFF]">
-                  Resources &amp; Guides
+                  Guides &amp; Articles
                 </Link>
               </li>
             </ul>

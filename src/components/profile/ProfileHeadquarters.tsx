@@ -11,6 +11,7 @@ import {
   CreditCard,
   Download,
   FileText,
+  FolderKanban,
   Globe,
   KeyRound,
   LayoutDashboard,
@@ -37,6 +38,7 @@ import { AccountSecurityPanel, InlineAccountDeletionCard } from './AccountSecuri
 type ProfileTab =
   | 'overview'
   | 'workspace'
+  | 'research'
   | 'reports'
   | 'membership'
   | 'personalization'
@@ -305,10 +307,11 @@ export function ProfileHeadquarters({
 
   const tabs: Array<{ id: ProfileTab; label: string; icon: typeof User }> = [
     { id: 'overview', label: tp.tabOverview, icon: LayoutDashboard },
-    { id: 'personalization', label: tp.tabPersonalization, icon: Palette },
     { id: 'workspace', label: tp.tabWorkspace, icon: Building2 },
+    { id: 'research', label: 'My Research', icon: FolderKanban },
     { id: 'reports', label: tp.tabReports, icon: FileText },
     { id: 'membership', label: tp.tabMembership, icon: CreditCard },
+    { id: 'personalization', label: tp.tabPersonalization, icon: Palette },
     { id: 'notifications', label: tp.tabNotifications, icon: Bell },
     { id: 'security', label: tp.tabSecurity, icon: KeyRound },
     { id: 'privacy', label: tp.tabPrivacy, icon: Shield },
@@ -350,6 +353,18 @@ export function ProfileHeadquarters({
                     {fullName}
                   </h1>
                   <MembershipBadge planCode={user.planCode} />
+                  <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold capitalize text-[#0F172A] dark:border-[#263047] dark:bg-[#192337] dark:text-slate-200">
+                    {user.segment}
+                  </span>
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                      user.emailVerified
+                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-[#34D399]'
+                        : 'bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                    }`}
+                  >
+                    {user.emailVerified ? 'Email Verified' : 'Verification Pending'}
+                  </span>
                 </div>
                 <p className="mt-0.5 text-sm font-medium text-[#64748B] dark:text-[#94A3B8]">
                   {title} · {organization}
@@ -893,6 +908,83 @@ export function ProfileHeadquarters({
           </div>
         ) : null}
 
+        {activeTab === 'research' ? (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                  My Private Research Library
+                </h2>
+                <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
+                  Genuine customer-owned research artifacts scoped strictly to your account. Private
+                  notes are never visible to administrators or other workspaces.
+                </p>
+              </div>
+              <Link
+                href={`/${locale}/dashboard/profiles`}
+                className="viewora-btn-primary rounded-xl px-4 py-2 text-xs font-semibold"
+              >
+                Manage Saved Profiles
+              </Link>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                <span className="text-[#64748B]">Saved Profiles</span>
+                <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-[#0F172A] dark:text-white">
+                  {usageStats.savedProfilesCount}
+                </p>
+                <p className="mt-1 text-[11px] text-[#64748B]">Quota: {trackedLimit}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                <span className="text-[#64748B]">Research Folders</span>
+                <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-[#0F172A] dark:text-white">
+                  {usageStats.foldersCount}
+                </p>
+                <p className="mt-1 text-[11px] text-[#64748B]">Color-coded collections</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                <span className="text-[#64748B]">Private Notes</span>
+                <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-[#0F172A] dark:text-white">
+                  {usageStats.notesCount}
+                </p>
+                <p className="mt-1 text-[11px] text-[#64748B]">Strict owner-only RLS</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                <span className="text-[#64748B]">Comparison Projects</span>
+                <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-[#0F172A] dark:text-white">
+                  {usageStats.comparisonsCount}
+                </p>
+                <p className="mt-1 text-[11px] text-[#64748B]">Sortable benchmarks + CSV</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3 text-xs">
+              <Link
+                href={`/${locale}/dashboard/competitors`}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
+              >
+                Open Competitor Comparison Studio
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+              <Link
+                href={`/${locale}/dashboard/analytics`}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
+              >
+                Open Analytics Intelligence Center
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+              <Link
+                href={`/${locale}/dashboard/activity`}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
+              >
+                Open Research Timeline
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
         {activeTab === 'reports' ? (
           <div className="space-y-4">
             <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
@@ -949,17 +1041,56 @@ export function ProfileHeadquarters({
                 <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-[#0F172A] dark:text-white">
                   {usageStats.savedProfilesCount} / {trackedLimit}
                 </p>
+                {typeof entitlements.rules.tracked_profiles.numericLimit === 'number' &&
+                entitlements.rules.tracked_profiles.numericLimit > 0 ? (
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-[#192337]">
+                    <div
+                      className="h-full rounded-full bg-[#7957FF]"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            (usageStats.savedProfilesCount /
+                              entitlements.rules.tracked_profiles.numericLimit) *
+                              100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                ) : null}
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
                 <span className="text-[#64748B]">Monthly AI Reports</span>
                 <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-[#0F172A] dark:text-white">
                   {usageStats.reportsCount} / {aiLimit}
                 </p>
+                {typeof entitlements.rules.ai_profile_reports.numericLimit === 'number' &&
+                entitlements.rules.ai_profile_reports.numericLimit > 0 ? (
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-[#192337]">
+                    <div
+                      className="h-full rounded-full bg-[#22D3EE]"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            (usageStats.reportsCount /
+                              entitlements.rules.ai_profile_reports.numericLimit) *
+                              100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                ) : null}
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
                 <span className="text-[#64748B]">Historical Lookback</span>
                 <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-[#0F172A] dark:text-white">
                   {historyDaysLimit === '∞' ? 'Unlimited' : `${historyDaysLimit} days`}
+                </p>
+                <p className="mt-1.5 text-[11px] text-[#64748B]">
+                  Workspaces: {workspacesLimit} · Seats: {seatsLimit}
                 </p>
               </div>
             </div>

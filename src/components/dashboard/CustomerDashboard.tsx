@@ -22,11 +22,12 @@ import {
   Search,
   Settings,
   Shield,
+  SlidersHorizontal,
   Sparkles,
   User,
   Users,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/types';
 import type { SessionUser } from '@/lib/auth/session';
@@ -110,6 +111,37 @@ export function CustomerDashboard({
   );
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [showAddWorkspace, setShowAddWorkspace] = useState(false);
+  const [showWidgetConfig, setShowWidgetConfig] = useState(false);
+  const [widgetVisibility, setWidgetVisibility] = useState({
+    kpis: true,
+    quickActions: true,
+    shortcuts: true,
+    analyticsPreview: true,
+  });
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('viewora_dash_widgets');
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<typeof widgetVisibility>;
+        setWidgetVisibility((prev) => ({ ...prev, ...parsed }));
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  const toggleWidget = (key: keyof typeof widgetVisibility) => {
+    setWidgetVisibility((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        window.localStorage.setItem('viewora_dash_widgets', JSON.stringify(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
 
   const effectiveProfiles: SavedProfileRecord[] = useMemo(() => {
     if (demoPreviewMode && workspace.savedProfiles.length === 0) {
@@ -610,6 +642,95 @@ export function CustomerDashboard({
           {/* TAB VIEWS */}
           {activeTab === 'overview' ? (
             <div className="space-y-5">
+              {/* Configurable Widget Layout & Quick Actions Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {widgetVisibility.quickActions ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('profiles')}
+                        className="viewora-btn-primary inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-semibold"
+                      >
+                        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                        Save Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('competitors')}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200"
+                      >
+                        <GitCompare className="h-3.5 w-3.5 text-[#6941EF] dark:text-[#A99AFF]" aria-hidden="true" />
+                        Compare Peers
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('ai')}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200"
+                      >
+                        <Sparkles className="h-3.5 w-3.5 text-[#22D3EE]" aria-hidden="true" />
+                        AI Studio
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  aria-expanded={showWidgetConfig}
+                  onClick={() => setShowWidgetConfig((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#64748B] hover:border-[#7957FF] hover:text-[#0F172A] dark:border-[#263047] dark:bg-[#131C2E] dark:text-[#94A3B8] dark:hover:text-white"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+                  Customize Layout
+                </button>
+              </div>
+
+              {showWidgetConfig ? (
+                <div className="viewora-card flex flex-wrap items-center gap-4 rounded-2xl p-4 text-xs">
+                  <span className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                    Overview Widgets:
+                  </span>
+                  {(
+                    [
+                      ['kpis', 'Usage & Quota KPIs'],
+                      ['quickActions', 'Quick Actions Bar'],
+                      ['shortcuts', 'Personal Shortcuts'],
+                      ['analyticsPreview', 'Active Profile Snapshot'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label
+                      key={key}
+                      className="inline-flex items-center gap-1.5 text-[#0F172A] dark:text-slate-200"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={widgetVisibility[key]}
+                        onChange={() => toggleWidget(key)}
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+
+              {widgetVisibility.shortcuts && profilePrefs.personalShortcuts.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-semibold text-[#64748B] dark:text-[#94A3B8]">
+                    Shortcuts:
+                  </span>
+                  {profilePrefs.personalShortcuts.map((sc) => (
+                    <Link
+                      key={sc.id}
+                      href={`/${locale}${sc.href}`}
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0F172A] transition hover:border-[#7957FF] hover:text-[#6941EF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200 dark:hover:text-[#A99AFF]"
+                    >
+                      {sc.label} →
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+
+              {widgetVisibility.kpis ? (
               <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
                 <MetricCard
                   label="Saved Profiles"
@@ -640,6 +761,7 @@ export function CustomerDashboard({
                   hint={`${seatsLimitLabel} seat${seatsLimitLabel === '1' ? '' : 's'} · ${workspace.settings.activeWorkspace}`}
                 />
               </div>
+              ) : null}
 
               {selectedEntry ? (
                 <div className="viewora-card rounded-2xl p-6">

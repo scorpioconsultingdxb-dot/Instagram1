@@ -15,6 +15,7 @@ import { getAllInfoPageSlugs, getInfoPageBySlug } from '@/lib/public/info-pages'
 import { getPublishedCmsBySlug } from '@/lib/admin/store';
 import { ToolPageView } from '@/components/tools/ToolPageView';
 import { ContactForm } from '@/components/public/ContactForm';
+import { Breadcrumbs } from '@/components/ui/Primitives';
 
 export function generateStaticParams() {
   const slugs = [...getAllToolSlugs(), ...getAllInfoPageSlugs()];
@@ -86,8 +87,50 @@ export default async function PublicSlugPage({
 
   const publishedCms = getPublishedCmsBySlug(info.slug, safeLocale);
 
+  const structuredData =
+    info.slug === 'faq'
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'FAQPage',
+          mainEntity: info.sections.map((s) => ({
+            '@type': 'Question',
+            name: s.heading,
+            acceptedAnswer: { '@type': 'Answer', text: s.body },
+          })),
+        }
+      : info.slug === 'glossary'
+        ? {
+            '@context': 'https://schema.org',
+            '@type': 'DefinedTermSet',
+            name: info.title,
+            description: info.description,
+            hasDefinedTerm: info.sections.map((s) => ({
+              '@type': 'DefinedTerm',
+              name: s.heading,
+              description: s.body,
+            })),
+          }
+        : {
+            '@context': 'https://schema.org',
+            '@type': 'WebPage',
+            name: info.title,
+            description: info.description,
+          };
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <div className="mb-5">
+        <Breadcrumbs
+          items={[
+            { label: dict.nav.home, href: `/${safeLocale}` },
+            { label: info.title },
+          ]}
+        />
+      </div>
       <span className="inline-block rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-[#7957FF] dark:bg-violet-950 dark:text-[#A99AFF]">
         {info.badge}
       </span>

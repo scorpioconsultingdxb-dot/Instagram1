@@ -34,6 +34,20 @@ export function PricingExperience({
   const [interval, setInterval] = useState<BillingInterval>('annual');
   const [selectedNotice, setSelectedNotice] = useState<string | null>(null);
   const [submittingCode, setSubmittingCode] = useState<string | null>(null);
+  const [assistantProfiles, setAssistantProfiles] = useState<'1' | '5' | '15' | '50'>('5');
+  const [assistantNeedsExports, setAssistantNeedsExports] = useState(false);
+  const [assistantNeedsAgency, setAssistantNeedsAgency] = useState(false);
+
+  const recommendedPlanCode: PlanCode = assistantNeedsAgency
+    ? 'agency'
+    : assistantProfiles === '50'
+      ? 'agency'
+      : assistantProfiles === '15' || assistantNeedsExports
+        ? 'pro'
+        : assistantProfiles === '5'
+          ? 'premium'
+          : 'free';
+  const recommendedPlan = plans.find((p) => p.code === recommendedPlanCode) ?? plans[0];
 
   const samplePaidPlan = plans.find((p) => p.monthlyPriceCents > 0);
   const quarterlyDiscount =
@@ -299,6 +313,81 @@ export function PricingExperience({
           );
         })}
       </div>
+
+      {/* Interactive Plan Recommendation Assistant (Honest, Zero Dark Patterns) */}
+      <section className="viewora-card rounded-3xl p-5 sm:p-6">
+        <div className="grid items-center gap-5 lg:grid-cols-12">
+          <div className="space-y-3 lg:col-span-8">
+            <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+              Plan Comparison Assistant — Find your genuine fit
+            </h2>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-semibold text-[#64748B] dark:text-[#94A3B8]">
+                Profiles tracked:
+              </span>
+              {(
+                [
+                  ['1', '1–2 profiles'],
+                  ['5', '3–5 profiles'],
+                  ['15', '6–15 profiles'],
+                  ['50', '16+ / multi-client'],
+                ] as const
+              ).map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  aria-pressed={assistantProfiles === val}
+                  onClick={() => setAssistantProfiles(val)}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
+                    assistantProfiles === val
+                      ? 'bg-[#7957FF] text-white'
+                      : 'border border-slate-200 bg-white text-[#64748B] hover:border-[#7957FF]/40 dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#94A3B8]'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-4 text-xs text-[#0F172A] dark:text-slate-300">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={assistantNeedsExports}
+                  onChange={(e) => setAssistantNeedsExports(e.target.checked)}
+                />
+                <span>Need structured CSV &amp; PDF exports</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={assistantNeedsAgency}
+                  onChange={(e) => setAssistantNeedsAgency(e.target.checked)}
+                />
+                <span>Need multi-client agency workspaces &amp; team seats</span>
+              </label>
+            </div>
+          </div>
+
+          {recommendedPlan ? (
+            <div className="rounded-2xl border border-[#7957FF]/40 bg-violet-50/50 p-4 lg:col-span-4 dark:bg-[#192337]">
+              <span className="text-[10px] font-bold tracking-wider text-[#6941EF] uppercase dark:text-[#A99AFF]">
+                Best Matching Tier
+              </span>
+              <div className="mt-1 flex items-baseline justify-between gap-2">
+                <p className="font-display text-lg font-extrabold text-[#0F172A] dark:text-white">
+                  {recommendedPlan.name}
+                </p>
+                <p className="font-display text-base font-extrabold tabular-nums text-[#6941EF] dark:text-[#22D3EE]">
+                  {calculateIntervalPrice(recommendedPlan, interval).formattedMonthly}/mo
+                </p>
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
+                {recommendedPlan.description}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </section>
 
       {/* Authoritative Centralized Entitlement Comparison Table */}
       <section className="viewora-card overflow-hidden rounded-3xl">

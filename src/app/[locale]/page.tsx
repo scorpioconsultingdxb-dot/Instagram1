@@ -3,11 +3,13 @@ import Link from 'next/link';
 import {
   ArrowRight,
   BarChart3,
+  BookOpen,
   Building2,
   CheckCircle2,
   Crown,
   GitCompare,
   Layers,
+  LayoutDashboard,
   ShieldCheck,
   Sparkles,
   User,
@@ -25,6 +27,7 @@ import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';
 import { MembershipBadge } from '@/components/ui/Primitives';
 import { ProfileSearchExperience } from '@/components/search/ProfileSearchExperience';
 import { WorkspaceAnalyticsPreview } from '@/components/home/WorkspaceAnalyticsPreview';
+import { HomeFaqAccordion, type FaqItem } from '@/components/home/HomeFaqAccordion';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,8 +60,55 @@ export default async function HomePage({
   const sampleHandles = getDemoFixtureUsernames();
   const plans = (await loadConfiguredPlans()).filter((p) => p.isActive);
 
+  const faqItems: FaqItem[] = [
+    {
+      question: 'Do I need to enter my Instagram password?',
+      answer:
+        'Never. Viewora never requests Instagram passwords or session cookies. Connecting your own professional account uses official Meta OAuth.',
+    },
+    {
+      question: 'Can Viewora view private Instagram accounts?',
+      answer:
+        'No. We strictly respect Instagram privacy settings and never access or bypass private accounts.',
+    },
+    {
+      question: 'How are live data, estimates, and demos distinguished?',
+      answer:
+        'Every result card, chart, and export is stamped with an explicit provenance badge (LIVE, CACHED, ESTIMATED, DEMO, or UNAVAILABLE) and source timestamp.',
+    },
+    {
+      question: 'Are subscription payments enabled right now?',
+      answer:
+        'No. All five tiers are shown for transparent commercial preview while server-side payments remain strictly disabled (PAYMENTS_ENABLED=false).',
+    },
+    {
+      question: 'Can I organize research notes privately inside my own workspace?',
+      answer:
+        'Yes. Registered customers get a private Personal Digital Headquarters and persistent workspaces with research folders, tags, comparisons, and private notes protected by PostgreSQL Row-Level Security.',
+    },
+    {
+      question: 'Which free tools work immediately without an external API key?',
+      answer:
+        'All deterministic calculators—including Engagement Rate, Follower Growth Velocity, Bio Readiness, Hashtag Reach, Caption/Reel Planning, and Account Value Estimators—work immediately with manually supplied numbers.',
+    },
+  ];
+
+  const faqJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqItems.map((item) => ({
+      '@type': 'Question',
+      name: item.question,
+      acceptedAnswer: { '@type': 'Answer', text: item.answer },
+    })),
+  };
+
   return (
     <div className="viewora-hero-glow">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
       <div className="mx-auto max-w-7xl px-4 pt-10 pb-20 sm:px-6 lg:px-8">
         {/* HERO — Immediate Above-the-Fold Profile Search */}
         <section className="mx-auto max-w-4xl text-center">
@@ -471,38 +521,149 @@ export default async function HomePage({
           </div>
         </section>
 
-        {/* Honest FAQ */}
-        <section className="mt-16">
-          <h2 className="font-display text-2xl font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
-            Frequently Asked Questions
-          </h2>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {[
-              [
-                'Do I need to enter my Instagram password?',
-                'Never. Viewora never requests Instagram passwords or session cookies. Connecting your own professional account uses official Meta OAuth.',
-              ],
-              [
-                'Can Viewora view private Instagram accounts?',
-                'No. We strictly respect Instagram privacy settings and never access or bypass private accounts.',
-              ],
-              [
-                'How are live data, estimates, and demos distinguished?',
-                'Every result card, chart, and export is stamped with an explicit provenance badge (LIVE, CACHED, ESTIMATED, DEMO, or UNAVAILABLE) and source timestamp.',
-              ],
-              [
-                'Are subscription payments enabled right now?',
-                'No. All plans are shown for demonstration only while server-side payments remain strictly disabled (PAYMENTS_ENABLED=false).',
-              ],
-            ].map(([q, a]) => (
-              <div key={q} className="viewora-card rounded-2xl p-5">
-                <h3 className="text-sm font-bold text-[#0F172A] dark:text-[#F8FAFC]">{q}</h3>
-                <p className="mt-1.5 text-xs leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
-                  {a}
-                </p>
+        {/* Personal Dashboard & Digital HQ Preview */}
+        <section className="viewora-card mt-16 overflow-hidden rounded-3xl p-6 sm:p-8">
+          <div className="grid items-center gap-6 lg:grid-cols-12">
+            <div className="lg:col-span-7">
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-wider text-[#6941EF] uppercase dark:text-[#A99AFF]">
+                <LayoutDashboard className="h-3.5 w-3.5" aria-hidden="true" />
+                Personal Digital Headquarters · Explore More. Discover More.
+              </span>
+              <h2 className="mt-2 font-display text-2xl font-extrabold text-[#0F172A] sm:text-3xl dark:text-[#F8FAFC]">
+                Your private social intelligence workspace, customized to your workflow
+              </h2>
+              <p className="mt-2.5 text-sm leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
+                Configure custom covers, accessible accent themes, research folders, private notes,
+                editable competitor comparison matrices, and revocable multi-device sessions—all
+                backed by independent PostgreSQL persistence.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link
+                  href={`/${safeLocale}/register`}
+                  className="viewora-btn-primary inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-xs font-semibold"
+                >
+                  Create Free Workspace
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+                <Link
+                  href={`/${safeLocale}/dashboard`}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-[#0F172A] transition hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#F8FAFC]"
+                >
+                  Open Dashboard
+                </Link>
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 lg:col-span-5">
+              {[
+                { label: 'Research Folders', value: 'Private & Tagged', hint: 'Account-scoped RLS isolation' },
+                { label: 'Comparison Matrix', value: 'Sortable + CSV', hint: 'Side-by-side engagement deltas' },
+                { label: 'AI Studio Briefs', value: '7 Structured Types', hint: 'Template & provenance stamped' },
+                { label: 'Account Controls', value: 'GDPR / LGPD / PDPL', hint: 'JSON export & instant deletion' },
+              ].map((stat) => (
+                <div
+                  key={stat.label}
+                  className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-[#263047] dark:bg-[#0F172A]"
+                >
+                  <p className="text-[11px] font-semibold text-[#64748B] dark:text-[#94A3B8]">
+                    {stat.label}
+                  </p>
+                  <p className="mt-1 font-display text-sm font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
+                    {stat.value}
+                  </p>
+                  <p className="mt-1 text-[11px] text-[#64748B] dark:text-[#94A3B8]">{stat.hint}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Educational Guides & Resource Center Preview */}
+        <section className="mt-16">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 text-xs font-bold tracking-wider text-[#0891B2] uppercase dark:text-[#22D3EE]">
+                <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                Educational Intelligence Center
+              </div>
+              <h2 className="mt-1 font-display text-2xl font-extrabold text-[#0F172A] sm:text-3xl dark:text-[#F8FAFC]">
+                Transparent benchmarks, formulas &amp; methodology guides
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-3 text-xs font-semibold">
+              <Link
+                href={`/${safeLocale}/resources`}
+                className="text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+              >
+                Resource Center →
+              </Link>
+              <Link
+                href={`/${safeLocale}/glossary`}
+                className="text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+              >
+                Analytics Glossary →
+              </Link>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            {[
+              {
+                badge: 'Methodology',
+                title: 'Engagement Rate by Reach vs. Followers (ERF vs. ERR)',
+                desc: 'Learn when public follower benchmarks work, when reach-based rates matter, and why saves and shares predict organic distribution.',
+                href: `/${safeLocale}/blog`,
+              },
+              {
+                badge: 'Platform Policy',
+                title: 'Official Meta Business Discovery: Capabilities & Limits',
+                desc: 'Understand exactly what public Business and Creator metadata is accessible via Meta APIs—and why private profiles stay protected.',
+                href: `/${safeLocale}/data-transparency`,
+              },
+              {
+                badge: 'Glossary',
+                title: 'Social Intelligence & Provenance Glossary',
+                desc: 'Clear definitions for Engagement Velocity, Posting Cadence, Creator Tiers, Provenance Badges, and Row-Level Security.',
+                href: `/${safeLocale}/glossary`,
+              },
+            ].map((guide) => (
+              <Link
+                key={guide.title}
+                href={guide.href}
+                className="viewora-card group flex flex-col justify-between rounded-2xl p-5 transition hover:-translate-y-0.5 hover:border-[#7957FF]/60"
+              >
+                <div>
+                  <span className="inline-block rounded-md bg-violet-50 px-2 py-0.5 text-[10px] font-bold tracking-wide text-[#6941EF] uppercase dark:bg-violet-950/60 dark:text-[#A99AFF]">
+                    {guide.badge}
+                  </span>
+                  <h3 className="mt-3 font-display text-base font-bold text-[#0F172A] group-hover:text-[#6941EF] dark:text-[#F8FAFC] dark:group-hover:text-[#A99AFF]">
+                    {guide.title}
+                  </h3>
+                  <p className="mt-2 text-xs leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
+                    {guide.desc}
+                  </p>
+                </div>
+                <span className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#6941EF] dark:text-[#A99AFF]">
+                  Read guide
+                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                </span>
+              </Link>
             ))}
           </div>
+        </section>
+
+        {/* Honest Interactive FAQ Accordion */}
+        <section className="mt-16">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <h2 className="font-display text-2xl font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
+              Frequently Asked Questions
+            </h2>
+            <Link
+              href={`/${safeLocale}/faq`}
+              className="text-xs font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+            >
+              View full Help Center →
+            </Link>
+          </div>
+          <HomeFaqAccordion items={faqItems} />
         </section>
 
         {/* Final Conversion Banner */}

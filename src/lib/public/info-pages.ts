@@ -3,6 +3,8 @@ export type InfoPageSlug =
   | 'contact'
   | 'faq'
   | 'blog'
+  | 'resources'
+  | 'glossary'
   | 'privacy'
   | 'terms'
   | 'cookies'
@@ -96,6 +98,56 @@ export const PUBLIC_INFO_PAGES: Record<InfoPageSlug, InfoPageDefinition> = {
       {
         heading: '4. Privacy-First Analytics: Why Provenance Matters',
         body: 'Trustworthy analytics platforms clearly separate live API measurements, cached licensed snapshots, mathematical estimates, and demo fixtures so teams never make budget decisions on fabricated numbers.',
+      },
+    ],
+  },
+  resources: {
+    slug: 'resources',
+    title: 'Viewora Resource Center',
+    description:
+      'Actionable playbooks, deterministic calculation guides, and workflow templates for personal creators, brand teams, and marketing agencies.',
+    badge: 'Resource Center',
+    sections: [
+      {
+        heading: 'Creator & Personal Research Playbook',
+        body: 'Combine the Engagement Rate Calculator, Bio Readiness Analyzer, and Hashtag Mix Planner to establish a repeatable monthly baseline without sharing Instagram passwords or relying on speculative metrics.',
+      },
+      {
+        heading: 'Brand Competitor Benchmarking Workflow',
+        body: 'Save eligible public competitor profiles into dedicated research folders, attach private strategic notes (strictly isolated via PostgreSQL Row-Level Security), and compare engagement deltas side-by-side inside Competitor Comparison Studio with RFC-4180 CSV export.',
+      },
+      {
+        heading: 'Agency Multi-Client Reporting Standards',
+        body: 'Separate each client into its own workspace, stamp every PDF/CSV brief with explicit data provenance (LIVE, CACHED, ESTIMATED, or DEMO), and document metric methodology alongside recommendations.',
+      },
+    ],
+  },
+  glossary: {
+    slug: 'glossary',
+    title: 'Social Intelligence & Provenance Glossary',
+    description:
+      'Standardized definitions of Instagram analytics metrics, engagement formulas, creator tiers, and Viewora data provenance badges.',
+    badge: 'Analytics Glossary',
+    sections: [
+      {
+        heading: 'Engagement Rate by Followers (ERF)',
+        body: 'Calculated as ((Average Likes + Average Comments + Optional Saves/Shares) / Total Followers) × 100. Useful for apples-to-apples benchmarking across public accounts when private impression counts are unavailable.',
+      },
+      {
+        heading: 'Engagement Rate by Reach (ERR)',
+        body: 'Calculated as (Total Interactions / Unique Reach) × 100. Requires first-party connected insights via official Meta OAuth and reflects how strongly content resonates with people who actually saw it.',
+      },
+      {
+        heading: 'Posting Cadence & Follower Velocity',
+        body: 'Posting Cadence tracks average weekly publishing frequency across recent posts. Follower Velocity measures net follower change over a rolling window (e.g., 30-day growth rate and annualized trajectory).',
+      },
+      {
+        heading: 'Creator Tier Classification',
+        body: 'Standard industry segmentation: Nano (1K–10K), Micro (10K–50K), Mid-Tier (50K–250K), Macro (250K–1M), and Mega (1M+ followers). Smaller tiers typically exhibit higher ERF benchmarks.',
+      },
+      {
+        heading: 'Data Provenance Badges (LIVE / CACHED / ESTIMATED / DEMO / UNAVAILABLE)',
+        body: 'Viewora’s transparency standard guaranteeing that live authorized API responses, cached licensed snapshots, mathematical formulas, isolated demo fixtures, and unavailable states are never mixed or disguised.',
       },
     ],
   },

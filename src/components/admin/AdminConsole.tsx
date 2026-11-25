@@ -34,7 +34,7 @@ import type {
 } from '@/lib/admin/store';
 import type { FunnelEventName } from '@/lib/analytics/funnel';
 import type { ExperimentDefinition } from '@/lib/experiments/ab';
-import { StatusBanner } from '@/components/layout/PageShell';
+import { ConfirmDialog, StatusBanner } from '@/components/layout/PageShell';
 
 export type AdminTab =
   | 'users'
@@ -101,6 +101,14 @@ export function AdminConsole({
   const [tab, setTab] = useState<AdminTab>(initialTab);
   const [users, setUsers] = useState(initialUsers);
   const [userSearch, setUserSearch] = useState('');
+  const [userPlanFilter, setUserPlanFilter] = useState<'all' | PlanCode>('all');
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | UserRole>('all');
+  const [suspendTarget, setSuspendTarget] = useState<SessionUser | null>(null);
+  const [suspendedIds, setSuspendedIds] = useState<Record<string, boolean>>({});
+  const [overrideTarget, setOverrideTarget] = useState<SessionUser | null>(null);
+  const [overrideFeature, setOverrideFeature] = useState<FeatureKey>('tracked_profiles');
+  const [overrideLimit, setOverrideLimit] = useState('25');
+  const [overrideReason, setOverrideReason] = useState('');
   const [plans, setPlans] = useState(initialPlans);
   const [editingEnt, setEditingEnt] = useState<{
     planCode: PlanCode;
@@ -132,6 +140,23 @@ export function AdminConsole({
   );
 
   const canManageRoles = actor.role === 'super_admin' || actor.role === 'admin';
+  const canManageUsers =
+    actor.role === 'super_admin' || actor.role === 'admin' || actor.role === 'operations_admin';
+  const canManageEntitlements = actor.role === 'super_admin' || actor.role === 'admin';
+
+  const planDistribution = useMemo(() => {
+    const counts: Record<PlanCode, number> = {
+      free: 0,
+      starter: 0,
+      premium: 0,
+      pro: 0,
+      agency: 0,
+    };
+    for (const u of users) {
+      if (u.planCode in counts) counts[u.planCode] += 1;
+    }
+    return counts;
+  }, [users]);
 
   const runAction = async (
     payload: Record<string, unknown>,
@@ -292,41 +317,101 @@ export function AdminConsole({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-white">
-                  Customer &amp; Administrative Permissions
+                  Customer &amp; Administrative Permissions ({users.length} recorded accounts)
                 </h2>
                 <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
-                  Plan updates sync immediately with customer entitlements. Only Admin / Super Admin
-                  roles can reassign permissions.
+                  Plan updates sync immediately with customer entitlements. Private customer
+                  research notes remain strictly inaccessible to administrators.
                 </p>
               </div>
-              <input
-                type="search"
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                aria-label="Filter users by email, name, plan, or role"
-                placeholder="Filter by email, name, plan…"
-                className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs sm:w-64 dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  aria-label="Filter users by membership plan"
+                  value={userPlanFilter}
+                  onChange={(e) => setUserPlanFilter(e.target.value as 'all' | PlanCode)}
+                  className="h-9 rounded-xl border border-slate-200 bg-slate-50 px-2.5 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                >
+                  <option value="all">All plans</option>
+                  {(['free', 'starter', 'premium', 'pro', 'agency'] as PlanCode[]).map((c) => (
+                    <option key={c} value={c}>
+                      {c} ({planDistribution[c]})
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Filter users by role"
+                  value={userRoleFilter}
+                  onChange={(e) => setUserRoleFilter(e.target.value as 'all' | UserRole)}
+                  className="h-9 rounded-xl border border-slate-200 bg-slate-50 px-2.5 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                >
+                  <option value="all">All roles</option>
+                  {ASSIGNABLE_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="search"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  aria-label="Filter users by email, name, plan, or role"
+                  placeholder="Filter by email, name, plan…"
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs sm:w-56 dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                />
+              </div>
+            </div>
+
+            {/* Genuine Recorded Membership Distribution */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              {(['free', 'starter', 'premium', 'pro', 'agency'] as PlanCode[]).map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => setUserPlanFilter(userPlanFilter === code ? 'all' : code)}
+                  className={`rounded-xl border p-3 text-left transition ${
+                    userPlanFilter === code
+                      ? 'border-[#7957FF] bg-violet-50/70 dark:bg-[#192337]'
+                      : 'border-slate-200 bg-slate-50/70 dark:border-[#263047] dark:bg-[#0F172A]'
+                  }`}
+                >
+                  <span className="block text-[10px] font-bold tracking-wider text-[#64748B] uppercase">
+                    {code}
+                  </span>
+                  <span className="mt-0.5 block font-display text-lg font-extrabold tabular-nums text-[#0F172A] dark:text-white">
+                    {planDistribution[code]}
+                  </span>
+                </button>
+              ))}
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] text-left text-xs">
+              <table className="w-full min-w-[780px] text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 text-[#64748B] dark:border-[#263047]">
                     <th className="py-2 pr-4">Account</th>
                     <th className="py-2 pr-4">Segment</th>
                     <th className="py-2 pr-4">Membership Plan</th>
-                    <th className="py-2">RBAC Role</th>
+                    <th className="py-2 pr-4">RBAC Role</th>
+                    <th className="py-2">Controls</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-[#263047]">
-                  {filteredUsers.map((u) => (
+                  {filteredUsers
+                    .filter((u) => (userPlanFilter === 'all' ? true : u.planCode === userPlanFilter))
+                    .filter((u) => (userRoleFilter === 'all' ? true : u.role === userRoleFilter))
+                    .map((u) => (
                     <tr key={u.id}>
                       <td className="py-3 pr-4">
                         <span className="block font-semibold text-[#0F172A] dark:text-white">
                           {u.fullName}
                         </span>
                         <span className="font-mono text-[11px] text-[#64748B]">{u.email}</span>
+                        {suspendedIds[u.id] ? (
+                          <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+                            Suspended
+                          </span>
+                        ) : null}
                       </td>
                       <td className="py-3 pr-4 capitalize text-[#0F172A] dark:text-slate-300">
                         {u.segment}
@@ -358,7 +443,7 @@ export function AdminConsole({
                           )}
                         </select>
                       </td>
-                      <td className="py-3">
+                      <td className="py-3 pr-4">
                         {canManageRoles &&
                         u.id !== actor.id &&
                         (actor.role === 'super_admin' || u.role !== 'super_admin') ? (
@@ -394,11 +479,143 @@ export function AdminConsole({
                           </span>
                         )}
                       </td>
+                      <td className="py-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {canManageEntitlements ? (
+                            <button
+                              type="button"
+                              onClick={() => setOverrideTarget(u)}
+                              className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-[#6941EF] hover:border-[#7957FF] dark:border-[#263047] dark:text-[#A99AFF]"
+                            >
+                              Override
+                            </button>
+                          ) : null}
+                          {canManageUsers && u.id !== actor.id ? (
+                            suspendedIds[u.id] ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const res = await runAction(
+                                    { type: 'reactivate_user', userId: u.id },
+                                    `Reactivated ${u.email}.`
+                                  );
+                                  if (res.ok) {
+                                    setSuspendedIds((prev) => ({ ...prev, [u.id]: false }));
+                                  }
+                                }}
+                                className="rounded-lg border border-emerald-300 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-[#34D399]"
+                              >
+                                Reactivate
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setSuspendTarget(u)}
+                                className="rounded-lg border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300"
+                              >
+                                Suspend
+                              </button>
+                            )
+                          ) : null}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            {overrideTarget ? (
+              <div className="rounded-2xl border border-violet-200 bg-violet-50/40 p-4 text-xs dark:border-[#263047] dark:bg-[#192337]/60">
+                <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                  Grant Per-User Entitlement Override — {overrideTarget.email}
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <select
+                    aria-label="Override feature key"
+                    value={overrideFeature}
+                    onChange={(e) => setOverrideFeature(e.target.value as FeatureKey)}
+                    className="h-9 rounded-xl border border-slate-300 bg-white px-2.5 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                  >
+                    {(Object.keys(FEATURE_LABELS) as FeatureKey[]).map((fk) => (
+                      <option key={fk} value={fk}>
+                        {FEATURE_LABELS[fk].label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    value={overrideLimit}
+                    onChange={(e) => setOverrideLimit(e.target.value)}
+                    placeholder="Numeric limit (blank = unlimited)"
+                    aria-label="Override numeric limit"
+                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                  />
+                  <input
+                    type="text"
+                    value={overrideReason}
+                    onChange={(e) => setOverrideReason(e.target.value)}
+                    placeholder="Audit reason (optional)"
+                    aria-label="Override audit reason"
+                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                  />
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const num = overrideLimit.trim() === '' ? null : Number(overrideLimit);
+                      const res = await runAction(
+                        {
+                          type: 'grant_user_override',
+                          userId: overrideTarget.id,
+                          featureKey: overrideFeature,
+                          enabled: true,
+                          numericLimit: Number.isNaN(num) ? null : num,
+                          reason: overrideReason.trim() || undefined,
+                        },
+                        `Saved entitlement override (${overrideFeature}) for ${overrideTarget.email}.`
+                      );
+                      if (res.ok) {
+                        setOverrideTarget(null);
+                        setOverrideReason('');
+                      }
+                    }}
+                    className="viewora-btn-primary rounded-xl px-4 py-1.5 text-xs font-semibold"
+                  >
+                    Apply Override
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOverrideTarget(null)}
+                    className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-[#64748B] dark:border-[#263047]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <ConfirmDialog
+              open={suspendTarget !== null}
+              destructive
+              title={`Suspend account ${suspendTarget?.email ?? ''}?`}
+              description="Suspending this account immediately revokes all active database sessions and prevents sign-in until reactivated."
+              confirmLabel="Suspend Account"
+              onCancel={() => setSuspendTarget(null)}
+              onConfirm={async () => {
+                if (!suspendTarget) return;
+                const res = await runAction(
+                  { type: 'suspend_user', userId: suspendTarget.id },
+                  `Suspended ${suspendTarget.email} and revoked all active sessions.`
+                );
+                if (res.ok) {
+                  setSuspendedIds((prev) => ({ ...prev, [suspendTarget.id]: true }));
+                }
+                setSuspendTarget(null);
+              }}
+            />
           </div>
         ) : null}
 

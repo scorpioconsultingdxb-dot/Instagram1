@@ -28,6 +28,7 @@ export function AnalyticsVisualizations({
   const [range, setRange] = useState<DateRangeFilter>(initialRange);
   const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  const [showMetricGuide, setShowMetricGuide] = useState(false);
 
   const allPoints = profile.historicalTrend;
   const points =
@@ -95,6 +96,30 @@ export function AnalyticsVisualizations({
 
   return (
     <div className="space-y-6">
+      {/* Metric Explanations Disclosure (when expanded) */}
+      {showMetricGuide ? (
+        <div className="grid gap-3 rounded-2xl border border-violet-200 bg-violet-50/40 p-4 text-xs sm:grid-cols-3 dark:border-[#263047] dark:bg-[#192337]/60">
+          <div>
+            <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">Window Δ (Follower Growth)</p>
+            <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
+              Net change between earliest and latest recorded checkpoints inside the selected window.
+            </p>
+          </div>
+          <div>
+            <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">Engagement Rate (ERF)</p>
+            <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
+              Calculated from average public interactions per post divided by total followers × 100.
+            </p>
+          </div>
+          <div>
+            <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">Format &amp; Cadence Mix</p>
+            <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
+              Derived strictly from recent post timestamps and media types (Reels, Carousels, Images).
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {/* Controls & Source Freshness Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
         <div className="flex flex-wrap items-center gap-3 text-[#64748B] dark:text-[#94A3B8]">
@@ -121,6 +146,15 @@ export function AnalyticsVisualizations({
             {netGrowth.toLocaleString()} ({pctGrowth >= 0 ? '+' : ''}
             {pctGrowth}%)
           </span>
+          <button
+            type="button"
+            aria-expanded={showMetricGuide}
+            onClick={() => setShowMetricGuide((prev) => !prev)}
+            className="inline-flex items-center gap-1 font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+          >
+            <Info className="h-3.5 w-3.5" aria-hidden="true" />
+            Metric formulas
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

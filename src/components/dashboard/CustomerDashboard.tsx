@@ -84,6 +84,7 @@ export function CustomerDashboard({
   isAdmin,
   initialTab = 'overview',
   initialDemoPreview = false,
+  initialSavedHandle,
 }: {
   locale: Locale;
   dict: Dictionary;
@@ -96,6 +97,7 @@ export function CustomerDashboard({
   isAdmin: boolean;
   initialTab?: DashboardTab;
   initialDemoPreview?: boolean;
+  initialSavedHandle?: string;
 }) {
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -476,6 +478,59 @@ export function CustomerDashboard({
             </div>
           </div>
 
+          {/* Mobile & Tablet Complete Section Switcher (gives <1024px access to all 11 modules + settings + sign-out) */}
+          <div
+            role="tablist"
+            aria-label="Dashboard sections"
+            className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:hidden"
+          >
+            {navGroups.flatMap((g) => g.items).map((item) => {
+              const Icon = item.icon;
+              const active = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                    active
+                      ? 'bg-[#7957FF] text-white shadow-xs'
+                      : 'viewora-card text-[#64748B] hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:text-white'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{item.label}</span>
+                  {item.id === 'notifications' && unreadCount > 0 ? (
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                        active ? 'bg-white/20 text-white' : 'bg-[#7957FF] text-white'
+                      }`}
+                    >
+                      {unreadCount}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+            <Link
+              href={`/${locale}/dashboard/settings`}
+              className="viewora-card inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-[#64748B] hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:text-white"
+            >
+              <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+              Settings
+            </Link>
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-rose-600 dark:border-[#263047] dark:bg-[#131C2E] dark:text-rose-400"
+            >
+              <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+              Sign out
+            </button>
+          </div>
+
           {showAddWorkspace ? (
             <div className="viewora-card flex flex-wrap items-center gap-2 rounded-2xl p-4">
               <input
@@ -635,6 +690,7 @@ export function CustomerDashboard({
               dict={dict}
               workspace={workspace}
               trackedLimit={trackedLimit}
+              initialHandle={initialSavedHandle}
               onWorkspaceChange={(next) => {
                 setWorkspace(next);
                 if (!selectedUsername && next.savedProfiles[0]) {

@@ -218,12 +218,18 @@ async function runTests() {
       assert(metrics.hasSkipLink, `Missing skip-to-content link at ${vp.w}px`);
       assert(metrics.hasSearchInput, `Missing hero search input at ${vp.w}px`);
       assert(
-        metrics.scrollWidth <= metrics.innerWidth + 1,
-        `Horizontal overflow at ${vp.w}px: scrollWidth=${metrics.scrollWidth} > innerWidth=${metrics.innerWidth}`
+        metrics.innerWidth <= vp.w + 1,
+        `Mobile viewport zoom-out at ${vp.w}px: innerWidth=${metrics.innerWidth} > target=${vp.w}`
+      );
+      assert(
+        metrics.scrollWidth <= vp.w + 1,
+        `Horizontal overflow at ${vp.w}px: scrollWidth=${metrics.scrollWidth} > target=${vp.w}`
       );
       report.viewports.push({ width: vp.w, ...metrics, overflow: false });
     }
-    report.passed.push('Responsive layout verified across 375/390/768/1024/1440/1920px');
+    const homeBody = await cdp.eval(`document.body.innerText`);
+    assert(!homeBody.includes('Stage 2'), 'Internal prompt jargon "Stage 2" leaked onto homepage');
+    report.passed.push('Responsive layout verified strictly across 375/390/768/1024/1440/1920px with zero zoom-out');
 
     // Capture Homepage desktop (light + dark) and mobile (390px) screenshots + perf timings
     await cdp.setViewport(1440, 900);
@@ -294,23 +300,43 @@ async function runTests() {
     report.screenshots.push(await cdp.screenshot('final_pricing_1440px.png'));
     report.passed.push('Pricing page 5 tiers and payments-disabled guard verified');
 
-    // 5. Demo Login (Business Premium User) -> Clean Dashboard -> Persistent Save + Reload
+    // 5. Demo Login via UI -> Authenticated search (no 429) -> ?saved= handoff -> Persistent Save + Reload
     await cdp.goto(`${BASE_URL}/en/login`, 1000);
-    const loginResult = await cdp.eval(`(async () => {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'business@viewora.demo', password: 'demo-password' })
-      });
-      return { status: res.status, body: await res.json() };
+    const clickedDemo = await cdp.eval(`(() => {
+      const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('business@viewora.demo'));
+      if (!btn) return false;
+      btn.click();
+      return true;
     })()`);
-    assert(loginResult.status === 200 && loginResult.body.ok, 'Demo business login failed');
+    assert(clickedDemo, 'Demo business login button not found on /login UI');
+    await sleep(1400);
+
+    // Verify authenticated local demo user can run 2+ consecutive public searches without hitting anonymous 429 gate
+    const authSearchTest = await cdp.eval(`(async () => {
+      const r1 = await fetch('/api/search?q=viewora.studio');
+      const r2 = await fetch('/api/search?q=aurora.coffee');
+      return { s1: r1.status, s2: r2.status };
+    })()`);
+    assert(
+      authSearchTest.s1 === 200 && authSearchTest.s2 === 200,
+      `Authenticated user blocked by anonymous search limit: ${JSON.stringify(authSearchTest)}`
+    );
 
     await cdp.goto(`${BASE_URL}/en/dashboard`, 1300);
     const cleanDashText = await cdp.eval(`document.body.innerText`);
     assert(
       cleanDashText.includes('Your workspace starts clean'),
       'Expected clean workspace with zero unconditionally seeded demo profiles'
+    );
+
+    // Verify ?saved= handoff pre-fills Saved Profiles input
+    await cdp.goto(`${BASE_URL}/en/dashboard?saved=viewora.studio`, 1300);
+    const prefilledVal = await cdp.eval(
+      `document.querySelector('input[aria-label="Instagram username to save"]')?.value ?? ''`
+    );
+    assert(
+      prefilledVal === '@viewora.studio',
+      `Expected ?saved=viewora.studio handoff to prefill @viewora.studio, got "${prefilledVal}"`
     );
 
     // Save a profile, create folder, add note via API, then reload and verify persistence in UI
@@ -341,19 +367,37 @@ async function runTests() {
     assert(persistedProfilesText.includes('Persisted E2E takeaway note'), 'Private note did not persist');
     report.screenshots.push(await cdp.screenshot('final_dashboard_profiles_1440px.png'));
 
+    // Verify Saved Profile Detail Page displays saved folder and private note
+    await cdp.goto(`${BASE_URL}/en/dashboard/profiles/viewora.studio`, 1100);
+    const detailText = await cdp.eval(`document.body.innerText`);
+    assert(detailText.includes('E2E Benchmarks'), 'Profile detail page missing saved folder');
+    assert(detailText.includes('Persisted E2E takeaway note'), 'Profile detail page missing private note');
+
     // Analytics & AI Studio & Reports Library
     await cdp.goto(`${BASE_URL}/en/dashboard/analytics`, 1300);
     const analyticsText = await cdp.eval(`document.body.innerText`);
     assert(analyticsText.includes('Accessible Checkpoint Data Table'), 'Analytics missing accessible data table');
     report.screenshots.push(await cdp.screenshot('final_dashboard_analytics_1440px.png'));
 
-    // Mobile dashboard viewport check
-    await cdp.setViewport(390, 844);
+    // Mobile dashboard viewport check (375px & 390px strict width + all sections reachable)
+    await cdp.setViewport(375, 812);
     await sleep(400);
-    const mobileDashOverflow = await cdp.eval(`document.documentElement.scrollWidth > window.innerWidth + 1`);
-    assert(!mobileDashOverflow, 'Horizontal overflow on mobile dashboard (390px)');
+    const mobileDashMetrics = await cdp.eval(`({
+      innerWidth: window.innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      text: document.body.innerText
+    })`);
+    assert(
+      mobileDashMetrics.innerWidth <= 376 && mobileDashMetrics.scrollWidth <= 376,
+      `Horizontal overflow on mobile dashboard (375px): inner=${mobileDashMetrics.innerWidth}, scroll=${mobileDashMetrics.scrollWidth}`
+    );
+    for (const mobileTab of ['Timeline', 'Calendar', 'Competitors', 'Reports & Exports', 'Support', 'Sign out']) {
+      assert(mobileDashMetrics.text.includes(mobileTab), `Mobile dashboard missing section/control: ${mobileTab}`);
+    }
+    await cdp.setViewport(390, 844);
+    await sleep(300);
     report.screenshots.push(await cdp.screenshot('final_dashboard_390px_mobile.png'));
-    report.passed.push('Customer Dashboard clean init, durable folders/notes/profiles, analytics, and mobile layout verified');
+    report.passed.push('Customer Dashboard UI login, auth search, ?saved= handoff, durable folders/notes/detail, analytics, and mobile 375px layout verified');
 
     // 6. Personal Digital HQ Persistence
     await cdp.setViewport(1440, 900);
@@ -406,21 +450,72 @@ async function runTests() {
       return res.status;
     })()`);
     assert(flagLockTest === 403, `Expected 403 for locked payments_enabled flag, got ${flagLockTest}`);
+
+    // Verify runtime feature flag enforcement (disable ai_insights_enabled -> 503, then re-enable -> 200)
+    const aiFlagRuntimeTest = await cdp.eval(`(async () => {
+      await fetch('/api/admin/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'toggle_flag', key: 'ai_insights_enabled', enabled: false })
+      });
+      const disabledStatus = (await fetch('/api/ai/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'viewora.studio', reportType: 'profile_performance', dateRange: '30d' })
+      })).status;
+      await fetch('/api/admin/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'toggle_flag', key: 'ai_insights_enabled', enabled: true })
+      });
+      const enabledStatus = (await fetch('/api/ai/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'viewora.studio', reportType: 'profile_performance', dateRange: '30d' })
+      })).status;
+      return { disabledStatus, enabledStatus };
+    })()`);
+    assert(
+      aiFlagRuntimeTest.disabledStatus === 503 && aiFlagRuntimeTest.enabledStatus === 200,
+      `Expected ai_insights_enabled flag enforcement (503 then 200), got ${JSON.stringify(aiFlagRuntimeTest)}`
+    );
+
     report.screenshots.push(await cdp.screenshot('final_admin_1440px.png'));
-    report.passed.push('Admin Console rendering, RBAC, and locked payments_enabled guard verified');
+    report.passed.push('Admin Console rendering, RBAC, locked payments_enabled guard, and runtime feature-flag enforcement verified');
 
     report.consoleErrors = cdp.consoleErrors;
     report.pageErrors = cdp.pageErrors;
     assert(cdp.pageErrors.length === 0, `Uncaught page errors: ${cdp.pageErrors.join('; ')}`);
+    // Filter expected 403/503 network error logs emitted by our intentional negative security assertions
+    const unexpectedConsoleErrors = cdp.consoleErrors.filter(
+      (msg) => !msg.includes('status of 403') && !msg.includes('status of 503')
+    );
+    assert(
+      unexpectedConsoleErrors.length === 0,
+      `Unexpected console errors: ${unexpectedConsoleErrors.join('; ')}`
+    );
 
     console.log(JSON.stringify(report, null, 2));
     cdp.close();
   } finally {
-    chrome?.kill('SIGKILL');
-    server.kill('SIGKILL');
-    await sleep(400);
-    fs.rmSync(chromeProfileDir, { recursive: true, force: true });
-    fs.rmSync(dataDir, { recursive: true, force: true });
+    if (process.platform === 'win32') {
+      if (chrome?.pid) spawn('taskkill', ['/PID', String(chrome.pid), '/T', '/F'], { stdio: 'ignore' });
+      if (server?.pid) spawn('taskkill', ['/PID', String(server.pid), '/T', '/F'], { stdio: 'ignore' });
+    } else {
+      chrome?.kill('SIGKILL');
+      server.kill('SIGKILL');
+    }
+    await sleep(600);
+    try {
+      fs.rmSync(chromeProfileDir, { recursive: true, force: true });
+    } catch {
+      // ignore locked Windows chrome profile handle
+    }
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
   }
 }
 

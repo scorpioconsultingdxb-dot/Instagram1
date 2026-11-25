@@ -20,7 +20,7 @@ import {
 import { useMemo, useState } from 'react';
 import type { SessionUser } from '@/lib/auth/session';
 import type { FeatureKey, PlanCode, PlanDefinition, UserRole } from '@/lib/entitlements/types';
-import { FEATURE_LABELS, formatUsdCents } from '@/lib/entitlements/catalog';
+import { FEATURE_LABELS, formatUsdCents, INITIAL_PLANS } from '@/lib/entitlements/catalog';
 import type { ProviderHealth } from '@/lib/providers/types';
 import type {
   ApiUsageMetric,
@@ -61,6 +61,7 @@ export interface AdminConsoleProps {
     counts: Record<FunnelEventName, number>;
     searchToSignupRate: number;
     signupToUpgradeIntentRate: number;
+    isSample?: boolean;
   };
   experiments: ExperimentDefinition[];
   initialCms: CmsContentRecord[];
@@ -350,7 +351,9 @@ export function AdminConsole({
                         </select>
                       </td>
                       <td className="py-3">
-                        {canManageRoles ? (
+                        {canManageRoles &&
+                        u.id !== actor.id &&
+                        (actor.role === 'super_admin' || u.role !== 'super_admin') ? (
                           <select
                             aria-label={`Role for ${u.email}`}
                             value={u.role}
@@ -368,7 +371,9 @@ export function AdminConsole({
                             }}
                             className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 font-mono text-[11px] dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
                           >
-                            {ASSIGNABLE_ROLES.map((r) => (
+                            {ASSIGNABLE_ROLES.filter(
+                              (r) => actor.role === 'super_admin' || r !== 'super_admin'
+                            ).map((r) => (
                               <option key={r} value={r}>
                                 {r}
                               </option>
@@ -377,6 +382,7 @@ export function AdminConsole({
                         ) : (
                           <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] dark:bg-[#0F172A]">
                             {u.role}
+                            {u.id === actor.id ? ' (you)' : ''}
                           </span>
                         )}
                       </td>
@@ -539,13 +545,28 @@ export function AdminConsole({
                     </td>
                     {plans.map((plan) => {
                       const rule = plan.entitlements[key];
+                      const baselineRule = INITIAL_PLANS.find((p) => p.code === plan.code)?.entitlements[key];
+                      const isBooleanFeature = baselineRule?.numericLimit === null;
                       return (
                         <td key={plan.code} className="py-2.5 text-center">
                           <button
                             type="button"
                             onClick={async () => {
                               const nextEnabled = !rule.enabled;
-                              const nextLimit = nextEnabled ? rule.numericLimit ?? 10 : 0;
+                              let nextLimit: number | null;
+                              if (!nextEnabled) {
+                                nextLimit = isBooleanFeature ? null : 0;
+                              } else if (isBooleanFeature) {
+                                nextLimit = null;
+                              } else {
+                                const restored =
+                                  rule.numericLimit && rule.numericLimit > 0
+                                    ? rule.numericLimit
+                                    : baselineRule?.numericLimit && baselineRule.numericLimit > 0
+                                      ? baselineRule.numericLimit
+                                      : 10;
+                                nextLimit = restored;
+                              }
                               const res = await runAction(
                                 {
                                   type: 'update_entitlement',
@@ -578,7 +599,7 @@ export function AdminConsole({
                                 : 'bg-slate-100 text-[#64748B] hover:bg-slate-200 dark:bg-[#0F172A] dark:text-[#94A3B8]'
                             }`}
                           >
-                            {rule.enabled ? (rule.numericLimit ?? '∞') : 'Off'}
+                            {rule.enabled ? (rule.numericLimit === null ? '∞' : rule.numericLimit) : 'Off'}
                           </button>
                         </td>
                       );
@@ -1076,9 +1097,14 @@ export function AdminConsole({
         {tab === 'conversions' ? (
           <div className="space-y-6">
             <div>
-              <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-white">
-                Recorded Funnel Analytics
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-white">
+                  Recorded Funnel Analytics
+                </h2>
+                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold uppercase text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                  {conversionAnalytics.isSample ? 'Sample Baseline Data' : 'Recorded Runtime Metrics'}
+                </span>
+              </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-[#263047] dark:bg-[#0F172A]">
                   <p className="text-xs text-[#64748B]">Search → Signup Rate</p>

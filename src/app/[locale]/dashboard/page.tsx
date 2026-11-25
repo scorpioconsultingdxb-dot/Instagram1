@@ -64,10 +64,10 @@ export default async function DashboardPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ demo?: string }>;
+  searchParams: Promise<{ demo?: string; saved?: string }>;
 }) {
   const { locale } = await params;
-  const { demo } = await searchParams;
+  const { demo, saved } = await searchParams;
   const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
 
   const user = await getCurrentSessionUser();
@@ -90,6 +90,8 @@ export default async function DashboardPage({
   const demoPreviewProfiles = await buildExplicitDemoPreviewProfiles(defaultWs);
   const broadcasts = listActiveBroadcastNotifications(user.segment);
 
+  const queuedHandle = saved?.trim() ? saved.trim().replace(/^@+/, '') : undefined;
+
   return (
     <CustomerDashboard
       locale={safeLocale}
@@ -101,8 +103,9 @@ export default async function DashboardPage({
       profilePrefs={profilePrefs}
       broadcasts={broadcasts}
       isAdmin={isAdminRole(user.role)}
-      initialTab="overview"
+      initialTab={queuedHandle ? 'profiles' : 'overview'}
       initialDemoPreview={demo === '1'}
+      initialSavedHandle={queuedHandle}
     />
   );
 }

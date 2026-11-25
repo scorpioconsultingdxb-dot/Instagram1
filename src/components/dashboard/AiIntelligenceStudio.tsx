@@ -82,7 +82,7 @@ export function AiIntelligenceStudio({
       const res = await fetch('/api/ai/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: resolvedUsername, reportType }),
+        body: JSON.stringify({ username: resolvedUsername, reportType, dateRange }),
       });
       const json = (await res.json()) as {
         ok: boolean;

@@ -3,11 +3,13 @@ import os from 'os';
 import path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  deleteAccountProfilePrefs,
   getAccountProfilePrefs,
   profilePatchSchema,
   saveAccountProfilePrefs,
 } from '@/lib/auth/profile-prefs';
 import {
+  deleteUserWorkspaceState,
   getUserWorkspaceState,
   getWorkspaceUsageStats,
   recordExportHistory,
@@ -22,7 +24,9 @@ import {
 import {
   createBroadcastNotification,
   createSupportTicket,
+  getPublishedCmsBySlug,
   getSearchAnalyticsMetrics,
+  isFeatureFlagEnabled,
   listActiveBroadcastNotifications,
   listCmsContent,
   listSupportTickets,
@@ -31,8 +35,9 @@ import {
   updateCmsContent,
   updateSupportTicket,
 } from '@/lib/admin/store';
+import { getFunnelSummary, recordFunnelEvent } from '@/lib/analytics/funnel';
 import { hasAdminCapability } from '@/lib/admin/rbac';
-import { sanitizeRedirectPath } from '@/lib/auth/session';
+import { deriveLocalUserId, sanitizeRedirectPath } from '@/lib/auth/session';
 
 describe('Durable Persistence, Personal HQ, Workspace, Plans & Admin RBAC', () => {
   let tempDir: string;
@@ -216,5 +221,61 @@ describe('Durable Persistence, Personal HQ, Workspace, Plans & Admin RBAC', () =
     const metrics = getSearchAnalyticsMetrics();
     expect(metrics[0]?.isSample).toBe(false);
     expect(metrics[0]?.normalizedUsername).toBe('viewora.studio');
+  });
+
+  it('derives collision-free local user IDs for emails sharing a prefix and purges deleted account data', async () => {
+    const idA = deriveLocalUserId('founder@alpha.example');
+    const idB = deriveLocalUserId('founder@beta.example');
+    expect(idA).not.toBe(idB);
+    expect(deriveLocalUserId('FOUNDER@alpha.example')).toBe(idA);
+
+    await saveAccountProfilePrefs(idA, {
+      professionalTitle: 'Temporary Title',
+      workspaceName: 'Temp Space',
+    });
+    updateUserWorkspaceState(idA, (ws) => ({
+      ...ws,
+      folders: [
+        ...ws.folders,
+        {
+          id: 'fld-temp',
+          name: 'Private Folder',
+          color: 'amber',
+          description: '',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }));
+
+    deleteAccountProfilePrefs(idA);
+    deleteUserWorkspaceState(idA);
+
+    const purgedPrefs = await getAccountProfilePrefs(idA);
+    expect(purgedPrefs.workspaceName).toBe('Primary Workspace');
+    const purgedWs = getUserWorkspaceState(idA);
+    expect(purgedWs.folders.some((f) => f.id === 'fld-temp')).toBe(false);
+  });
+
+  it('enforces feature flags, resolves published CMS content by slug, and persists funnel events durably', () => {
+    expect(isFeatureFlagEnabled('payments_enabled')).toBe(false);
+    expect(toggleFeatureFlag('ai_insights_enabled', false).ok).toBe(true);
+    expect(isFeatureFlagEnabled('ai_insights_enabled')).toBe(false);
+    expect(toggleFeatureFlag('ai_insights_enabled', true).ok).toBe(true);
+    expect(isFeatureFlagEnabled('ai_insights_enabled')).toBe(true);
+
+    const published = getPublishedCmsBySlug('data-transparency', 'pt-BR');
+    expect(published?.locale).toBe('pt-BR');
+
+    const baselineFunnel = getFunnelSummary();
+    expect(baselineFunnel.isSample).toBe(true);
+    recordFunnelEvent({
+      eventName: 'signup_completed',
+      locale: 'en',
+      sessionId: 'sess-test',
+      userId: 'u-1',
+    });
+    const recordedFunnel = getFunnelSummary();
+    expect(recordedFunnel.isSample).toBe(false);
+    expect(recordedFunnel.counts.signup_completed).toBe(1);
   });
 });

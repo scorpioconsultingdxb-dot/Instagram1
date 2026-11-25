@@ -36,6 +36,7 @@ export function SavedProfilesModule({
   dict,
   workspace,
   trackedLimit,
+  initialHandle,
   onWorkspaceChange,
   onInspectProfile,
   onEnableDemoPreview,
@@ -44,11 +45,13 @@ export function SavedProfilesModule({
   dict: Dictionary;
   workspace: UserWorkspaceState;
   trackedLimit: number;
+  initialHandle?: string;
   onWorkspaceChange: (next: UserWorkspaceState) => void;
   onInspectProfile: (username: string) => void;
   onEnableDemoPreview: () => void;
 }) {
-  const [addInput, setAddInput] = useState('');
+  const [addInput, setAddInput] = useState(initialHandle ? `@${initialHandle}` : '');
+  const [scopeToActiveWorkspace, setScopeToActiveWorkspace] = useState(false);
   const [selectedFolderForAdd, setSelectedFolderForAdd] = useState<string>(
     workspace.folders[0]?.id ?? ''
   );
@@ -205,6 +208,9 @@ export function SavedProfilesModule({
   const filteredProfiles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const list = workspace.savedProfiles.filter((item) => {
+      if (scopeToActiveWorkspace && item.workspace !== workspace.settings.activeWorkspace) {
+        return false;
+      }
       if (filterFolder === 'unassigned' && item.folderId !== null) return false;
       if (filterFolder !== 'all' && filterFolder !== 'unassigned' && item.folderId !== filterFolder) {
         return false;
@@ -230,7 +236,14 @@ export function SavedProfilesModule({
       }
       return b.savedAt.localeCompare(a.savedAt);
     });
-  }, [workspace.savedProfiles, filterFolder, searchQuery, sortBy]);
+  }, [
+    workspace.savedProfiles,
+    workspace.settings.activeWorkspace,
+    scopeToActiveWorkspace,
+    filterFolder,
+    searchQuery,
+    sortBy,
+  ]);
 
   return (
     <div className="space-y-5">
@@ -391,6 +404,20 @@ export function SavedProfilesModule({
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {workspace.workspaces.length > 1 ? (
+              <button
+                type="button"
+                aria-pressed={scopeToActiveWorkspace}
+                onClick={() => setScopeToActiveWorkspace((prev) => !prev)}
+                className={`h-9 rounded-xl border px-2.5 text-xs font-semibold transition ${
+                  scopeToActiveWorkspace
+                    ? 'border-[#7957FF] bg-violet-50 text-[#6941EF] dark:bg-violet-950/50 dark:text-[#A99AFF]'
+                    : 'border-slate-200 bg-slate-50 text-[#64748B] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#94A3B8]'
+                }`}
+              >
+                {scopeToActiveWorkspace ? `Only: ${workspace.settings.activeWorkspace}` : 'All Workspaces'}
+              </button>
+            ) : null}
             <label className="relative flex-1 sm:w-52 sm:flex-none">
               <span className="sr-only">Search saved profiles and notes</span>
               <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]" />

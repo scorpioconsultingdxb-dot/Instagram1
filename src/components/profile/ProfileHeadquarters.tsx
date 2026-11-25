@@ -22,7 +22,7 @@ import {
   Trash2,
   User,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LOCALE_METADATA, SUPPORTED_LOCALES, type Locale } from '@/i18n/config';
 import type { SessionUser } from '@/lib/auth/session';
 import type { ResolvedEntitlements } from '@/lib/entitlements/types';
@@ -149,7 +149,7 @@ export function ProfileHeadquarters({
     initialPrefs.preferredLocale || locale
   );
   const [timezone, setTimezone] = useState(initialPrefs.timezone);
-  const [defaultRange, setDefaultRange] = useState<'7d' | '30d' | '90d'>(
+  const [defaultRange, setDefaultRange] = useState<'7d' | '30d' | '90d' | 'all'>(
     initialPrefs.defaultDateRange
   );
   const [density, setDensity] = useState<'comfortable' | 'compact'>(
@@ -162,6 +162,20 @@ export function ProfileHeadquarters({
   const [shortcuts, setShortcuts] = useState<PersonalShortcut[]>(initialPrefs.personalShortcuts);
   const [newShortcutHref, setNewShortcutHref] = useState(SHORTCUT_CATALOG[0]!.href);
   const [emailPrefs, setEmailPrefs] = useState(user.emailPreferences);
+
+  // Hydrate theme & accent from account-owned server preferences in fresh sessions
+  useEffect(() => {
+    try {
+      if (!window.localStorage.getItem('viewora_theme') && initialPrefs.themePreference) {
+        setTheme(initialPrefs.themePreference);
+      }
+      if (!window.localStorage.getItem('viewora_accent') && initialPrefs.accentPreset) {
+        setAccent(initialPrefs.accentPreset);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [initialPrefs.themePreference, initialPrefs.accentPreset, setTheme, setAccent]);
 
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
@@ -750,6 +764,7 @@ export function ProfileHeadquarters({
                   <option value="7d">Last 7 days</option>
                   <option value="30d">Last 30 days</option>
                   <option value="90d">Last 90 days</option>
+                  <option value="all">All recorded history</option>
                 </select>
               </label>
 

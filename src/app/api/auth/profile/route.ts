@@ -7,6 +7,7 @@ import {
   saveAccountProfilePrefs,
 } from '@/lib/auth/profile-prefs';
 import { loadWorkspaceUsageStats } from '@/lib/dashboard/store';
+import { persistFunnelEvent } from '@/lib/analytics/funnel';
 import { isDatabaseConfigured } from '@/lib/env';
 
 export async function GET() {
@@ -58,6 +59,18 @@ export async function PATCH(request: NextRequest) {
 
   if (parsed.data.fullName && !isDatabaseConfigured()) {
     upsertLocalUser({ ...user, fullName: parsed.data.fullName.trim() });
+  }
+
+  if (parsed.data.onboardingCompleted === true) {
+    await persistFunnelEvent({
+      eventName: 'onboarding_completed',
+      locale: parsed.data.preferredLocale ?? 'en',
+      sessionId: user.id,
+      userId: user.id,
+      properties: {
+        segment: parsed.data.onboardingSegment ?? user.segment,
+      },
+    }).catch(() => undefined);
   }
 
   const response = NextResponse.json({

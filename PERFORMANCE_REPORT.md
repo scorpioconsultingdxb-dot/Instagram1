@@ -1,39 +1,21 @@
-# Viewora — Performance Report (Phase 3 Release Candidate)
+# Viewora — Performance Measurement Report (Phase 4)
 
 **Date:** 2026-11-25  
-**Build:** Next.js `15.5.29` production build (`npm.cmd run build` → `302/302` static pages generated cleanly)  
-**Measurement Tool:** Headless Google Chrome via Chrome DevTools Protocol (`PerformanceObserver` + `NavigationTiming`) against local `next start` (`127.0.0.1:3031`).
+**Honesty Rule:** Localhost loopback measurements are reported explicitly as **local production build timings** and are **never** substituted for real-world CDN/field Core Web Vitals.
 
-> **Honest Scope Disclosure:** Standalone `lighthouse` CLI is not installed on this Windows workstation, so no fabricated Lighthouse 0–100 scores are reported. Below are **real measured local loopback metrics** — both unthrottled and under **cold-cache Slow 4G + 4× CPU throttling** — which reflect local hardware rather than global real-user field telemetry (CrUX/RUM).
-
-## 1. Production Bundle Footprint (`next build`)
-
-- **Shared First Load JS:** `103 kB`
-- **Homepage (`/[locale]`):** `121 kB` First Load JS (`3.83 kB` page JS)
-- **Tools Directory (`/[locale]/tools`):** `134 kB` First Load JS
-- **Pricing (`/[locale]/pricing`):** `134 kB` First Load JS
-- **Onboarding (`/[locale]/onboarding`):** `115 kB` First Load JS
-- **Personal Digital HQ (`/[locale]/dashboard/profile`):** `142 kB` First Load JS
-- **Customer Dashboard (`/[locale]/dashboard/[section]`):** `168 kB` First Load JS (includes Phase 3 modules)
-- **Admin Console (`/[locale]/admin`):** `125 kB` First Load JS
+## 1. Production Build Bundle Footprint (Measured via `next build`)
+- **First Load JS Shared by All Routes:** **`103 kB`** (`chunks/1255-*.js` `46.6 kB` + `chunks/4bd1b696-*.js` `54.2 kB`)
+- **Homepage (`/[locale]`):** `3.83 kB` route JS (`121 kB` total First Load JS)
+- **Tools Directory (`/[locale]/tools`):** `9.02 kB` (`134 kB` total First Load JS)
+- **Pricing (`/[locale]/pricing`):** `5.59 kB` (`134 kB` total First Load JS)
+- **Dashboard (`/[locale]/dashboard`):** `178 B` shell / `168 kB` First Load JS
+- **Personal Digital HQ (`/[locale]/dashboard/profile`):** `17.4 kB` (`142 kB` total First Load JS)
 - **Middleware:** `34.9 kB`
+- **Static Pre-Rendering:** **303 / 303 pages** pre-rendered cleanly (zero blocking DB calls on public pages).
 
-## 2. Unthrottled Local Production Measurements (`1440×900`)
+## 2. Localhost Production Runtime & Database Latency (Measured)
+- **PostgreSQL 14.25 Health Latency (`viewora_app`):** `51–100 ms` local loopback (`db:health` & `env:check`).
+- **Previously Measured Throttled Local CWV Baseline (Slow 4G + 4× CPU on `next start`):** LCP `612–2,132 ms` (target `<= 2,500 ms`), CLS `<= 0.0015` (target `<= 0.1`).
 
-| Route | FCP | LCP | CLS | DCL | Load | JS Transfer | Overflow |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `/en` | `304 ms` | `304 ms` | `0.0015` | `267 ms` | `332 ms` | `141 KB` | `0px` |
-| `/en/tools` | `84 ms` | `84 ms` | `0` | `78 ms` | `88 ms` | `26 KB` | `0px` |
-| `/en/pricing` | `96 ms` | `96 ms` | `0` | `90 ms` | `99 ms` | `9 KB` | `0px` |
-| `/en/resources` | `60 ms` | `60 ms` | `0` | `48 ms` | `56 ms` | `15 KB` | `0px` |
-| `/en/glossary` | `76 ms` | `76 ms` | `0` | `61 ms` | `62 ms` | `0 KB` (cached) | `0px` |
-
-## 3. Cold-Cache Throttled Production Measurements (`Slow 4G: 1.6 Mbps / 150ms RTT` + `4× CPU Slowdown`)
-
-| Route | FCP | LCP | CLS | DCL | Load | JS Transfer (Cold) | Overflow |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `/en` | `648 ms` | `648 ms` | `0.0014` | `881 ms` | `2,289 ms` | `141 KB` | `0px` |
-| `/en/tools` | `560 ms` | `2,132 ms` | `0.0001` | `610 ms` | `1,946 ms` | `167 KB` | `0px` |
-| `/en/pricing` | `612 ms` | `612 ms` | `0.0002` | `681 ms` | `2,081 ms` | `168 KB` | `0px` |
-
-All throttled cold-cache measurements remain within Google's "Good" Core Web Vitals thresholds (`LCP < 2,500 ms`, `CLS < 0.1`). Real-world CDN/edge latency, Lighthouse CI scoring, and database query P95 latency remain **Pending Infrastructure**.
+## 3. Pending Real-World Production Verification
+- **Lighthouse CI (Mobile 90+, Accessibility 95+, Best Practices 95+, SEO 95+) & Field RUM (LCP/CLS/INP):** Must be measured against a deployed HTTPS staging/production origin behind CDN (`Pending Staging Infrastructure`).

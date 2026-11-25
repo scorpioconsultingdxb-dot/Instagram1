@@ -181,6 +181,20 @@ export function ProfileHeadquarters({
   const [shortcuts, setShortcuts] = useState<PersonalShortcut[]>(initialPrefs.personalShortcuts);
   const [newShortcutHref, setNewShortcutHref] = useState(SHORTCUT_CATALOG[0]!.href);
   const [emailPrefs, setEmailPrefs] = useState(user.emailPreferences);
+  const [reducedMotion, setReducedMotion] = useState(
+    initialPrefs.accessibility?.reducedMotion ?? false
+  );
+  const [highContrast, setHighContrast] = useState(
+    initialPrefs.accessibility?.highContrast ?? false
+  );
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (reducedMotion) root.setAttribute('data-reduced-motion', 'true');
+    else root.removeAttribute('data-reduced-motion');
+    if (highContrast) root.setAttribute('data-high-contrast', 'true');
+    else root.removeAttribute('data-high-contrast');
+  }, [reducedMotion, highContrast]);
 
   // Hydrate theme & accent from account-owned server preferences in fresh sessions
   useEffect(() => {
@@ -308,6 +322,7 @@ export function ProfileHeadquarters({
           sidebarDefaultCollapsed,
           workspaceName: workspaceName.trim(),
           personalShortcuts: shortcuts,
+          accessibility: { reducedMotion, highContrast },
         }),
       });
       const profileJson = (await profileRes.json().catch(() => null)) as {
@@ -931,6 +946,29 @@ export function ProfileHeadquarters({
                     ))}
                   </select>
                 </label>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                  Accessibility Preferences (Persisted to Account)
+                </p>
+                <div className="mt-2 flex flex-wrap gap-4 text-xs">
+                  <label className="inline-flex items-center gap-2 text-[#0F172A] dark:text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={reducedMotion}
+                      onChange={(e) => setReducedMotion(e.target.checked)}
+                    />
+                    <span>Reduce motion &amp; UI animations</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-[#0F172A] dark:text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={highContrast}
+                      onChange={(e) => setHighContrast(e.target.checked)}
+                    />
+                    <span>Enhanced high-contrast borders &amp; secondary text</span>
+                  </label>
+                </div>
               </div>
             </div>
 

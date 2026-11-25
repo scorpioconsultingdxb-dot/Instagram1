@@ -119,6 +119,27 @@ html.dark {
   }
 }
 
+/* User-persisted Personal Digital HQ 3.0 accessibility controls */
+[data-reduced-motion="true"],
+[data-reduced-motion="true"] *,
+[data-reduced-motion="true"] *::before,
+[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+[data-high-contrast="true"] {
+  --border-subtle: #64748b;
+  --text-secondary: #334155;
+}
+
+.dark[data-high-contrast="true"] {
+  --border-subtle: #94a3b8;
+  --text-secondary: #e2e8f0;
+}
+
 /* Subtle hero ambient gradient mesh (restrained, zero layout shift) */
 .viewora-hero-glow {
   background-image:
@@ -171,4 +192,25 @@ html.dark {
 
 .animate-viewora-enter {
   animation: vieworaFadeUp 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes vieworaShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.viewora-skeleton {
+  background: linear-gradient(90deg, var(--surface-secondary) 25%, var(--border-subtle) 50%, var(--surface-secondary) 75%);
+  background-size: 200% 100%;
+  animation: vieworaShimmer 1.4s ease-in-out infinite;
+}
+
+.viewora-glass {
+  background-color: color-mix(in srgb, var(--surface-card) 82%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
 }

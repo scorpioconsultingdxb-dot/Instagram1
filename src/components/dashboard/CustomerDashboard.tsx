@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Activity,
+  ArrowDown,
+  ArrowUp,
   BarChart3,
   Bell,
   Building2,
@@ -31,11 +33,17 @@ import {
   Users,
   Workflow,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/types';
 import type { SessionUser } from '@/lib/auth/session';
 import type { PersonalProfilePrefs } from '@/lib/auth/profile-prefs';
+import {
+  DASHBOARD_PRESET_CONFIGS,
+  DASHBOARD_PRESETS,
+  type DashboardPresetId,
+  type DashboardWidgetKey,
+} from '@/lib/auth/dashboard-presets';
 import type { FeatureKey, ResolvedEntitlements } from '@/lib/entitlements/types';
 import { FEATURE_LABELS } from '@/lib/entitlements/catalog';
 import { formatQuotaLimit, hasEntitlement } from '@/lib/entitlements/helpers';
@@ -129,6 +137,14 @@ export function CustomerDashboard({
   const [walkthroughDismissed, setWalkthroughDismissed] = useState(
     profilePrefs.walkthroughDismissed ?? false
   );
+  const [dashboardPreset, setDashboardPreset] = useState<DashboardPresetId>(
+    profilePrefs.dashboardPreset ?? 'personal'
+  );
+  const [widgetOrder, setWidgetOrder] = useState<DashboardWidgetKey[]>(
+    profilePrefs.widgetOrder?.length
+      ? profilePrefs.widgetOrder
+      : ['checklist', 'kpis', 'quickActions', 'shortcuts', 'analyticsPreview']
+  );
   const [widgetVisibility, setWidgetVisibility] = useState({
     checklist: profilePrefs.widgetVisibility?.checklist ?? true,
     kpis: profilePrefs.widgetVisibility?.kpis ?? true,
@@ -136,6 +152,20 @@ export function CustomerDashboard({
     shortcuts: profilePrefs.widgetVisibility?.shortcuts ?? true,
     analyticsPreview: profilePrefs.widgetVisibility?.analyticsPreview ?? true,
   });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (profilePrefs.accessibility?.reducedMotion) {
+      root.setAttribute('data-reduced-motion', 'true');
+    } else {
+      root.removeAttribute('data-reduced-motion');
+    }
+    if (profilePrefs.accessibility?.highContrast) {
+      root.setAttribute('data-high-contrast', 'true');
+    } else {
+      root.removeAttribute('data-high-contrast');
+    }
+  }, [profilePrefs.accessibility?.reducedMotion, profilePrefs.accessibility?.highContrast]);
 
   const toggleWidget = (key: keyof typeof widgetVisibility) => {
     setWidgetVisibility((prev) => {
@@ -147,6 +177,40 @@ export function CustomerDashboard({
       }).catch(() => undefined);
       return next;
     });
+  };
+
+  const moveWidget = (key: DashboardWidgetKey, delta: -1 | 1) => {
+    setWidgetOrder((prev) => {
+      const idx = prev.indexOf(key);
+      const target = idx + delta;
+      if (idx < 0 || target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.splice(target, 0, item!);
+      void fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ widgetOrder: next }),
+      }).catch(() => undefined);
+      return next;
+    });
+  };
+
+  const applyDashboardPreset = (presetId: DashboardPresetId) => {
+    const cfg = DASHBOARD_PRESET_CONFIGS[presetId];
+    setDashboardPreset(presetId);
+    setWidgetOrder(cfg.widgetOrder);
+    setWidgetVisibility(cfg.widgetVisibility);
+    void fetch('/api/auth/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dashboardPreset: presetId,
+        widgetOrder: cfg.widgetOrder,
+        widgetVisibility: cfg.widgetVisibility,
+        defaultLandingSection: cfg.defaultLandingSection,
+      }),
+    }).catch(() => undefined);
   };
 
   const effectiveProfiles: SavedProfileRecord[] = useMemo(() => {
@@ -697,31 +761,85 @@ export function CustomerDashboard({
               </div>
 
               {showWidgetConfig ? (
-                <div className="viewora-card flex flex-wrap items-center gap-4 rounded-2xl p-4 text-xs">
-                  <span className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                    Overview Widgets:
-                  </span>
-                  {(
-                    [
-                      ['checklist', 'Getting-Started Checklist'],
-                      ['kpis', 'Usage & Quota KPIs'],
-                      ['quickActions', 'Quick Actions Bar'],
-                      ['shortcuts', 'Personal Shortcuts'],
-                      ['analyticsPreview', 'Active Profile Snapshot'],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <label
-                      key={key}
-                      className="inline-flex items-center gap-1.5 text-[#0F172A] dark:text-slate-200"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={widgetVisibility[key]}
-                        onChange={() => toggleWidget(key)}
-                      />
-                      <span>{label}</span>
-                    </label>
-                  ))}
+                <div className="viewora-card space-y-4 rounded-2xl p-4 text-xs">
+                  <div>
+                    <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                      Dashboard Layout Presets (Persisted to PostgreSQL)
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {DASHBOARD_PRESETS.map((pid) => {
+                        const cfg = DASHBOARD_PRESET_CONFIGS[pid];
+                        const active = dashboardPreset === pid;
+                        return (
+                          <button
+                            key={pid}
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => applyDashboardPreset(pid)}
+                            className={`rounded-xl border px-3 py-1.5 text-[11px] font-semibold transition ${
+                              active
+                                ? 'border-[#7957FF] bg-[#7957FF] text-white'
+                                : 'border-slate-200 bg-white text-[#64748B] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-slate-300'
+                            }`}
+                            title={cfg.description}
+                          >
+                            {cfg.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                      Overview Widgets &amp; Keyboard-Accessible Order
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2.5">
+                      {widgetOrder.map((key, idx) => {
+                        const labelMap: Record<DashboardWidgetKey, string> = {
+                          checklist: 'Getting-Started Checklist',
+                          kpis: 'Usage & Quota KPIs',
+                          quickActions: 'Quick Actions Bar',
+                          shortcuts: 'Personal Shortcuts',
+                          analyticsPreview: 'Active Profile Snapshot',
+                        };
+                        return (
+                          <div
+                            key={key}
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-[#263047] dark:bg-[#0F172A]"
+                          >
+                            <label className="inline-flex items-center gap-1.5 text-[#0F172A] dark:text-slate-200">
+                              <input
+                                type="checkbox"
+                                checked={widgetVisibility[key]}
+                                onChange={() => toggleWidget(key)}
+                              />
+                              <span>{labelMap[key]}</span>
+                            </label>
+                            <span className="inline-flex items-center gap-0.5">
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => moveWidget(key, -1)}
+                                aria-label={`Move ${labelMap[key]} earlier`}
+                                className="rounded p-0.5 text-[#64748B] hover:bg-slate-200 disabled:opacity-30 dark:hover:bg-[#192337]"
+                              >
+                                <ArrowUp className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === widgetOrder.length - 1}
+                                onClick={() => moveWidget(key, 1)}
+                                aria-label={`Move ${labelMap[key]} later`}
+                                className="rounded p-0.5 text-[#64748B] hover:bg-slate-200 disabled:opacity-30 dark:hover:bg-[#192337]"
+                              >
+                                <ArrowDown className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               ) : null}
 

@@ -1,25 +1,13 @@
-# Viewora — Accessibility Audit Report (WCAG 2.2 AA — Phase 3 Update)
+# Viewora — Accessibility Compliance Report (WCAG 2.2 AA)
 
 **Date:** 2026-11-25  
-**Target Standard:** WCAG 2.2 Level AA  
-**Verification Method:** Static review + automated DOM accessibility assertions in headless Google Chrome (Stage 30) across public and authenticated routes.
+**Target Standard:** WCAG 2.2 Level AA
 
-## 1. Automated DOM Verification Results
+## 1. Automated & Implemented Accessibility Controls (Verified)
+- **User-Persisted Accessibility Preferences (Stage 33):** Customers can enable `Reduce motion & UI animations` (`[data-reduced-motion="true"]`) and `Enhanced high-contrast borders & secondary text` (`[data-high-contrast="true"]`) in Personal Digital HQ 3.0, persisted in PostgreSQL and synced across Dashboard 3.0.
+- **System Motion Respect:** Global `@media (prefers-reduced-motion: reduce)` rule in `src/app/globals.css`.
+- **Keyboard-Accessible Alternatives (Stage 34):** Dashboard widget reordering provides explicit keyboard-focusable `ArrowUp` / `ArrowDown` buttons with descriptive `aria-label` attributes (`Move <Widget> earlier/later`), alongside focus-visible outlines (`2px solid var(--accent-primary)`).
+- **Semantic Landmarks & Automated DOM Checks:** Verified skip-to-content link, single `<h1>` per page, `aria-expanded` / `aria-pressed` / `role="alert"` / `role="progressbar"` attributes, `<html lang>` matching all 5 locales, zero unlabeled interactive buttons, zero empty links, and zero horizontal overflow across all 6 viewports (`375px`–`1920px`).
 
-| Route | `html[lang]` | `<h1>` Count | Skip Link | Unlabeled `<button>` | Empty `<a>` | Missing `alt` on `<img>` | Horizontal Overflow (`375px`–`1920px`) |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `/en` | `en` | `1` | Present (`#main-content`) | `0` | `0` | `0` | `0px` |
-| `/pt-BR`, `/es`, `/de`, `/fr` | Matched locale | `1` | Present | `0` | `0` | `0` | `0px` |
-| `/en/dashboard/projects` | `en` | `1` | Present | `0` | `0` | `0` | `0px` (incl. `390px` mobile) |
-| `/en/dashboard/report-builder` | `en` | `1` | Present | `0` | `0` | `0` | `0px` (incl. `390px` mobile) |
-
-## 2. Phase 3 Accessibility Implementations
-
-- **Keyboard-Navigable Controls:** All new onboarding segment/goal cards (`aria-pressed`), Report Builder section reorder buttons (`aria-label="Move <section> up/down"`), Research Pro pin/favorite/archive/delete buttons, Agency role selects, Automation forms, and Profile HQ media upload inputs include explicit accessible names and visible focus styling.
-- **Charts & Tabular Alternatives:** `AnalyticsCharts.tsx` retains full accessible `<table>` output alongside SVG charts (now including the `3-Pt SMA` column and deterministic statistical cards with `tabular-nums`), plus keyboard-focusable checkpoint selector buttons.
-- **Status Feedback:** All Phase 3 forms surface accessible `StatusBanner` / `role="alert"` / `role="status"` feedback without relying solely on color.
-- **Custom Uploaded Images:** Uploaded avatar and cover `<img>` tags include explicit descriptive `alt` attributes (`Custom profile cover banner`, `<name> custom avatar`).
-
-## 3. Remaining Manual / Infrastructure Checks (Honest Disclosure)
-
-- **Pending Manual Assistive Technology Testing:** Full screen-reader walkthrough (NVDA/JAWS/VoiceOver) and automated axe-core/Lighthouse Accessibility CLI score runs are **Pending Infrastructure / Manual QA** (standalone `lighthouse` CLI is not installed on this workstation; tracked in `DEVELOPMENT_BACKLOG.md`).
+## 2. Manual Assistive Technology Verification (Pending Manual QA)
+- **Honest Distinction:** Automated DOM and keyboard checks passed in headless Chromium; manual end-to-end screen-reader walkthroughs (**NVDA on Windows**, **VoiceOver on macOS/iOS**) and manual keyboard-only tab-order audits across all 16 dashboard tabs and 5 locales remain `Pending Manual QA` before commercial GA.

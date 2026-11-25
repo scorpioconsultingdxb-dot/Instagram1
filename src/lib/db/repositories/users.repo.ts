@@ -644,3 +644,11 @@ export async function deleteDbUserAccount(
 
   await defaultFileStorage.deleteOwnerNamespace(userId).catch(() => undefined);
 }
+
+export async function countActiveSuperAdmins(
+  client: PrismaClient = getPrismaClient()
+): Promise<number> {
+  return client.user.count({
+    where: { role: 'super_admin', accountStatus: 'active' },
+  });
+}

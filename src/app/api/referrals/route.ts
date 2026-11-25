@@ -4,10 +4,10 @@ import { getCurrentSessionUser } from '@/lib/auth/session';
 import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
 import {
-  attributeReferral,
-  createReferralCampaign,
-  getUserReferralDashboard,
-  submitAffiliateApplication,
+  loadUserReferralDashboard,
+  persistAffiliateApplication,
+  persistAttributeReferral,
+  persistReferralCampaign,
 } from '@/lib/referrals/service';
 
 const referralActionSchema = z.discriminatedUnion('type', [
@@ -49,7 +49,7 @@ export async function GET() {
   try {
     return NextResponse.json({
       ok: true,
-      referral: getUserReferralDashboard(user.id),
+      referral: await loadUserReferralDashboard(user.id),
     });
   } catch {
     return NextResponse.json(
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
   const action = parsed.data;
   try {
     if (action.type === 'create_campaign') {
-      const campaign = createReferralCampaign({
+      const campaign = await persistReferralCampaign({
         ownerUserId: user.id,
         name: action.name,
         utmSource: action.utmSource,
@@ -92,13 +92,13 @@ export async function POST(request: NextRequest) {
         utmCampaign: action.utmCampaign,
       });
       return NextResponse.json(
-        { ok: true, campaign, referral: getUserReferralDashboard(user.id) },
+        { ok: true, campaign, referral: await loadUserReferralDashboard(user.id) },
         { status: 201 }
       );
     }
 
     if (action.type === 'apply_partner') {
-      const application = submitAffiliateApplication({
+      const application = await persistAffiliateApplication({
         userId: user.id,
         email: user.email,
         organization: action.organization,
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
         audienceNotes: action.audienceNotes,
       });
       return NextResponse.json(
-        { ok: true, application, referral: getUserReferralDashboard(user.id) },
+        { ok: true, application, referral: await loadUserReferralDashboard(user.id) },
         { status: 201 }
       );
     }
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const attribution = attributeReferral({
+    const attribution = await persistAttributeReferral({
       code: action.code,
       referredUserId: user.id,
       consentVerified: true,
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       attribution,
-      referral: getUserReferralDashboard(user.id),
+      referral: await loadUserReferralDashboard(user.id),
     });
   } catch {
     return NextResponse.json(

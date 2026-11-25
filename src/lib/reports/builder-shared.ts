@@ -1,27 +1,33 @@
 export const REPORT_TYPES = [
   'executive_summary',
   'competitor_analysis',
+  'social_profile_audit',
   'engagement_analysis',
   'growth_analysis',
+  'content_performance',
+  'influencer_research',
+  'client_performance',
+  'campaign_review',
   'research_summary',
   'brand_audit',
-  'content_performance',
-  'client_performance',
   'custom_report',
 ] as const;
 
 export type ReportBuilderType = (typeof REPORT_TYPES)[number];
 
 export const REPORT_TYPE_LABELS: Record<ReportBuilderType, string> = {
-  executive_summary: 'Executive Summary',
-  competitor_analysis: 'Competitor Analysis',
+  executive_summary: 'Executive Intelligence Report',
+  competitor_analysis: 'Competitor Benchmark Report',
+  social_profile_audit: 'Social Profile Audit',
   engagement_analysis: 'Engagement Analysis',
-  growth_analysis: 'Growth Analysis',
+  growth_analysis: 'Growth Research Report',
+  content_performance: 'Content Strategy Report',
+  influencer_research: 'Influencer Research Report',
+  client_performance: 'Agency Client Report',
+  campaign_review: 'Campaign Review Report',
   research_summary: 'Research Summary',
   brand_audit: 'Brand Audit',
-  content_performance: 'Content Performance',
-  client_performance: 'Client Performance',
-  custom_report: 'Custom Report',
+  custom_report: 'Custom Research Report',
 };
 
 export type ReportSectionKind =

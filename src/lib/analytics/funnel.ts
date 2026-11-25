@@ -8,6 +8,10 @@ export type FunnelEventName =
   | 'premium_preview_viewed'
   | 'signup_started'
   | 'signup_completed'
+  | 'onboarding_completed'
+  | 'first_saved_profile'
+  | 'first_project_created'
+  | 'first_report_created'
   | 'pricing_viewed'
   | 'upgrade_intent';
 
@@ -106,8 +110,8 @@ export function recordFunnelEvent(input: {
   return record;
 }
 
-function summarizeFunnelRecords(recorded: FunnelEventRecord[]) {
-  const isSample = recorded.length === 0;
+function summarizeFunnelRecords(recorded: FunnelEventRecord[], allowSampleFallback = false) {
+  const isSample = allowSampleFallback && recorded.length === 0;
   const source = isSample ? SAMPLE_BASELINE_EVENTS : recorded;
 
   const counts: Record<FunnelEventName, number> = {
@@ -116,6 +120,10 @@ function summarizeFunnelRecords(recorded: FunnelEventRecord[]) {
     premium_preview_viewed: 0,
     signup_started: 0,
     signup_completed: 0,
+    onboarding_completed: 0,
+    first_saved_profile: 0,
+    first_project_created: 0,
+    first_report_created: 0,
     pricing_viewed: 0,
     upgrade_intent: 0,
   };
@@ -136,17 +144,23 @@ function summarizeFunnelRecords(recorded: FunnelEventRecord[]) {
       ? Number(((counts.upgrade_intent / counts.signup_completed) * 100).toFixed(1))
       : 0;
 
+  const onboardingActivationRate =
+    counts.signup_completed > 0
+      ? Number(((counts.onboarding_completed / counts.signup_completed) * 100).toFixed(1))
+      : 0;
+
   return {
     counts,
     searchToSignupRate,
     signupToUpgradeIntentRate,
+    onboardingActivationRate,
     recent: source.slice(0, 20),
     isSample,
   };
 }
 
 export function getFunnelSummary() {
-  return summarizeFunnelRecords(loadRecordedFunnelEvents());
+  return summarizeFunnelRecords(loadRecordedFunnelEvents(), !isDatabaseConfigured());
 }
 
 export async function persistFunnelEvent(input: {
@@ -170,9 +184,10 @@ export async function loadFunnelSummary() {
   if (isDatabaseConfigured()) {
     try {
       const records = await loadDbFunnelEvents();
-      return summarizeFunnelRecords(records);
+      // Never substitute sample baseline events when connected to a live PostgreSQL database
+      return summarizeFunnelRecords(records, false);
     } catch {
-      return getFunnelSummary();
+      return summarizeFunnelRecords([], false);
     }
   }
   return getFunnelSummary();

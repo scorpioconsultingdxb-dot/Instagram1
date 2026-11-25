@@ -50,6 +50,20 @@ const safeInternalMediaUrlSchema = z
     'Custom media URL must reference an internal Viewora media endpoint.'
   );
 
+import {
+  DASHBOARD_PRESETS,
+  DASHBOARD_PRESET_CONFIGS,
+  type DashboardPresetId,
+  type DashboardWidgetKey,
+} from '@/lib/auth/dashboard-presets';
+
+export {
+  DASHBOARD_PRESETS,
+  DASHBOARD_PRESET_CONFIGS,
+  type DashboardPresetId,
+  type DashboardWidgetKey,
+};
+
 export const profilePatchSchema = z.object({
   fullName: z.string().trim().min(2).max(80).optional(),
   professionalTitle: z.string().trim().max(80).optional(),
@@ -107,6 +121,13 @@ export const profilePatchSchema = z.object({
       analyticsPreview: z.boolean().optional(),
     })
     .optional(),
+  dashboardPreset: z.enum(DASHBOARD_PRESETS).optional(),
+  accessibility: z
+    .object({
+      reducedMotion: z.boolean().optional(),
+      highContrast: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export type PersonalProfilePatch = z.infer<typeof profilePatchSchema>;
@@ -158,6 +179,11 @@ export interface PersonalProfilePrefs {
     shortcuts: boolean;
     analyticsPreview: boolean;
   };
+  dashboardPreset: DashboardPresetId;
+  accessibility: {
+    reducedMotion: boolean;
+    highContrast: boolean;
+  };
   updatedAt: string;
 }
 
@@ -204,6 +230,11 @@ export function createDefaultProfilePrefs(): PersonalProfilePrefs {
       shortcuts: true,
       analyticsPreview: true,
     },
+    dashboardPreset: 'personal',
+    accessibility: {
+      reducedMotion: false,
+      highContrast: false,
+    },
     updatedAt: new Date(0).toISOString(),
   };
 }
@@ -221,6 +252,10 @@ function mergePrefs(
     widgetVisibility: {
       ...base.widgetVisibility,
       ...(stored.widgetVisibility ?? {}),
+    },
+    accessibility: {
+      ...base.accessibility,
+      ...(stored.accessibility ?? {}),
     },
   };
 }
@@ -243,6 +278,10 @@ function writeLocalPrefs(userId: string, patch: PersonalProfilePatch): PersonalP
         widgetVisibility: {
           ...prev.widgetVisibility,
           ...(patch.widgetVisibility ?? {}),
+        },
+        accessibility: {
+          ...prev.accessibility,
+          ...(patch.accessibility ?? {}),
         },
         updatedAt: new Date().toISOString(),
       };

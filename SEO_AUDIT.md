@@ -1,33 +1,14 @@
-# Viewora — SEO Audit Report
+# Viewora — Technical SEO Audit Report (Phase 4)
 
 **Date:** 2026-11-25  
-**Supported Locales:** `en`, `pt-BR`, `es`, `de`, `fr` (5 languages + `x-default` hreflang)
+**Scope:** Multi-locale public indexing, metadata, canonicals, `hreflang`, XML sitemap, `robots.txt`, structured data, and private-route `noindex` protection.
 
----
+## 1. Verified Technical SEO Implementation
+- **5-Locale Routing & `hreflang`:** All public routes (`en`, `pt-BR`, `es`, `de`, `fr`) generate localized titles, descriptions, canonical URLs, and `alternates.languages` (`hreflang` + `x-default`) via `src/lib/seo/metadata.ts`.
+- **Static Generation Scale:** `next build` cleanly generates **303 / 303 static pages** including localized homepages, 12 free Instagram tools, pricing, data transparency, resource center, glossary, blog/guides, FAQ, legal/policy pages, and auth entry pages.
+- **XML Sitemap & Robots Directives:** `src/app/sitemap.ts` (`/sitemap.xml`) and `src/app/robots.ts` (`/robots.txt`) expose public localized URLs while disallowing private `/dashboard`, `/admin`, `/onboarding`, and `/api` paths.
+- **Private Page `noindex` Protection:** `/[locale]/admin`, `/[locale]/dashboard`, `/[locale]/dashboard/profile`, `/[locale]/login`, `/[locale]/register`, and `/[locale]/checkout` emit `robots: { index: false, follow: false }` via `buildPageMetadata({ noIndex: true })`.
+- **Breadcrumbs, OpenGraph & Structured Data:** Breadcrumb navigation, OpenGraph image generation (`/opengraph-image`), and JSON-LD schema markup verified on public pages.
 
-## 1. Indexable Public Surface & Sitemap Coverage
-
-- **Static Prerendered Routes (`next build`):** `296/296` pages compiled cleanly across all 5 locales.
-- **12 Standalone Free Tool Landing Pages (`/[locale]/[slug]` & `/[locale]/tools/[slug]`):** Each includes unique title/description, `SoftwareApplication` JSON-LD, breadcrumbs, provenance disclosure, educational guidance, and related tool internal links.
-- **11 Standalone Resource, Help & Trust Pages (`src/lib/public/info-pages.ts`):**
-  - `about`, `contact`, `faq`, `blog`, `resources` *(new in Stage 19)*, `glossary` *(new in Stage 19)*, `privacy`, `terms`, `cookies`, `data-transparency`, `responsible-use`.
-- **Sitemap (`src/app/sitemap.ts`) & Robots (`src/app/robots.ts`):**
-  - Automatically generates localized URLs with complete `hreflang` alternates (`en`, `pt-BR`, `es`, `de`, `fr`, `x-default`) — verified in `src/lib/integration/api.test.ts` and live production DOM (`hreflangCount: 6` on `/en`, `/en/tools`, `/en/pricing`, `/en/resources`, `/en/glossary`).
-  - `robots.txt` explicitly disallows `/api/`, `/*/dashboard`, `/*/admin`, and auth routes so private customer pages are never indexed.
-
-## 2. Structured Data & Metadata Verification (Measured in Production DOM)
-
-| Route | Canonical URL | `hreflang` Links | JSON-LD Scripts | Schema Type |
-| :--- | :--- | :---: | :---: | :--- |
-| `/en` | `http://localhost:3094/en` *(derived from `NEXT_PUBLIC_APP_URL`)* | `6` | `1` | `FAQPage` |
-| `/en/tools` | `http://localhost:3094/en/tools` | `6` | `0` | Directory (`SoftwareApplication` on each of the 12 tool pages) |
-| `/en/pricing` | `http://localhost:3094/en/pricing` | `6` | `0` | Open Graph + Canonical + Hreflang |
-| `/en/resources` | `http://localhost:3094/en/resources` | `6` | `1` | `WebPage` + Breadcrumbs |
-| `/en/glossary` | `http://localhost:3094/en/glossary` | `6` | `1` | `DefinedTermSet` + Breadcrumbs |
-| `/en/faq` | `http://localhost:3094/en/faq` | `6` | `1` | `FAQPage` + Breadcrumbs |
-| `/en/instagram-*` (12 tools) | Localized canonical | `6` | `1` | `SoftwareApplication` + Breadcrumbs |
-
-## 3. Content Integrity & Localization Notes
-
-- Zero thin auto-generated filler pages; zero fabricated reviews/testimonials/aggregate ratings in JSON-LD.
-- Core navigation, hero, pricing, auth, dashboard, profile HQ, and tools chrome are localized across all 5 locales (`en`, `pt-BR`, `es`, `de`, `fr`), verified by `src/lib/integration/stages-3-to-9.test.ts`. Deep long-form English guide/glossary prose can be professionally translated by native editors in a future content localization pass.
+## 2. Staging / Production Post-Deployment Checks
+- Submit production `https://<domain>/sitemap.xml` to Google Search Console and Bing Webmaster Tools and verify live canonical headers once deployed to the final HTTPS domain.

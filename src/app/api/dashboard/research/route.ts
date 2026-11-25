@@ -14,6 +14,7 @@ import {
   persistSavedProfile,
   type SavedProfileRecord,
 } from '@/lib/dashboard/store';
+import { persistFunnelEvent } from '@/lib/analytics/funnel';
 import {
   buildUserProvidedProfileData,
   loadUserResearchProState,
@@ -45,6 +46,10 @@ const researchActionSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('delete_project'),
+    id: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('duplicate_project'),
     id: z.string().min(1),
   }),
   z.object({
@@ -133,6 +138,13 @@ export async function POST(request: NextRequest) {
       projects: [project, ...state.projects],
       history: pushHistory(state.history, 'project_created', `Created project "${project.title}"`),
     }));
+    await persistFunnelEvent({
+      eventName: 'first_project_created',
+      locale: 'en',
+      sessionId: user.id,
+      userId: user.id,
+      properties: { projectId: project.id },
+    }).catch(() => undefined);
     return NextResponse.json({ ok: true, project, research }, { status: 201 });
   }
 
@@ -184,6 +196,33 @@ export async function POST(request: NextRequest) {
         .map((p) => (p.parentProjectId === action.id ? { ...p, parentProjectId: null } : p)),
     }));
     return NextResponse.json({ ok: true, research });
+  }
+
+  if (action.type === 'duplicate_project') {
+    let copy: ResearchProjectRecord | null = null;
+    const research = await persistUserResearchProState(user.id, (state) => {
+      const source = state.projects.find((p) => p.id === action.id);
+      if (!source) return state;
+      const now = new Date().toISOString();
+      copy = {
+        ...source,
+        id: `prj-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title: `${source.title} (Copy)`.slice(0, 80),
+        status: 'active',
+        pinned: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return {
+        ...state,
+        projects: [copy, ...state.projects],
+        history: pushHistory(state.history, 'project_created', `Duplicated project "${source.title}"`),
+      };
+    });
+    if (!copy) {
+      return NextResponse.json({ ok: false, error: 'Research project not found.' }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, project: copy, research }, { status: 201 });
   }
 
   if (action.type === 'save_filter') {

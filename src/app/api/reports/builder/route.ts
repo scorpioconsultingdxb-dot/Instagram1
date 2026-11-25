@@ -10,6 +10,7 @@ import {
 } from '@/lib/entitlements/service';
 import { hasEntitlement } from '@/lib/entitlements/helpers';
 import { loadUserWorkspaceState, persistExportHistory } from '@/lib/dashboard/store';
+import { persistFunnelEvent } from '@/lib/analytics/funnel';
 import {
   buildReportCsv,
   buildReportMarkdown,
@@ -172,6 +173,13 @@ export async function POST(request: NextRequest) {
     };
 
     const reports = await persistUserReport(user.id, doc);
+    await persistFunnelEvent({
+      eventName: 'first_report_created',
+      locale: 'en',
+      sessionId: user.id,
+      userId: user.id,
+      properties: { reportType: doc.reportType },
+    }).catch(() => undefined);
     return NextResponse.json({ ok: true, report: doc, reports }, { status: 201 });
   }
 

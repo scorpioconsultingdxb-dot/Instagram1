@@ -1,3 +1,17 @@
+import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
+import {
+  attributeDbReferral,
+  findDbReferralCode,
+  getDbReferralOverview,
+  getDbUserReferralDashboard,
+  getOrCreateDbReferralCode,
+  reviewDbAffiliateApplication,
+  submitDbAffiliateApplication,
+} from '@/lib/db/repositories/referrals.repo';
+import {
+  readDbUserModuleState,
+  updateDbUserModuleState,
+} from '@/lib/db/repositories/user-module-state.repo';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 
 /**
@@ -284,4 +298,118 @@ export function getReferralOverview() {
     campaignsCount: store.campaigns.length,
     applications: store.applications,
   };
+}
+
+// ============================================================================
+// PostgreSQL-First Durable Referral & Affiliate Operations (Stage 38)
+// ============================================================================
+
+export async function loadReferralCodeRecord(code: string): Promise<ReferralCodeRecord | null> {
+  if (isDatabaseConfigured()) {
+    return findDbReferralCode(code);
+  }
+  return getReferralCodeRecord(code);
+}
+
+export async function loadUserReferralDashboard(userId: string) {
+  if (isDatabaseConfigured()) {
+    const [dbDash, campaigns] = await Promise.all([
+      getDbUserReferralDashboard(userId),
+      readDbUserModuleState<ReferralCampaignRecord[]>(userId, 'referralCampaigns', () => []),
+    ]);
+    return {
+      ...dbDash,
+      campaigns,
+    };
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return getUserReferralDashboard(userId);
+}
+
+export async function persistReferralCampaign(input: {
+  ownerUserId: string;
+  name: string;
+  utmSource: string;
+  utmMedium: string;
+  utmCampaign: string;
+}): Promise<ReferralCampaignRecord> {
+  if (isDatabaseConfigured()) {
+    const refCode = await getOrCreateDbReferralCode(input.ownerUserId);
+    const campaign: ReferralCampaignRecord = {
+      id: `cmp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      ownerUserId: input.ownerUserId,
+      code: refCode.code,
+      name: input.name,
+      utmSource: input.utmSource,
+      utmMedium: input.utmMedium,
+      utmCampaign: input.utmCampaign,
+      clicks: 0,
+      createdAt: new Date().toISOString(),
+    };
+    await updateDbUserModuleState<ReferralCampaignRecord[]>(
+      input.ownerUserId,
+      'referralCampaigns',
+      () => [],
+      (prev) => [campaign, ...prev].slice(0, 100)
+    );
+    return campaign;
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return createReferralCampaign(input);
+}
+
+export async function persistAffiliateApplication(input: {
+  userId: string;
+  email: string;
+  organization: string;
+  channelUrl: string;
+  audienceNotes: string;
+}): Promise<AffiliateApplicationRecord> {
+  if (isDatabaseConfigured()) {
+    return submitDbAffiliateApplication(input);
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return submitAffiliateApplication(input);
+}
+
+export async function persistAttributeReferral(input: {
+  code: string;
+  referredUserId: string;
+  consentVerified: boolean;
+  utmCampaign?: string;
+}): Promise<ReferralAttributionRecord | null> {
+  if (isDatabaseConfigured()) {
+    return attributeDbReferral(input);
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return attributeReferral(input);
+}
+
+export async function persistReviewAffiliateApplication(
+  id: string,
+  status: 'approved_inactive_payouts' | 'declined',
+  reviewedBy: string
+): Promise<AffiliateApplicationRecord | null> {
+  if (isDatabaseConfigured()) {
+    return reviewDbAffiliateApplication(id, status, reviewedBy);
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
+  return reviewAffiliateApplication(id, status, reviewedBy);
+}
+
+export async function loadReferralOverview() {
+  if (isDatabaseConfigured()) {
+    return getDbReferralOverview();
+  }
+  return getReferralOverview();
 }

@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { ArrowRight, CheckCircle2, ShieldAlert, Sparkles } from 'lucide-react';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
-import { getReferralCodeRecord, recordReferralLandingVisit } from '@/lib/referrals/service';
+import { loadReferralCodeRecord, recordReferralLandingVisit } from '@/lib/referrals/service';
+import { isDatabaseConfigured } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,8 +20,8 @@ export default async function ReferralLandingPage({
 
   let record = null;
   try {
-    record = getReferralCodeRecord(normalizedCode);
-    if (record) {
+    record = await loadReferralCodeRecord(normalizedCode);
+    if (record && !isDatabaseConfigured()) {
       recordReferralLandingVisit(normalizedCode, utm_campaign);
     }
   } catch {

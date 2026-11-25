@@ -25,6 +25,8 @@ type HqExtendedFields = Pick<
   | 'defaultLandingSection'
   | 'widgetOrder'
   | 'widgetVisibility'
+  | 'dashboardPreset'
+  | 'accessibility'
 >;
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -127,6 +129,11 @@ export async function getDbProfilePrefs(
             ? ext.widgetVisibility
             : {}),
         },
+        dashboardPreset: ext.dashboardPreset ?? defaults.dashboardPreset,
+        accessibility: {
+          ...defaults.accessibility,
+          ...(ext.accessibility && typeof ext.accessibility === 'object' ? ext.accessibility : {}),
+        },
         updatedAt: (pref?.updatedAt ?? user.updatedAt).toISOString(),
       };
     },
@@ -185,7 +192,9 @@ export async function saveDbProfilePrefs(
     patch.customCoverKey !== undefined ||
     patch.defaultLandingSection !== undefined ||
     patch.widgetOrder !== undefined ||
-    patch.widgetVisibility !== undefined;
+    patch.widgetVisibility !== undefined ||
+    patch.dashboardPreset !== undefined ||
+    patch.accessibility !== undefined;
 
   await withUserRlsContext(
     { userId, role: 'user' },
@@ -237,6 +246,16 @@ export async function saveDbProfilePrefs(
                   ...defaults.widgetVisibility,
                   ...(prevExt.widgetVisibility ?? {}),
                   ...patch.widgetVisibility,
+                },
+              }
+            : {}),
+          ...(patch.dashboardPreset !== undefined ? { dashboardPreset: patch.dashboardPreset } : {}),
+          ...(patch.accessibility !== undefined
+            ? {
+                accessibility: {
+                  ...defaults.accessibility,
+                  ...(prevExt.accessibility ?? {}),
+                  ...patch.accessibility,
                 },
               }
             : {}),

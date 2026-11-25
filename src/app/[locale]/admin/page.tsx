@@ -20,7 +20,7 @@ import {
 import { loadFunnelSummary } from '@/lib/analytics/funnel';
 import { DEFAULT_EXPERIMENTS } from '@/lib/experiments/ab';
 import { defaultJobQueue } from '@/lib/jobs/queue';
-import { getReferralOverview } from '@/lib/referrals/service';
+import { loadReferralOverview } from '@/lib/referrals/service';
 import { AdminConsole } from '@/components/admin/AdminConsole';
 
 export const dynamic = 'force-dynamic';
@@ -87,16 +87,18 @@ export default async function AdminPage({
     initialBroadcasts,
     initialAuditLogs,
     initialFlags,
+    referralOverview,
   ] = await Promise.all([
     loadAdminUsers(),
     defaultProviderRegistry.checkAllHealth(),
     loadFunnelSummary(),
     loadConfiguredPlans(),
     loadCmsContent(),
-    loadSupportTickets(),
+    loadSupportTickets({ userId: user.id, role: user.role }),
     loadBroadcastNotifications(),
     loadAuditLogs(),
     loadFeatureFlags(),
+    loadReferralOverview(),
   ]);
 
   return (
@@ -117,7 +119,7 @@ export default async function AdminPage({
       initialFlags={initialFlags}
       jobQueueSummary={defaultJobQueue.getSummary()}
       storageUsage={getLocalStorageUsageSummary()}
-      referralOverview={getReferralOverview()}
+      referralOverview={referralOverview}
     />
   );
 }

@@ -16,7 +16,8 @@ import { defaultProviderRegistry } from '@/lib/providers';
 import { loadFunnelSummary } from '@/lib/analytics/funnel';
 import { DEFAULT_EXPERIMENTS } from '@/lib/experiments/ab';
 import { defaultJobQueue } from '@/lib/jobs/queue';
-import { getReferralOverview } from '@/lib/referrals/service';
+import { loadReferralOverview } from '@/lib/referrals/service';
+import { checkDatabaseHealth } from '@/lib/db/prisma';
 
 export async function GET() {
   try {
@@ -33,6 +34,8 @@ export async function GET() {
       broadcastNotifications,
       auditLogs,
       featureFlags,
+      databaseHealth,
+      referralOverview,
     ] = await Promise.all([
       loadAdminUsers(),
       defaultProviderRegistry.checkAllHealth(),
@@ -43,6 +46,8 @@ export async function GET() {
       loadBroadcastNotifications(),
       loadAuditLogs(),
       loadFeatureFlags(),
+      checkDatabaseHealth(),
+      loadReferralOverview(),
     ]);
 
     return NextResponse.json({
@@ -51,6 +56,7 @@ export async function GET() {
       users,
       plans,
       providerHealth,
+      databaseHealth,
       apiUsage: getApiUsageMetrics(),
       searchAnalytics: getSearchAnalyticsMetrics(),
       conversionAnalytics,
@@ -62,7 +68,7 @@ export async function GET() {
       featureFlags,
       jobQueueSummary: defaultJobQueue.getSummary(),
       storageUsage: getLocalStorageUsageSummary(),
-      referralOverview: getReferralOverview(),
+      referralOverview,
     });
   } catch {
     return NextResponse.json(

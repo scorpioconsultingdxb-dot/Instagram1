@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import { hasAdminCapability, requireAdminApi } from '@/lib/admin/rbac';
 import { isDatabaseConfigured } from '@/lib/env';
-import { reactivateDbUserAccount, suspendDbUserAccount } from '@/lib/db/repositories/users.repo';
+import {
+  countActiveSuperAdmins,
+  reactivateDbUserAccount,
+  revokeAllDbUserSessions,
+  suspendDbUserAccount,
+} from '@/lib/db/repositories/users.repo';
 import { upsertDbUserOverride } from '@/lib/db/repositories/entitlements.repo';
 import {
   persistAuditLog,
@@ -21,7 +26,7 @@ import {
   persistConfiguredPlan,
   persistPlanEntitlement,
 } from '@/lib/entitlements/service';
-import { reviewAffiliateApplication } from '@/lib/referrals/service';
+import { persistReviewAffiliateApplication } from '@/lib/referrals/service';
 import type { FeatureKey } from '@/lib/entitlements/types';
 
 const featureKeySchema = z.enum([
@@ -124,6 +129,10 @@ const adminActionSchema = z.discriminatedUnion('type', [
     id: z.string().min(1),
     status: z.enum(['approved_inactive_payouts', 'declined']),
   }),
+  z.object({
+    type: z.literal('revoke_user_sessions'),
+    userId: z.string().min(1),
+  }),
 ]);
 
 export async function POST(request: NextRequest) {
@@ -186,6 +195,22 @@ async function handleAdminActionPost(request: NextRequest) {
           { ok: false, error: 'Administrators cannot demote or reassign their own role.' },
           { status: 400 }
         );
+      }
+      if (
+        isDatabaseConfigured() &&
+        targetUser.role === 'super_admin' &&
+        action.role !== 'super_admin'
+      ) {
+        const activeSuperAdmins = await countActiveSuperAdmins();
+        if (activeSuperAdmins <= 1) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: 'Cannot demote the last active Super Admin account.',
+            },
+            { status: 409 }
+          );
+        }
       }
     }
     const updateRes = await persistAdminUserUpdate(action.userId, {
@@ -389,6 +414,25 @@ async function handleAdminActionPost(request: NextRequest) {
         { status: 503 }
       );
     }
+    const targetUser = await loadAdminUserById(action.userId);
+    if (!targetUser) {
+      return NextResponse.json({ ok: false, error: 'Target user not found.' }, { status: 404 });
+    }
+    if (targetUser.role === 'super_admin') {
+      if (actor.role !== 'super_admin') {
+        return NextResponse.json(
+          { ok: false, error: 'Only a Super Admin can suspend another Super Admin.' },
+          { status: 403 }
+        );
+      }
+      const activeSuperAdmins = await countActiveSuperAdmins();
+      if (activeSuperAdmins <= 1) {
+        return NextResponse.json(
+          { ok: false, error: 'Cannot suspend the last active Super Admin account.' },
+          { status: 409 }
+        );
+      }
+    }
     await suspendDbUserAccount(action.userId);
     const audit = await persistAuditLog({
       actorId: actor.id,
@@ -472,7 +516,7 @@ async function handleAdminActionPost(request: NextRequest) {
         { status: 403 }
       );
     }
-    const updated = reviewAffiliateApplication(action.id, action.status, actor.email);
+    const updated = await persistReviewAffiliateApplication(action.id, action.status, actor.email);
     if (!updated) {
       return NextResponse.json(
         { ok: false, error: 'Affiliate application not found.' },
@@ -488,6 +532,37 @@ async function handleAdminActionPost(request: NextRequest) {
       diff: { status: action.status, payoutsEnabled: false },
     });
     return NextResponse.json({ ok: true, application: updated, audit });
+  }
+
+  if (action.type === 'revoke_user_sessions') {
+    if (!hasAdminCapability(actor.role, 'manage_users')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot revoke customer sessions.` },
+        { status: 403 }
+      );
+    }
+    if (action.userId === actor.id) {
+      return NextResponse.json(
+        { ok: false, error: 'Use Sign Out or Account Security to end your own session.' },
+        { status: 400 }
+      );
+    }
+    if (!isDatabaseConfigured()) {
+      return NextResponse.json(
+        { ok: false, error: 'Session revocation requires a configured PostgreSQL database.' },
+        { status: 503 }
+      );
+    }
+    const revokedCount = await revokeAllDbUserSessions(action.userId);
+    const audit = await persistAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'admin.user.sessions_revoked',
+      targetType: 'user',
+      targetId: action.userId,
+      diff: { revokedCount },
+    });
+    return NextResponse.json({ ok: true, userId: action.userId, revokedCount, audit });
   }
 
   // update_cms

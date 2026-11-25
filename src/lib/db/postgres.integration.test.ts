@@ -19,9 +19,24 @@ import {
 } from '@/lib/db/repositories/auth-tokens.repo';
 import { getDbProfilePrefs, saveDbProfilePrefs } from '@/lib/db/repositories/profile-prefs.repo';
 import {
+  readDbUserMedia,
   readDbUserModuleState,
+  saveDbUserMedia,
+  deleteDbUserMedia,
   updateDbUserModuleState,
 } from '@/lib/db/repositories/user-module-state.repo';
+import {
+  attributeDbReferral,
+  getDbReferralOverview,
+  getDbUserReferralDashboard,
+  getOrCreateDbReferralCode,
+  reviewDbAffiliateApplication,
+  submitDbAffiliateApplication,
+} from '@/lib/db/repositories/referrals.repo';
+import {
+  countActiveSuperAdmins,
+  revokeAllDbUserSessions,
+} from '@/lib/db/repositories/users.repo';
 import {
   loadDbUserWorkspaceState,
   persistDbCreateComparison,
@@ -714,5 +729,117 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       appClient
     );
     expect(crossRead).toBeNull();
+  });
+
+  it('verifies Phase 4 durable PG customer media, native PG referrals/affiliates, and admin session revocation under RLS', async () => {
+    const emailOwner = `p4-owner-${randomUUID().slice(0, 8)}@viewora.test`;
+    const emailInvitee = `p4-invitee-${randomUUID().slice(0, 8)}@viewora.test`;
+
+    const regOwner = await registerUserWithWorkspace(
+      {
+        email: emailOwner,
+        password: 'P4OwnerPass!2026',
+        fullName: 'Phase4 Partner Owner',
+        segment: 'agency',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      appClient
+    );
+    const regInvitee = await registerUserWithWorkspace(
+      {
+        email: emailInvitee,
+        password: 'P4InviteePass!2026',
+        fullName: 'Phase4 Referred User',
+        segment: 'personal',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      appClient
+    );
+    expect(regOwner.ok && regInvitee.ok).toBe(true);
+    if (!regOwner.ok || !regInvitee.ok) return;
+    createdUserIds.push(regOwner.user.id, regInvitee.user.id);
+
+    // 1. Durable PostgreSQL customer media storage + cross-user RLS isolation
+    await saveDbUserMedia(
+      regOwner.user.id,
+      'avatar',
+      {
+        contentType: 'image/png',
+        extension: 'png',
+        sizeBytes: 68,
+        sha256: 'abc123',
+        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        storedAt: new Date().toISOString(),
+      },
+      appClient
+    );
+    const ownerMedia = await readDbUserMedia(regOwner.user.id, 'avatar', appClient);
+    expect(ownerMedia?.contentType).toBe('image/png');
+    expect(ownerMedia?.sizeBytes).toBe(68);
+    // Invitee reading own media gets null (cannot see owner's avatar)
+    expect(await readDbUserMedia(regInvitee.user.id, 'avatar', appClient)).toBeNull();
+    await deleteDbUserMedia(regOwner.user.id, 'avatar', appClient);
+    expect(await readDbUserMedia(regOwner.user.id, 'avatar', appClient)).toBeNull();
+
+    // 2. Native PostgreSQL referral codes, self-referral & duplicate fraud prevention, affiliate review
+    const codeRec = await getOrCreateDbReferralCode(regOwner.user.id, appClient);
+    expect(codeRec.code.startsWith('VW-')).toBe(true);
+    expect(codeRec.payoutsEnabled).toBe(false);
+
+    const selfAttempt = await attributeDbReferral(
+      { code: codeRec.code, referredUserId: regOwner.user.id, consentVerified: true },
+      appClient
+    );
+    expect(selfAttempt?.status).toBe('rejected_self_referral');
+
+    const validAttribution = await attributeDbReferral(
+      { code: codeRec.code, referredUserId: regInvitee.user.id, consentVerified: true, utmCampaign: 'p4_launch' },
+      appClient
+    );
+    expect(validAttribution?.status).toBe('attributed_pending_billing');
+
+    const dupAttempt = await attributeDbReferral(
+      { code: codeRec.code, referredUserId: regInvitee.user.id, consentVerified: true },
+      appClient
+    );
+    expect(dupAttempt?.status).toBe('rejected_duplicate');
+
+    const appRec = await submitDbAffiliateApplication(
+      {
+        userId: regOwner.user.id,
+        email: emailOwner,
+        organization: 'Phase 4 Media Partners',
+        channelUrl: 'https://example.com/partners',
+        audienceNotes: 'Educating agencies on transparent analytics.',
+      },
+      appClient
+    );
+    expect(appRec.status).toBe('pending_review');
+
+    const reviewed = await reviewDbAffiliateApplication(
+      appRec.id,
+      'approved_inactive_payouts',
+      'admin@viewora.test',
+      appClient
+    );
+    expect(reviewed?.status).toBe('approved_inactive_payouts');
+
+    const dash = await getDbUserReferralDashboard(regOwner.user.id, appClient);
+    expect(dash.attributions.length).toBe(1);
+    expect(dash.payoutsEnabled).toBe(false);
+
+    const overview = await getDbReferralOverview(appClient);
+    expect(overview.codesCount).toBeGreaterThanOrEqual(1);
+    expect(overview.payoutsEnabled).toBe(false);
+
+    // 3. Admin session revocation & active super admin counting
+    const s = await createDbSession({ userId: regInvitee.user.id }, appClient);
+    expect(await resolveDbSessionByRawToken(s.rawToken, appClient)).not.toBeNull();
+    const revoked = await revokeAllDbUserSessions(regInvitee.user.id, undefined, appClient);
+    expect(revoked).toBeGreaterThanOrEqual(1);
+    expect(await resolveDbSessionByRawToken(s.rawToken, appClient)).toBeNull();
+    expect(await countActiveSuperAdmins(appClient)).toBeGreaterThanOrEqual(0);
   });
 });

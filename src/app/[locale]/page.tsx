@@ -447,10 +447,10 @@ export default async function HomePage({
             {providerHealth.map((item) => (
               <div
                 key={item.providerId}
-                className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-[#263047] dark:bg-[#0F172A]"
+                className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-[#263047] dark:bg-[#0F172A]"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
                     {item.providerLabel}
                   </span>
                   <span

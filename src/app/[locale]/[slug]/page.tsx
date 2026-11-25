@@ -12,6 +12,7 @@ import { buildPageMetadata } from '@/lib/seo/metadata';
 import { getDemoFixtureUsernames } from '@/lib/providers';
 import { getAllToolSlugs, getToolBySlug } from '@/lib/tools/catalog';
 import { getAllInfoPageSlugs, getInfoPageBySlug } from '@/lib/public/info-pages';
+import { getPublishedCmsBySlug } from '@/lib/admin/store';
 import { ToolPageView } from '@/components/tools/ToolPageView';
 import { ContactForm } from '@/components/public/ContactForm';
 
@@ -83,6 +84,8 @@ export default async function PublicSlugPage({
     notFound();
   }
 
+  const publishedCms = getPublishedCmsBySlug(info.slug, safeLocale);
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
       <span className="inline-block rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-[#7957FF] dark:bg-violet-950 dark:text-[#A99AFF]">
@@ -92,6 +95,17 @@ export default async function PublicSlugPage({
         {info.title}
       </h1>
       <p className="mt-2 text-base text-[#64748B] dark:text-slate-300">{info.description}</p>
+
+      {publishedCms ? (
+        <div className="mt-6 rounded-2xl border border-violet-200 bg-violet-50/70 p-5 text-sm dark:border-[#263047] dark:bg-[#192337]">
+          <p className="font-display text-sm font-bold text-[#6941EF] dark:text-[#A99AFF]">
+            {publishedCms.title}
+          </p>
+          <p className="mt-1.5 text-xs leading-relaxed text-[#0F172A] dark:text-slate-200">
+            {publishedCms.body}
+          </p>
+        </div>
+      ) : null}
 
       {info.isLegalDraft ? (
         <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">

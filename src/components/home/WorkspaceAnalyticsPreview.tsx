@@ -128,7 +128,7 @@ export function WorkspaceAnalyticsPreview({
             <div>
               <p className="inline-flex items-center gap-1.5 text-xs font-bold tracking-wider text-[#6941EF] uppercase dark:text-[#A99AFF]">
                 <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
-                Stage 2 · Professional Analytics Studio
+                Tier 2 · Professional Analytics Studio
               </p>
               <h2
                 id="workspace-preview-heading"

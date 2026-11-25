@@ -8,6 +8,7 @@ import {
 } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { generateAiProfileReport } from '@/lib/ai/gemini';
+import { recordSavedAiReport } from '@/lib/dashboard/store';
 
 const requestSchema = z.object({
   username: z.string().min(1).max(60),
@@ -66,5 +67,7 @@ export async function POST(request: NextRequest) {
     providerLabel: lookup.meta.providerLabel,
   });
 
-  return NextResponse.json({ ok: true, report });
+  const savedReport = recordSavedAiReport(user.id, report);
+
+  return NextResponse.json({ ok: true, report, savedReport });
 }

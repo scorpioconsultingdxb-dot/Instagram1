@@ -5,9 +5,10 @@ import { useState } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/types';
 import type { AiReportOutput, AiReportType } from '@/lib/ai/gemini';
+import type { SavedAiReportRecord } from '@/lib/dashboard/store';
 import type { DashboardSavedProfile } from './CustomerDashboard';
 import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';
-import { ErrorState, UpgradePreviewCard } from '@/components/ui/Primitives';
+import { EmptyState, ErrorState, UpgradePreviewCard } from '@/components/ui/Primitives';
 
 const REPORT_TYPES: Array<{ id: AiReportType; label: string; desc: string }> = [
   { id: 'profile_performance', label: 'Profile Performance Report', desc: 'Overall health, cadence & interaction depth' },
@@ -26,6 +27,8 @@ export function AiIntelligenceStudio({
   canGenerateAi,
   canPdf,
   canCsv,
+  onReportSaved,
+  onEnableDemoPreview,
 }: {
   locale: Locale;
   dict: Dictionary;
@@ -33,10 +36,12 @@ export function AiIntelligenceStudio({
   canGenerateAi: boolean;
   canPdf: boolean;
   canCsv: boolean;
+  onReportSaved?: (entry: SavedAiReportRecord) => void;
+  onEnableDemoPreview?: () => void;
 }) {
   const [reportType, setReportType] = useState<AiReportType>('profile_performance');
   const [selectedUsername, setSelectedUsername] = useState<string>(
-    profiles[0]?.profile.username ?? 'viewora.studio'
+    profiles[0]?.profile.username ?? ''
   );
   const [dateRange, setDateRange] = useState<'30d' | '90d' | '180d'>('90d');
   const [generating, setGenerating] = useState(false);
@@ -54,6 +59,22 @@ export function AiIntelligenceStudio({
     );
   }
 
+  if (profiles.length === 0) {
+    return (
+      <EmptyState
+        title="No profiles available for AI Intelligence Studio"
+        description="Save an eligible public profile in Saved Profiles or turn on explicit Demo Preview Mode to generate structured briefs."
+        actionLabel={onEnableDemoPreview ? 'Enable Demo Preview Mode' : undefined}
+        onAction={onEnableDemoPreview}
+      />
+    );
+  }
+
+  const resolvedUsername =
+    profiles.some((p) => p.profile.username === selectedUsername)
+      ? selectedUsername
+      : profiles[0]!.profile.username;
+
   const handleGenerate = async () => {
     setGenerating(true);
     setError(null);
@@ -61,18 +82,22 @@ export function AiIntelligenceStudio({
       const res = await fetch('/api/ai/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: selectedUsername, reportType }),
+        body: JSON.stringify({ username: resolvedUsername, reportType }),
       });
       const json = (await res.json()) as {
         ok: boolean;
         error?: string;
         report?: AiReportOutput;
+        savedReport?: SavedAiReportRecord;
       };
-      if (!json.ok || !json.report) {
+      if (!res.ok || !json.ok || !json.report) {
         setError(json.error ?? 'Could not generate AI report.');
         return;
       }
       setReport(json.report);
+      if (json.savedReport) {
+        onReportSaved?.(json.savedReport);
+      }
     } catch {
       setError('Network error while requesting the AI report.');
     } finally {
@@ -80,7 +105,7 @@ export function AiIntelligenceStudio({
     }
   };
 
-  const activeProfile = profiles.find((p) => p.profile.username === selectedUsername);
+  const activeProfile = profiles.find((p) => p.profile.username === resolvedUsername);
 
   return (
     <div className="space-y-6">
@@ -108,7 +133,7 @@ export function AiIntelligenceStudio({
             2. Eligible Profile
           </span>
           <select
-            value={selectedUsername}
+            value={resolvedUsername}
             onChange={(e) => setSelectedUsername(e.target.value)}
             className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 font-mono text-xs font-medium text-[#0F172A] dark:border-[#263047] dark:bg-[#131C2E] dark:text-[#F8FAFC]"
           >
@@ -139,7 +164,7 @@ export function AiIntelligenceStudio({
           <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
             Input payload:{' '}
             <strong className="text-[#0F172A] dark:text-[#F8FAFC]">
-              @{selectedUsername}
+              @{resolvedUsername}
             </strong>{' '}
             · {activeProfile?.profile.historicalTrend.length ?? 0} checkpoints ·{' '}
             {activeProfile?.dataClass ?? 'demo'} source.

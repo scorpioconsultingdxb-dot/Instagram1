@@ -17,7 +17,6 @@ import {
   FileDown,
   GitCompare,
   LifeBuoy,
-  Lock,
   LogOut,
   Plus,
   Search,
@@ -50,6 +49,8 @@ import { AiIntelligenceStudio } from './AiIntelligenceStudio';
 import { SavedProfilesModule } from './SavedProfilesModule';
 import { CompetitorStudio } from './CompetitorStudio';
 import { NotificationsSupportModule } from './NotificationsSupportModule';
+import { ActivityCalendarModule } from './ActivityCalendarModule';
+import { ReportsLibraryModule } from './ReportsLibraryModule';
 
 export type DashboardTab =
   | 'overview'
@@ -678,7 +679,13 @@ export function CustomerDashboard({
                     </div>
                     <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
                   </div>
-                  <AnalyticsVisualizations profile={selectedEntry.profile} />
+                  <AnalyticsVisualizations
+                    profile={selectedEntry.profile}
+                    dataClass={selectedEntry.dataClass}
+                    providerLabel={selectedEntry.providerLabel}
+                    fetchedAt={selectedEntry.savedAt}
+                    initialRange={workspace.settings.defaultDateRange}
+                  />
                 </>
               )}
             </div>
@@ -692,7 +699,8 @@ export function CustomerDashboard({
                 </h2>
                 <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
                   Generate structured Gemini-backed or transparent template reports across 7
-                  analytical workflows. Generated briefs are stored in your Report Library.
+                  analytical workflows. Generated briefs are saved automatically to your Report
+                  Library.
                 </p>
               </div>
               <AiIntelligenceStudio
@@ -702,105 +710,33 @@ export function CustomerDashboard({
                 canGenerateAi={canAi}
                 canPdf={canPdf}
                 canCsv={canCsv}
+                onEnableDemoPreview={() => void toggleDemoPreview(true)}
+                onReportSaved={(savedEntry) => {
+                  setWorkspace((prev) => ({
+                    ...prev,
+                    reports: [savedEntry, ...prev.reports],
+                  }));
+                }}
               />
             </div>
           ) : null}
 
           {activeTab === 'timeline' ? (
-            <div className="viewora-card rounded-2xl p-6">
-              {!selectedEntry ? (
-                <EmptyState
-                  title="No timeline checkpoints to display yet"
-                  description="Save an eligible profile or enable Demo Preview Mode to review historical snapshot checkpoints."
-                  actionLabel="Enable Demo Preview Mode"
-                  onAction={() => void toggleDemoPreview(true)}
-                />
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                      Activity &amp; Snapshot Timeline — @{selectedEntry.username}
-                    </h2>
-                    <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
-                  </div>
-                  <ol className="mt-5 space-y-3 border-l-2 border-[#7957FF]/30 pl-4">
-                    {selectedEntry.profile.historicalTrend
-                      .slice()
-                      .reverse()
-                      .map((pt) => (
-                        <li
-                          key={pt.date}
-                          className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs dark:border-[#263047] dark:bg-[#0F172A]"
-                        >
-                          <div className="flex items-center justify-between font-semibold tabular-nums text-[#0F172A] dark:text-white">
-                            <span>Observed {pt.date}</span>
-                            <span>{pt.followers.toLocaleString()} followers</span>
-                          </div>
-                          <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
-                            {pt.posts} total public posts · {pt.engagementRate}% estimated engagement
-                          </p>
-                        </li>
-                      ))}
-                  </ol>
-                </>
-              )}
-            </div>
+            <ActivityCalendarModule
+              mode="timeline"
+              dict={dict}
+              selectedEntry={selectedEntry}
+              onEnableDemoPreview={() => void toggleDemoPreview(true)}
+            />
           ) : null}
 
           {activeTab === 'calendar' ? (
-            <div className="viewora-card rounded-2xl p-6">
-              {!selectedEntry ? (
-                <EmptyState
-                  title="No publishing calendar data yet"
-                  description="Save an eligible profile or activate Demo Preview Mode to inspect post cadence by calendar date."
-                  actionLabel="Enable Demo Preview Mode"
-                  onAction={() => void toggleDemoPreview(true)}
-                />
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                      Publishing Calendar — @{selectedEntry.username}
-                    </h2>
-                    <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
-                  </div>
-                  <div className="mt-5 grid grid-cols-7 gap-2 text-center text-xs">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                      <div key={d} className="font-semibold text-[#64748B]">
-                        {d}
-                      </div>
-                    ))}
-                    {Array.from({ length: 30 }, (_, i) => i + 1).map((day) => {
-                      const monthPrefix =
-                        selectedEntry.profile.recentPosts[0]?.publishedAt.slice(0, 7) || '2026-11';
-                      const dateStr = `${monthPrefix}-${String(day).padStart(2, '0')}`;
-                      const matchingPost = selectedEntry.profile.recentPosts.find((p) =>
-                        p.publishedAt.startsWith(dateStr)
-                      );
-                      return (
-                        <div
-                          key={day}
-                          className={`min-h-16 rounded-xl border p-2 text-left ${
-                            matchingPost
-                              ? 'border-[#7957FF] bg-violet-50/70 dark:bg-violet-950/40'
-                              : 'border-slate-200 bg-slate-50 dark:border-[#263047] dark:bg-[#0F172A]'
-                          }`}
-                        >
-                          <span className="font-mono text-[11px] font-semibold tabular-nums text-slate-700 dark:text-slate-300">
-                            {day}
-                          </span>
-                          {matchingPost ? (
-                            <p className="mt-1 truncate rounded bg-[#7957FF] px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                              {matchingPost.mediaType}
-                            </p>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
+            <ActivityCalendarModule
+              mode="calendar"
+              dict={dict}
+              selectedEntry={selectedEntry}
+              onEnableDemoPreview={() => void toggleDemoPreview(true)}
+            />
           ) : null}
 
           {activeTab === 'competitors' ? (
@@ -836,75 +772,30 @@ export function CustomerDashboard({
           ) : null}
 
           {activeTab === 'exports' ? (
-            <div className="viewora-card rounded-2xl p-6">
-              {!selectedEntry ? (
-                <EmptyState
-                  title="Select or save a profile to export reports"
-                  description="Save an eligible profile or turn on Demo Preview Mode to download provenance-stamped PDF and CSV exports."
-                  actionLabel="Enable Demo Preview Mode"
-                  onAction={() => void toggleDemoPreview(true)}
-                />
-              ) : (
-                <>
-                  <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                    Report Center — @{selectedEntry.username}
-                  </h2>
-                  <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                    Every download is protected server-side by centralized entitlements and stamped
-                    with data source &amp; timestamp.
-                  </p>
-                  <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 p-5 dark:border-[#263047]">
-                      <h3 className="text-sm font-bold text-[#0F172A] dark:text-white">
-                        Viewora Branded PDF Report
-                      </h3>
-                      <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                        Clean printable layout with profile summary &amp; historical checkpoints.
-                      </p>
-                      {canPdf ? (
-                        <a
-                          href={`/api/dashboard/export?format=pdf&username=${encodeURIComponent(selectedEntry.username)}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="viewora-btn-primary mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold"
-                        >
-                          <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
-                          Open PDF Report
-                        </a>
-                      ) : (
-                        <p className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-[#FBBF24]">
-                          <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                          Requires Premium+ Plan
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 p-5 dark:border-[#263047]">
-                      <h3 className="text-sm font-bold text-[#0F172A] dark:text-white">
-                        Structured CSV Export
-                      </h3>
-                      <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                        Spreadsheet-ready metrics and timeline rows with provenance labels.
-                      </p>
-                      {canCsv ? (
-                        <a
-                          href={`/api/dashboard/export?format=csv&username=${encodeURIComponent(selectedEntry.username)}`}
-                          className="viewora-btn-primary mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold"
-                        >
-                          <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
-                          Download CSV
-                        </a>
-                      ) : (
-                        <p className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-[#FBBF24]">
-                          <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                          Requires Pro+ Plan
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+            <ReportsLibraryModule
+              dict={dict}
+              selectedEntry={selectedEntry}
+              reports={workspace.reports}
+              exportsHistory={workspace.exports}
+              canPdf={canPdf}
+              canCsv={canCsv}
+              onOpenAiStudio={() => setActiveTab('ai')}
+              onExportTriggered={(format, username) => {
+                setWorkspace((prev) => ({
+                  ...prev,
+                  exports: [
+                    {
+                      id: `exp-local-${Date.now()}`,
+                      username,
+                      format,
+                      dataClass: selectedEntry?.dataClass ?? 'demo',
+                      createdAt: new Date().toISOString(),
+                    },
+                    ...prev.exports,
+                  ],
+                }));
+              }}
+            />
           ) : null}
 
           {activeTab === 'billing' ? (

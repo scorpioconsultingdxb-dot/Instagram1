@@ -7,6 +7,16 @@ import {
 } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { buildProfileCsvExport } from '@/lib/reports/export';
+import { recordExportHistory } from '@/lib/dashboard/store';
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentSessionUser();
@@ -53,6 +63,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  recordExportHistory(user.id, {
+    username: lookup.data.username,
+    format,
+    dataClass: lookup.meta.dataClass,
+  });
+
   if (format === 'csv') {
     const csv = buildProfileCsvExport({
       profile: lookup.data,
@@ -69,12 +85,20 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Printable PDF-ready HTML report stamped with dataClass & source metadata
+  // Printable PDF-ready HTML report stamped with dataClass & source metadata (XSS-escaped)
+  const safeUser = escapeHtml(lookup.data.username);
+  const safeDisplay = escapeHtml(lookup.data.displayName);
+  const safeCategory = escapeHtml(lookup.data.category);
+  const safeBio = escapeHtml(lookup.data.bio);
+  const safeProvider = escapeHtml(lookup.meta.providerLabel);
+  const safeNotice = escapeHtml(lookup.meta.notice);
+  const safeClass = escapeHtml(lookup.meta.dataClass.toUpperCase());
+
   const html = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Viewora Report — @${lookup.data.username}</title>
+  <title>Viewora Report — @${safeUser}</title>
   <style>
     body { font-family: system-ui, sans-serif; color: #0f172a; max-width: 780px; margin: 40px auto; padding: 0 24px; }
     .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #ede9fe; color: #5b21b6; }
@@ -90,32 +114,32 @@ export async function GET(request: NextRequest) {
 </head>
 <body>
   <div class="no-print" style="margin-bottom:20px;">
-    <button onclick="window.print()" style="padding:8px 16px;background:#4f46e5;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">Print / Save as PDF</button>
+    <button onclick="window.print()" style="padding:8px 16px;background:#6941ef;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">Print / Save as PDF</button>
   </div>
-  <span class="badge">Data Class: ${lookup.meta.dataClass.toUpperCase()}</span>
-  <h1 style="margin:12px 0 4px;">Viewora Profile Report: @${lookup.data.username}</h1>
-  <p style="color:#475569;margin-top:0;">${lookup.data.displayName} · ${lookup.data.category}</p>
-  <p>${lookup.data.bio}</p>
+  <span class="badge">Data Class: ${safeClass}</span>
+  <h1 style="margin:12px 0 4px;">Viewora Profile Report: @${safeUser}</h1>
+  <p style="color:#475569;margin-top:0;">${safeDisplay} · ${safeCategory}</p>
+  <p>${safeBio}</p>
   <div class="grid">
     <div class="card"><div class="label">Followers</div><div class="value">${(lookup.data.followersCount ?? 0).toLocaleString()}</div></div>
     <div class="card"><div class="label">Following</div><div class="value">${(lookup.data.followingCount ?? 0).toLocaleString()}</div></div>
     <div class="card"><div class="label">Posts</div><div class="value">${(lookup.data.postsCount ?? 0).toLocaleString()}</div></div>
     <div class="card"><div class="label">Est. Engagement</div><div class="value">${lookup.data.estimatedEngagementRate ?? '—'}%</div></div>
   </div>
-  <h2>Historical Checkpoints (${lookup.meta.dataClass})</h2>
+  <h2>Historical Checkpoints (${safeClass})</h2>
   <table>
     <thead><tr><th>Date</th><th>Followers</th><th>Posts</th><th>Est. ER</th></tr></thead>
     <tbody>
       ${lookup.data.historicalTrend
         .map(
           (pt) =>
-            `<tr><td>${pt.date}</td><td>${pt.followers.toLocaleString()}</td><td>${pt.posts}</td><td>${pt.engagementRate}%</td></tr>`
+            `<tr><td>${escapeHtml(pt.date)}</td><td>${pt.followers.toLocaleString()}</td><td>${pt.posts}</td><td>${pt.engagementRate}%</td></tr>`
         )
         .join('')}
     </tbody>
   </table>
   <div class="footer">
-    Source: ${lookup.meta.providerLabel} · Generated: ${new Date().toISOString()} · ${lookup.meta.notice}
+    Source: ${safeProvider} · Generated: ${new Date().toISOString()} · ${safeNotice}
   </div>
 </body>
 </html>`;

@@ -119,6 +119,14 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       );
     }
 
+    const adminDbName = new URL(ADMIN_TEST_URL).pathname.replace(/^\/+/, '');
+    const appDbName = new URL(APP_TEST_URL).pathname.replace(/^\/+/, '');
+    if (!/(^|_)test($|_)/i.test(adminDbName) || !/(^|_)test($|_)/i.test(appDbName)) {
+      throw new Error(
+        `SAFETY BLOCK: Integration tests must target an isolated test database (e.g. viewora_test), refusing to run against "${adminDbName}" / "${appDbName}".`
+      );
+    }
+
     adminClient = new PrismaClient({ datasources: { db: { url: ADMIN_TEST_URL } } });
     appClient = new PrismaClient({ datasources: { db: { url: APP_TEST_URL } } });
 
@@ -137,6 +145,12 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       for (const uid of createdUserIds) {
         await adminClient.user.deleteMany({ where: { id: uid } }).catch(() => undefined);
       }
+      await adminClient.supportTicket
+        .deleteMany({ where: { email: { endsWith: '@viewora.test' } } })
+        .catch(() => undefined);
+      await adminClient.accountDeletionRequest
+        .deleteMany({ where: { email: { endsWith: '@viewora.test' } } })
+        .catch(() => undefined);
       await adminClient.$disconnect();
     }
     if (appClient) {

@@ -181,8 +181,22 @@ async function stopProcess(proc) {
 }
 
 async function main() {
-  assert(process.env.DATABASE_URL, 'DATABASE_URL (viewora_app) must be set');
+  // Prefer isolated TEST_DATABASE_URL / TEST_DATABASE_ADMIN_URL so E2E runs never pollute main DB
+  const runtimeUrl = (process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || '').trim();
+  const adminUrl = (
+    process.env.TEST_DATABASE_ADMIN_URL ||
+    process.env.DATABASE_ADMIN_URL ||
+    runtimeUrl
+  ).trim();
+  assert(runtimeUrl, 'TEST_DATABASE_URL (preferred) or DATABASE_URL must be set');
   assert(process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 32, 'Strong AUTH_SECRET required');
+
+  const runtimeDbName = new URL(runtimeUrl).pathname.replace(/^\/+/, '');
+  const isIsolatedTestDb = /(^|_)test($|_)/i.test(runtimeDbName);
+  assert(
+    isIsolatedTestDb || process.env.ALLOW_NON_TEST_DB_E2E === 'true',
+    `SAFETY BLOCK: Refusing to run destructive E2E suite against non-test database "${runtimeDbName}". Configure TEST_DATABASE_URL / TEST_DATABASE_ADMIN_URL (e.g. viewora_test) or explicitly set ALLOW_NON_TEST_DB_E2E=true.`
+  );
 
   const chromePath = resolveChromeBinary();
   const chromeProfileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'viewora-pg-e2e-chrome-'));
@@ -190,6 +204,8 @@ async function main() {
 
   const serverEnv = {
     ...process.env,
+    DATABASE_URL: runtimeUrl,
+    DATABASE_ADMIN_URL: adminUrl,
     NODE_ENV: 'production',
     NEXT_PUBLIC_APP_URL: BASE_URL,
     AUTH_URL: BASE_URL,
@@ -203,13 +219,15 @@ async function main() {
   const cdpPort = 9233;
 
   const adminDb = new PrismaClient({
-    datasources: { db: { url: process.env.DATABASE_ADMIN_URL || process.env.DATABASE_URL } },
+    datasources: { db: { url: adminUrl } },
   });
 
   const synthEmail = `e2e.customer.${randomUUID().slice(0, 8)}@viewora.test`;
   const synthPassword = 'E2eCustomerPass!2026';
   const synthAdminEmail = `e2e.admin.${randomUUID().slice(0, 8)}@viewora.test`;
   const synthAdminPassword = 'E2eAdminStrongPass!2026';
+  let synthCustomerId = null;
+  let synthAdminId = null;
 
   const report = {
     passed: [],
@@ -321,6 +339,7 @@ async function main() {
     // Confirm user actually exists in PostgreSQL
     const dbUserAfterSignup = await adminDb.user.findUnique({ where: { email: synthEmail } });
     assert(dbUserAfterSignup, 'Registered user was NOT persisted in PostgreSQL!');
+    synthCustomerId = dbUserAfterSignup.id;
     report.passed.push('Real customer registration & onboarding persisted directly to PostgreSQL');
 
     // 4. Customer Dashboard: saved profile, folder, private note, notification read state
@@ -504,6 +523,8 @@ async function main() {
       {
         env: {
           ...process.env,
+          DATABASE_URL: runtimeUrl,
+          DATABASE_ADMIN_URL: adminUrl,
           ADMIN_EMAIL: synthAdminEmail,
           ADMIN_NAME: 'Synthetic CI Super Admin',
           ADMIN_PASSWORD: synthAdminPassword,
@@ -512,6 +533,8 @@ async function main() {
       }
     );
     assert(createAdminRes.status === 0, `db:create-admin failed: ${String(createAdminRes.stderr)}`);
+    const createdAdmin = await adminDb.user.findUnique({ where: { email: synthAdminEmail } });
+    synthAdminId = createdAdmin?.id ?? null;
 
     await cdp.eval(`fetch('/api/auth/logout', { method: 'POST' })`);
     await sleep(300);
@@ -593,7 +616,26 @@ async function main() {
   } finally {
     await stopProcess(chrome);
     await stopProcess(server);
-    await adminDb.user.deleteMany({ where: { email: { in: [synthEmail, synthAdminEmail] } } }).catch(() => undefined);
+    const synthEmails = [synthEmail, synthAdminEmail];
+    const synthIds = [synthCustomerId, synthAdminId].filter(Boolean);
+    await adminDb
+      .$transaction(async (tx) => {
+        // Remove orphaned synthetic support tickets (and cascading support_messages)
+        await tx.supportTicket.deleteMany({ where: { email: { in: synthEmails } } });
+        // Remove synthetic account deletion requests
+        await tx.accountDeletionRequest.deleteMany({ where: { email: { in: synthEmails } } });
+        // Remove synthetic funnel events created during E2E signup
+        if (synthIds.length > 0) {
+          await tx.funnelEvent.deleteMany({
+            where: {
+              OR: [{ userId: { in: synthIds } }, { sessionId: { in: synthIds } }],
+            },
+          });
+        }
+        // Remove synthetic test users (cascades workspaces, folders, profiles, notes, sessions)
+        await tx.user.deleteMany({ where: { email: { in: synthEmails } } });
+      })
+      .catch(() => undefined);
     await adminDb.$disconnect();
     fs.rmSync(chromeProfileDir, { recursive: true, force: true });
   }

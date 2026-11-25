@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "test:db": "node scripts/db/env-loader.mjs test npx vitest run --config vitest.integration.config.ts",
     "test:e2e": "node scripts/e2e-browser-tests.mjs",
-    "test:e2e:pg": "node scripts/db/env-loader.mjs runtime node scripts/e2e-postgres.mjs",
+    "test:e2e:pg": "node scripts/db/env-loader.mjs test node scripts/e2e-postgres.mjs",
     "db:up": "node scripts/db/env-loader.mjs docker up -d postgres",
     "db:down": "node scripts/db/env-loader.mjs docker stop postgres",
     "db:generate": "prisma generate",

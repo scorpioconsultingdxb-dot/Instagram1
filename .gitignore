@@ -13,6 +13,7 @@
 /coverage
 /playwright-report
 /test-results
+/ci-screenshots/
 
 # Environment variables & secrets (NEVER commit real credentials)
 .env

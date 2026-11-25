@@ -1,73 +1,50 @@
-import NextAuth from 'next-auth';
-import { PrismaAdapter } from '@auth/prisma-adapter';
-import { getPrismaClient } from '@/lib/db/prisma';
-import { isDatabaseConfigured } from '@/lib/env';
-import {
+/**
+ * Viewora — Unified Application-Owned PostgreSQL Session Authentication
+ *
+ * Authentication Compatibility Finding (Stage 1 Task 2):
+ *   Auth.js v5's built-in `Credentials` provider does NOT natively support the
+ *   `database` session strategy (it defaults to unrevocable JWT cookies).
+ *   To guarantee immediate server-side session revocation on logout, password
+ *   change, password reset, account suspension, account deletion, and admin
+ *   role removal — without maintaining two conflicting authentication systems —
+ *   Viewora uses ONE authoritative application-owned PostgreSQL session system:
+ *
+ *   - Credentials verification: bcryptjs (cost factor 12) in `users.repo.ts`
+ *   - Session persistence: SHA-256 hashed 32-byte opaque tokens stored in
+ *     PostgreSQL `public.sessions` (Auth.js-compatible schema retained for
+ *     future OAuth stages)
+ *   - Transport: HttpOnly, SameSite=Lax, Secure (production) cookie
+ *     (`__Host-viewora_session` in production, `viewora_session` in dev)
+ *   - Validation: `getCurrentSessionUser()` -> `resolveDbSessionByRawToken()`
+ *     on every protected route and API endpoint
+ *   - Production secrets & CSRF: `getRequiredAuthSecret()`,
+ *     `assertValidProductionAuthConfig()`, and `isAllowedCsrfOrigin()`
+ */
+
+export {
   assertValidProductionAuthConfig,
+  AuthConfigurationError,
   getRequiredAuthSecret,
+  isAllowedCsrfOrigin,
+  isStrongAuthSecret,
 } from '@/lib/auth/secret';
 
-/**
- * Authoritative Auth.js v5 configuration (PostgreSQL database session strategy).
- *
- * Unified Session Architecture:
- *   - Viewora does NOT issue unrevocable JWT authentication cookies.
- *   - All sessions are persisted in PostgreSQL `public.sessions` (hashed tokens)
- *     and validated server-side on every request via `resolveDbSessionByRawToken`.
- *   - Production startup/initialization strictly requires a strong `AUTH_SECRET`
- *     with zero predictable fallbacks.
- */
-function buildNextAuthInstance() {
-  const secret = getRequiredAuthSecret();
-  const isProd = process.env.NODE_ENV === 'production';
+export {
+  buildSessionCookieOptions,
+  getCurrentSessionUser,
+  isAdminRole,
+  sanitizeRedirectPath,
+  SESSION_COOKIE_NAME,
+} from '@/lib/auth/session';
 
-  return NextAuth({
-    adapter: isDatabaseConfigured() ? PrismaAdapter(getPrismaClient()) : undefined,
-    secret,
-    trustHost: !isProd,
-    session: {
-      strategy: 'database',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      updateAge: 60 * 60 * 24, // refresh sliding window every 24h
-    },
-    pages: {
-      signIn: '/en/login',
-      error: '/en/login',
-    },
-    cookies: {
-      sessionToken: {
-        name: isProd
-          ? '__Host-viewora.authjs.session-token'
-          : 'viewora.authjs.session-token',
-        options: {
-          httpOnly: true,
-          sameSite: 'lax',
-          path: '/',
-          secure: isProd,
-        },
-      },
-    },
-    providers: [],
-  });
-}
-
-let cachedInstance: ReturnType<typeof NextAuth> | null = null;
-
-function getAuthInstance() {
-  assertValidProductionAuthConfig();
-  if (!cachedInstance) {
-    cachedInstance = buildNextAuthInstance();
-  }
-  return cachedInstance;
-}
-
-export const handlers = {
-  GET: async (...args: Parameters<ReturnType<typeof NextAuth>['handlers']['GET']>) =>
-    getAuthInstance().handlers.GET(...args),
-  POST: async (...args: Parameters<ReturnType<typeof NextAuth>['handlers']['POST']>) =>
-    getAuthInstance().handlers.POST(...args),
-};
-
-export async function auth() {
-  return getAuthInstance().auth();
-}
+export {
+  changeDbUserPassword,
+  createDbSession,
+  deleteDbUserAccount,
+  registerUserWithWorkspace,
+  resolveDbSessionByRawToken,
+  revokeAllDbUserSessions,
+  revokeDbSessionByRawToken,
+  suspendDbUserAccount,
+  verifyDbUserCredentials,
+} from '@/lib/db/repositories/users.repo';

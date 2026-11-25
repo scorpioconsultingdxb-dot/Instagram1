@@ -23,11 +23,15 @@ if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -
   docker exec -e PGPASSWORD="${POSTGRES_ADMIN_PASSWORD:-}" "$CONTAINER_NAME" \
     pg_dump -U "$DB_USER" -d "$DB_NAME" -Fc --no-owner --no-acl > "$OUT_FILE"
 elif command -v pg_dump >/dev/null 2>&1; then
-  if [ -n "${DATABASE_ADMIN_URL:-${DATABASE_URL:-}}" ]; then
-    pg_dump "${DATABASE_ADMIN_URL:-$DATABASE_URL}" -Fc --no-owner --no-acl -f "$OUT_FILE"
-  else
+  if [ -n "${POSTGRES_HOST:-}" ] || [ -n "${POSTGRES_ADMIN_PASSWORD:-}" ]; then
     PGPASSWORD="${POSTGRES_ADMIN_PASSWORD:-}" pg_dump -h "${POSTGRES_HOST:-127.0.0.1}" -p "${POSTGRES_PORT:-5432}" \
       -U "$DB_USER" -d "$DB_NAME" -Fc --no-owner --no-acl -f "$OUT_FILE"
+  elif [ -n "${DATABASE_ADMIN_URL:-${DATABASE_URL:-}}" ]; then
+    CLEAN_URL="${DATABASE_ADMIN_URL:-$DATABASE_URL}"
+    CLEAN_URL="${CLEAN_URL%%\?*}"
+    pg_dump "$CLEAN_URL" -Fc --no-owner --no-acl -f "$OUT_FILE"
+  else
+    pg_dump -h "127.0.0.1" -p "5432" -U "$DB_USER" -d "$DB_NAME" -Fc --no-owner --no-acl -f "$OUT_FILE"
   fi
 else
   echo "ERROR: Neither running Docker container '${CONTAINER_NAME}' nor local 'pg_dump' was found." >&2
@@ -42,9 +46,9 @@ fi
 
 chmod 600 "$OUT_FILE" 2>/dev/null || true
 if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum "$OUT_FILE" > "${OUT_FILE}.sha256"
+  (cd "$BACKUP_DIR" && sha256sum "$(basename "$OUT_FILE")" > "$(basename "$OUT_FILE").sha256")
 elif command -v shasum >/dev/null 2>&1; then
-  shasum -a 256 "$OUT_FILE" > "${OUT_FILE}.sha256"
+  (cd "$BACKUP_DIR" && shasum -a 256 "$(basename "$OUT_FILE")" > "$(basename "$OUT_FILE").sha256")
 fi
 
 echo "[Viewora Backup] Created: ${OUT_FILE}"

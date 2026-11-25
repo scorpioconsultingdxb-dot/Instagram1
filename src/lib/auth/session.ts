@@ -38,8 +38,24 @@ export interface SessionUser {
   authMode: 'database' | 'local_demo';
 }
 
-export const SESSION_COOKIE_NAME =
-  process.env.NODE_ENV === 'production' ? '__Host-viewora_session' : 'viewora_session';
+function isSecureCookieContext(): boolean {
+  if (process.env.NODE_ENV !== 'production') return false;
+  const authUrl = (process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || '').trim();
+  if (!authUrl) return true;
+  try {
+    const parsed = new URL(authUrl);
+    if (parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
+      return false;
+    }
+    return parsed.protocol === 'https:';
+  } catch {
+    return true;
+  }
+}
+
+export const SESSION_COOKIE_NAME = isSecureCookieContext()
+  ? '__Host-viewora_session'
+  : 'viewora_session';
 export const LOCAL_SESSION_COOKIE = 'viewora_session';
 
 const DEFAULT_LOCAL_USERS: SessionUser[] = [
@@ -254,7 +270,7 @@ export function buildSessionCookieOptions(maxAgeSeconds: number) {
   return {
     httpOnly: true,
     sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isSecureCookieContext(),
     path: '/',
     maxAge: maxAgeSeconds,
   };

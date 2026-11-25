@@ -22,32 +22,40 @@ import {
   loadDbUserWorkspaceState,
   persistDbCreateComparison,
   persistDbCreateFolder,
+  persistDbCreateWorkspace,
+  persistDbDashboardSettings,
+  persistDbExportHistory,
   persistDbMarkNotificationRead,
   persistDbProfileMetaUpdate,
   persistDbRemoveProfile,
+  persistDbSavedAiReport,
   persistDbSavedProfile,
   QuotaExceededError,
   readDbPrivateProfileNotes,
   WorkspaceAuthorizationError,
 } from '@/lib/db/repositories/workspace.repo';
 import {
+  loadDbAuditLogs,
+  loadDbCmsContent,
   loadDbSupportTickets,
+  persistDbAuditLog,
+  persistDbBroadcastCreate,
   persistDbFeatureFlagToggle,
   persistDbSupportTicketCreate,
+  persistDbSupportTicketUpdate,
 } from '@/lib/db/repositories/admin.repo';
+import { loadDbPlans, loadDbUserOverrides, upsertDbUserOverride } from '@/lib/db/repositories/entitlements.repo';
+import { hasAdminCapability } from '@/lib/admin/rbac';
 import { withUserRlsContext } from '@/lib/db/prisma';
 import type { SavedProfileRecord } from '@/lib/dashboard/store';
 
 /**
- * MANDATORY LIVE POSTGRESQL INTEGRATION TEST SUITE (Task 10)
+ * MANDATORY LIVE POSTGRESQL INTEGRATION TEST SUITE (Tasks 5, 6, 7 & 10)
  *
- * This suite NEVER skips when PostgreSQL is unavailable.
- * A disconnected or unconfigured test database MUST fail this verification gate.
- *
- * Required environment variables:
- *   - TEST_DATABASE_URL: PostgreSQL connection for `viewora_test` (admin/migration role)
- *   - TEST_DATABASE_APP_URL (optional): restricted `viewora_app` (`NOBYPASSRLS`) role URL
- *     for verifying native PostgreSQL RLS enforcement under non-superuser credentials.
+ * NEVER skips when PostgreSQL is unavailable.
+ * Tests actual PostgreSQL 16 operations using BOTH:
+ *   - TEST_DATABASE_URL (admin role for schema/policy/cleanup introspection)
+ *   - TEST_DATABASE_APP_URL (restricted `viewora_app` role with `NOBYPASSRLS`)
  */
 const ADMIN_TEST_URL = (process.env.TEST_DATABASE_URL || '').trim();
 const APP_TEST_URL = (process.env.TEST_DATABASE_APP_URL || ADMIN_TEST_URL).trim();
@@ -124,52 +132,48 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     }
   });
 
-  it('verifies schema tables, RLS policies, and restricted runtime role permissions', async () => {
+  it('verifies all 40 tables, indexes, foreign keys, RLS policies, seeded plans, and restricted viewora_app role', async () => {
     const tables = await adminClient.$queryRaw<Array<{ tablename: string }>>`
-      SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+      SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'
     `;
-    const names = new Set(tables.map((t) => t.tablename));
-    for (const required of [
-      'users',
-      'sessions',
-      'user_preferences',
-      'workspaces',
-      'workspace_members',
-      'research_folders',
-      'saved_profiles',
-      'profile_research_notes',
-      'comparison_projects',
-      'notifications',
-      'plans',
-      'plan_entitlements',
-      'subscriptions',
-      'feature_flags',
-      'support_tickets',
-      'audit_logs',
-    ]) {
-      expect(names.has(required)).toBe(true);
-    }
+    expect(tables.length).toBe(40);
+
+    const indexes = await adminClient.$queryRaw<Array<{ indexname: string }>>`
+      SELECT indexname FROM pg_indexes WHERE schemaname = 'public'
+    `;
+    expect(indexes.length).toBeGreaterThanOrEqual(45);
+
+    const fkConstraints = await adminClient.$queryRaw<Array<{ constraint_name: string }>>`
+      SELECT constraint_name FROM information_schema.table_constraints
+      WHERE table_schema = 'public' AND constraint_type = 'FOREIGN KEY'
+    `;
+    expect(fkConstraints.length).toBeGreaterThanOrEqual(40);
 
     const rlsPolicies = await adminClient.$queryRaw<Array<{ tablename: string; policyname: string }>>`
       SELECT tablename, policyname FROM pg_policies WHERE schemaname = 'public'
     `;
-    expect(rlsPolicies.length).toBeGreaterThanOrEqual(15);
+    expect(rlsPolicies.length).toBeGreaterThanOrEqual(20);
 
+    // Seeded plans & entitlements present and idempotent
+    const plans = await loadDbPlans(appClient);
+    expect(plans.map((p) => p.code)).toEqual(['free', 'starter', 'premium', 'pro', 'agency']);
+
+    // Verify restricted runtime role cannot bypass RLS and is not superuser
     if (process.env.TEST_DATABASE_APP_URL) {
       const roleInfo = await appClient.$queryRaw<
         Array<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>
       >`
         SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user
       `;
+      expect(roleInfo[0]?.rolname).toBe('viewora_app');
       expect(roleInfo[0]?.rolsuper).toBe(false);
       expect(roleInfo[0]?.rolbypassrls).toBe(false);
     }
   });
 
-  it('enforces transaction rollback, duplicate email prevention, and foreign-key constraints', async () => {
+  it('enforces transaction rollback, unique email constraints, and foreign-key integrity', async () => {
     const email = `rollback-${randomUUID().slice(0, 8)}@viewora.test`;
 
-    // Transaction rollback
     await expect(
       appClient.$transaction(async (tx) => {
         await tx.user.create({
@@ -179,8 +183,7 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       })
     ).rejects.toThrow('Intentional rollback verification');
 
-    const afterRollback = await appClient.user.findUnique({ where: { email } });
-    expect(afterRollback).toBeNull();
+    expect(await appClient.user.findUnique({ where: { email } })).toBeNull();
 
     // Foreign-key constraint rejection
     await expect(
@@ -193,7 +196,7 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       })
     ).rejects.toThrow();
 
-    // Duplicate email rejection
+    // Duplicate email prevention
     const dupEmail = `dup-${randomUUID().slice(0, 8)}@viewora.test`;
     const first = await registerUserWithWorkspace(
       {
@@ -223,7 +226,7 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     expect(second.ok).toBe(false);
   });
 
-  it('verifies RLS isolation, workspace access, private notes protection, and concurrent quota enforcement under viewora_app', async () => {
+  it('verifies full customer persistence, multi-workspace & cross-account RLS isolation, private note protection, and concurrent quota enforcement under viewora_app', async () => {
     const emailA = `cust-a-${randomUUID().slice(0, 8)}@viewora.test`;
     const emailB = `cust-b-${randomUUID().slice(0, 8)}@viewora.test`;
 
@@ -253,19 +256,40 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     if (!regA.ok || !regB.ok) return;
     createdUserIds.push(regA.user.id, regB.user.id);
 
-    // Customer A saves profile preferences, folder, saved profile + private note, comparison
+    // 1. Profile customization (avatar, cover, locale, theme, shortcuts)
     const prefsA = await saveDbProfilePrefs(
       regA.user.id,
       {
         fullName: 'Customer Alpha Updated',
         professionalTitle: 'Head of Social Intelligence',
+        organization: 'Alpha Research Group',
         coverPreset: 'emerald',
         avatarPreset: 'emerald-teal',
+        themePreference: 'dark',
+        accentPreset: 'cyan',
+        personalShortcuts: [{ id: 's1', label: 'Profiles', href: '/dashboard/profiles' }],
       },
       appClient
     );
     expect(prefsA.coverPreset).toBe('emerald');
+    expect(prefsA.avatarPreset).toBe('emerald-teal');
 
+    // 2. Second workspace (cross-workspace isolation) + dashboard settings
+    const afterWs2 = await persistDbCreateWorkspace(
+      regA.user.id,
+      'Alpha Client Workspace',
+      'Personal Workspace',
+      appClient
+    );
+    expect(afterWs2.workspaces).toContain('Alpha Client Workspace');
+    await persistDbDashboardSettings(
+      regA.user.id,
+      { defaultDateRange: '90d', showTableByDefault: true },
+      'Personal Workspace',
+      appClient
+    );
+
+    // 3. Research folder + saved profile + private note + comparison + AI report + export + notification
     const { folder } = await persistDbCreateFolder(
       regA.user.id,
       {
@@ -305,7 +329,45 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       appClient
     );
 
-    // Mark notification read
+    await persistDbSavedAiReport(
+      regA.user.id,
+      {
+        reportType: 'profile_performance',
+        username: 'alpha.target',
+        dataClass: 'demo',
+        executionMode: 'template_fallback',
+        modelName: 'deterministic_template',
+        promptVersion: 'viewora-ai-v2.0',
+        executiveSummary: 'Persistent PostgreSQL AI summary',
+        keyFindings: ['Steady engagement'],
+        recommendations: ['Maintain posting cadence'],
+        dataLimitations: ['Demo fixture data'],
+        sourceLabel: 'Integration Test',
+        generatedAt: new Date().toISOString(),
+        usage: { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0 },
+      },
+      'Personal Workspace',
+      appClient
+    );
+
+    await persistDbExportHistory(
+      regA.user.id,
+      { username: 'alpha.target', format: 'csv', dataClass: 'demo' },
+      'Personal Workspace',
+      appClient
+    );
+
+    // Subscription override persistence
+    await upsertDbUserOverride(
+      regA.user.id,
+      { featureKey: 'ai_profile_reports', enabled: true, numericLimit: 42, reason: 'QA test' },
+      null,
+      appClient
+    );
+    const overridesA = await loadDbUserOverrides(regA.user.id, appClient);
+    expect(overridesA.find((o) => o.featureKey === 'ai_profile_reports')?.numericLimit).toBe(42);
+
+    // Notification read state persistence
     const notifId = wsA.notifications[0]!.id;
     const afterRead = await persistDbMarkNotificationRead(
       regA.user.id,
@@ -316,10 +378,13 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     );
     expect(afterRead.notifications.find((n) => n.id === notifId)?.read).toBe(true);
 
-    // Cross-account isolation via repository AND raw PostgreSQL RLS under viewora_app
+    // 4. Cross-account & cross-workspace isolation under restricted viewora_app
     const wsB = await loadDbUserWorkspaceState(regB.user.id, 'Personal Workspace', appClient);
     expect(wsB.savedProfiles).toHaveLength(0);
     expect(wsB.comparisons).toHaveLength(0);
+    expect(wsB.reports).toHaveLength(0);
+    expect(wsB.exports).toHaveLength(0);
+    expect(wsB.workspaces).not.toContain('Alpha Client Workspace');
 
     await expect(
       readDbPrivateProfileNotes(regB.user.id, savedProfile.id, appClient)
@@ -338,8 +403,17 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       persistDbRemoveProfile(regB.user.id, 'alpha.target', 'Personal Workspace', appClient)
     ).rejects.toThrow(WorkspaceAuthorizationError);
 
-    // Even a super_admin RLS context MUST NOT read Customer A's private research notes
+    // Direct raw RLS checks under viewora_app:
+    // (a) No context -> 0 saved profiles visible
+    // (b) Even super_admin RLS context -> 0 private research notes visible
     if (process.env.TEST_DATABASE_APP_URL) {
+      const noCtxProfiles = await withUserRlsContext(
+        { userId: null, role: 'anonymous' },
+        (tx) => tx.savedProfile.findMany({ where: { id: savedProfile.id } }),
+        appClient
+      );
+      expect(noCtxProfiles).toHaveLength(0);
+
       const adminReadPrivateNotes = await withUserRlsContext(
         { userId: regB.user.id, role: 'super_admin' },
         (tx) => tx.profileResearchNote.findMany({ where: { savedProfileId: savedProfile.id } }),
@@ -348,7 +422,7 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       expect(adminReadPrivateNotes).toHaveLength(0);
     }
 
-    // Concurrent quota enforcement on Customer B (limit = 1): 4 concurrent writes -> strictly 1 wins!
+    // 5. Concurrent quota enforcement on Customer B (limit = 1): 4 parallel calls -> strictly 1 wins!
     const raceResults = await Promise.allSettled([
       persistDbSavedProfile(regB.user.id, makeProfileFixture('race.one'), 'Personal Workspace', appClient, {
         maxProfilesLimit: 1,
@@ -364,26 +438,29 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       }),
     ]);
 
-    const fulfilled = raceResults.filter((r) => r.status === 'fulfilled');
-    const quotaRejected = raceResults.filter(
-      (r) => r.status === 'rejected' && r.reason instanceof QuotaExceededError
-    );
-    expect(fulfilled).toHaveLength(1);
-    expect(quotaRejected).toHaveLength(3);
+    expect(raceResults.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(
+      raceResults.filter((r) => r.status === 'rejected' && r.reason instanceof QuotaExceededError)
+    ).toHaveLength(3);
 
-    // Persistence verification across fresh PrismaClient connection
+    // 6. Fresh connection persistence verification
     const freshClient = new PrismaClient({ datasources: { db: { url: APP_TEST_URL } } });
     try {
       const reloadedPrefs = await getDbProfilePrefs(regA.user.id, freshClient);
       expect(reloadedPrefs.coverPreset).toBe('emerald');
+      expect(reloadedPrefs.avatarPreset).toBe('emerald-teal');
       const reloadedWs = await loadDbUserWorkspaceState(regA.user.id, 'Personal Workspace', freshClient);
       expect(reloadedWs.savedProfiles.some((p) => p.username === 'alpha.target')).toBe(true);
+      expect(reloadedWs.comparisons).toHaveLength(1);
+      expect(reloadedWs.reports).toHaveLength(1);
+      expect(reloadedWs.exports).toHaveLength(1);
+      expect(reloadedWs.settings.defaultDateRange).toBe('90d');
     } finally {
       await freshClient.$disconnect();
     }
   });
 
-  it('verifies session expiration, revocation, password change/reset, suspension, role removal, support RLS, payments lock, and account deletion', async () => {
+  it('verifies full session lifecycle, least-privilege admin roles, support/CMS/broadcast/audit persistence, and account deletion', async () => {
     const email = `lifecycle-${randomUUID().slice(0, 8)}@viewora.test`;
     const reg = await registerUserWithWorkspace(
       {
@@ -399,6 +476,16 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     expect(reg.ok).toBe(true);
     if (!reg.ok) return;
     createdUserIds.push(reg.user.id);
+
+    // Least-privilege RBAC boundary verification
+    expect(hasAdminCapability('support_agent', 'manage_support')).toBe(true);
+    expect(hasAdminCapability('support_agent', 'manage_roles')).toBe(false);
+    expect(hasAdminCapability('support_agent', 'manage_flags')).toBe(false);
+    expect(hasAdminCapability('analyst', 'manage_plans')).toBe(false);
+    expect(hasAdminCapability('analyst', 'manage_users')).toBe(false);
+    expect(hasAdminCapability('content_manager', 'manage_cms')).toBe(true);
+    expect(hasAdminCapability('content_manager', 'manage_roles')).toBe(false);
+    expect(hasAdminCapability('content_manager', 'manage_entitlements')).toBe(false);
 
     // Email verification single-use
     expect((await consumeEmailVerificationToken(reg.verificationTokenRaw, appClient)).ok).toBe(true);
@@ -417,16 +504,19 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     // Password change revokes other sessions
     const keepSess = await createDbSession({ userId: reg.user.id }, appClient);
     const otherSess = await createDbSession({ userId: reg.user.id }, appClient);
-    const pwRes = await changeDbUserPassword(
-      {
-        userId: reg.user.id,
-        currentPassword: 'LifecyclePass!2026',
-        newPassword: 'ChangedPass!2026',
-        keepCurrentSessionRawToken: keepSess.rawToken,
-      },
-      appClient
-    );
-    expect(pwRes.ok).toBe(true);
+    expect(
+      (
+        await changeDbUserPassword(
+          {
+            userId: reg.user.id,
+            currentPassword: 'LifecyclePass!2026',
+            newPassword: 'ChangedPass!2026',
+            keepCurrentSessionRawToken: keepSess.rawToken,
+          },
+          appClient
+        )
+      ).ok
+    ).toBe(true);
     expect(await resolveDbSessionByRawToken(keepSess.rawToken, appClient)).not.toBeNull();
     expect(await resolveDbSessionByRawToken(otherSess.rawToken, appClient)).toBeNull();
 
@@ -443,12 +533,12 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
 
     // Admin role promotion & immediate role removal reflected on active session
     const roleSess = await createDbSession({ userId: reg.user.id }, appClient);
-    await persistDbAdminUserUpdate(reg.user.id, { role: 'admin' }, appClient);
-    expect((await resolveDbSessionByRawToken(roleSess.rawToken, appClient))?.role).toBe('admin');
+    await persistDbAdminUserUpdate(reg.user.id, { role: 'super_admin' }, appClient);
+    expect((await resolveDbSessionByRawToken(roleSess.rawToken, appClient))?.role).toBe('super_admin');
     await persistDbAdminUserUpdate(reg.user.id, { role: 'user' }, appClient);
     expect((await resolveDbSessionByRawToken(roleSess.rawToken, appClient))?.role).toBe('user');
 
-    // Support ticket creation & RLS visibility for support_agent
+    // Support ticket, status history, CMS, broadcast, audit & locked payments flag
     const ticket = await persistDbSupportTicketCreate(
       {
         userId: reg.user.id,
@@ -459,8 +549,46 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       },
       appClient
     );
+    const updatedTkt = await persistDbSupportTicketUpdate(
+      ticket.id,
+      { status: 'resolved', adminNotes: 'Resolved in integration test' },
+      reg.user.id,
+      appClient,
+      'support_agent'
+    );
+    expect(updatedTkt?.status).toBe('resolved');
     const supportQueue = await loadDbSupportTickets(appClient, { role: 'support_agent' });
     expect(supportQueue.some((t) => t.id === ticket.id)).toBe(true);
+
+    const cmsItems = await loadDbCmsContent(appClient);
+    expect(cmsItems.length).toBeGreaterThanOrEqual(5);
+
+    const bcast = await persistDbBroadcastCreate(
+      {
+        title: 'CI Verification Banner',
+        body: 'Synthetic integration test broadcast',
+        category: 'system',
+        targetSegment: 'all',
+        isActive: true,
+        createdBy: reg.user.id,
+      },
+      appClient
+    );
+    expect(bcast.id).toBeTruthy();
+
+    await persistDbAuditLog(
+      {
+        actorId: reg.user.id,
+        actorEmail: email,
+        action: 'ci.integration.verified',
+        targetType: 'system',
+        targetId: 'stage1',
+        diff: { verified: true },
+      },
+      appClient
+    );
+    const logs = await loadDbAuditLogs(appClient);
+    expect(logs.some((l) => l.action === 'ci.integration.verified')).toBe(true);
 
     // Payments flag remains strictly locked false
     const payToggle = await persistDbFeatureFlagToggle('payments_enabled', true, reg.user.id, appClient);

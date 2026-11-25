@@ -248,23 +248,31 @@ async function main() {
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
 
-    // 2. Homepage (Desktop 1440px & Mobile 390px)
+    // 2. Homepage & Free Tools (Desktop 1440px & Mobile 390px)
     await cdp.setViewport(1440, 900);
     await cdp.goto(`${BASE_URL}/en`, 1300);
     const homeDesktop = await cdp.eval(`({
       overflow: document.documentElement.scrollWidth > window.innerWidth,
       hasSupabase: document.body.innerText.toLowerCase().includes('supabase'),
-      hasH1: Boolean(document.querySelector('h1'))
+      hasH1: Boolean(document.querySelector('h1')),
+      hasErrorBoundary: Boolean(document.querySelector('[data-error-boundary]'))
     })`);
-    assert(!homeDesktop.overflow && !homeDesktop.hasSupabase && homeDesktop.hasH1, 'Desktop homepage check failed');
+    assert(
+      !homeDesktop.overflow && !homeDesktop.hasSupabase && homeDesktop.hasH1 && !homeDesktop.hasErrorBoundary,
+      'Desktop homepage check failed'
+    );
     report.screenshots.push(await cdp.screenshot('pg_e2e_home_1440px.png'));
+
+    await cdp.goto(`${BASE_URL}/en/instagram-engagement-calculator`, 1100);
+    const toolReady = await cdp.eval(`!document.querySelector('[data-error-boundary]') && Boolean(document.querySelector('h1'))`);
+    assert(toolReady, 'Free tool page check failed');
 
     await cdp.setViewport(390, 844);
     await cdp.goto(`${BASE_URL}/en`, 1100);
     const homeMobileOverflow = await cdp.eval(`document.documentElement.scrollWidth > window.innerWidth`);
     assert(!homeMobileOverflow, 'Mobile 390px homepage horizontal overflow detected');
     report.screenshots.push(await cdp.screenshot('pg_e2e_home_390px.png'));
-    report.passed.push('Homepage verified at 1440px and 390px with zero overflow and zero Supabase copy');
+    report.passed.push('Homepage & free tools verified at 1440px and 390px with zero overflow and zero Supabase copy');
 
     // 3. Real Registration via UI -> Onboarding -> Dashboard
     await cdp.setViewport(1440, 900);
@@ -363,7 +371,7 @@ async function main() {
     assert(!dashMobOverflow, 'Mobile 390px dashboard overflow detected');
     report.screenshots.push(await cdp.screenshot('pg_e2e_dashboard_390px.png'));
 
-    // 5. Personal Profile HQ persistence
+    // 5. Personal Profile HQ, Report Builder & Support persistence
     await cdp.setViewport(1440, 900);
     await cdp.goto(`${BASE_URL}/en/dashboard/profile`, 1300);
     const hqPatchStatus = await cdp.eval(`(async () => {
@@ -372,8 +380,10 @@ async function main() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           professionalTitle: 'PG Persistence Lead',
+          biography: 'Verified PostgreSQL Personal Digital HQ bio.',
           coverPreset: 'midnight',
-          avatarPreset: 'obsidian-indigo'
+          avatarPreset: 'obsidian-indigo',
+          widgetVisibility: { checklist: false, kpis: true }
         })
       });
       return res.status;
@@ -384,12 +394,44 @@ async function main() {
     assert(hqBody.includes('PG Persistence Lead') && hqBody.includes('Independent PostgreSQL'), 'Profile HQ changes did not persist');
     report.screenshots.push(await cdp.screenshot('pg_e2e_profile_hq_1440px.png'));
 
+    // Create custom report & support ticket in PostgreSQL
+    const reportAndSupport = await cdp.eval(`(async () => {
+      const rRes = await fetch('/api/reports/builder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'create',
+          reportType: 'profile_summary',
+          title: 'PG Verified Executive Brief',
+          description: 'End-to-end PostgreSQL report persistence verification',
+          usernames: ['viewora.studio']
+        })
+      });
+      const sRes = await fetch('/api/support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: 'PG E2E Support Verification',
+          message: 'Verifying PostgreSQL support ticket persistence across process restarts.',
+          priority: 'normal'
+        })
+      });
+      return { rStatus: rRes.status, sStatus: sRes.status };
+    })()`);
+    assert(
+      reportAndSupport.rStatus === 201 && reportAndSupport.sStatus === 201,
+      `Report Builder or Support persistence failed: ${JSON.stringify(reportAndSupport)}`
+    );
+    await cdp.goto(`${BASE_URL}/en/dashboard/report-builder`, 1200);
+    report.screenshots.push(await cdp.screenshot('pg_e2e_report_builder_1440px.png'));
+
     // 6. Notifications & Membership/Pricing pages
     await cdp.goto(`${BASE_URL}/en/dashboard/notifications`, 1100);
     await cdp.goto(`${BASE_URL}/en/pricing`, 1100);
     const pricingText = await cdp.eval(`document.body.innerText`);
     assert(pricingText.includes('Agency') && pricingText.includes('Starter'), 'Pricing page missing tiers');
-    report.passed.push('Dashboard, saved profiles, folders, notes, Profile HQ, notifications, and pricing verified against PostgreSQL');
+    report.screenshots.push(await cdp.screenshot('pg_e2e_membership_1440px.png'));
+    report.passed.push('Dashboard, saved profiles, folders, notes, Profile HQ, Report Builder, Support, notifications, and pricing verified against PostgreSQL');
 
     // 7. RESTART THE NEXT.JS PRODUCTION APPLICATION PROCESS & VERIFY PERSISTENCE
     await cdp.eval(`fetch('/api/auth/logout', { method: 'POST' })`);
@@ -417,20 +459,40 @@ async function main() {
     const postRestartState = await cdp.eval(`(async () => {
       const ws = await (await fetch('/api/dashboard/workspace')).json();
       const prof = await (await fetch('/api/auth/profile')).json();
+      const rpts = await (await fetch('/api/reports/builder')).json();
+      const sup = await (await fetch('/api/support')).json();
       return {
         savedUsernames: (ws.workspace?.savedProfiles || []).map(p => p.username),
         savedNote: ws.workspace?.savedProfiles?.[0]?.privateNote,
         folders: (ws.workspace?.folders || []).map(f => f.name),
         readNotifCount: (ws.workspace?.notifications || []).filter(n => n.read).length,
         title: prof.profile?.professionalTitle,
-        cover: prof.profile?.coverPreset
+        biography: prof.profile?.biography,
+        cover: prof.profile?.coverPreset,
+        checklistVisible: prof.profile?.widgetVisibility?.checklist,
+        reportTitles: (rpts.reports || []).map(r => r.title),
+        ticketSubjects: (sup.tickets || []).map(t => t.subject)
       };
     })()`);
     assert(postRestartState.savedUsernames.includes('viewora.studio'), 'Saved profile lost after app restart');
     assert(postRestartState.savedNote === 'Persisted across PG restart check', 'Private note lost after app restart');
     assert(postRestartState.folders.includes('PG Verified Folder'), 'Folder lost after app restart');
     assert(postRestartState.readNotifCount >= 1, 'Notification read state lost after app restart');
-    assert(postRestartState.title === 'PG Persistence Lead' && postRestartState.cover === 'midnight', 'Profile HQ lost after app restart');
+    assert(
+      postRestartState.title === 'PG Persistence Lead' &&
+        postRestartState.biography === 'Verified PostgreSQL Personal Digital HQ bio.' &&
+        postRestartState.cover === 'midnight' &&
+        postRestartState.checklistVisible === false,
+      'Profile HQ or widget visibility lost after app restart'
+    );
+    assert(
+      postRestartState.reportTitles.includes('PG Verified Executive Brief'),
+      'Custom report lost after app restart'
+    );
+    assert(
+      postRestartState.ticketSubjects.includes('PG E2E Support Verification'),
+      'Support ticket lost after app restart'
+    );
     report.passed.push('Full Next.js production server restart verified: all PostgreSQL customer records persisted');
 
     // 8. Administrator Dashboard verification with synthetic super_admin created via db:create-admin

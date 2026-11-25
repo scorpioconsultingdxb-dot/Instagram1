@@ -31,7 +31,7 @@ import {
   Users,
   Workflow,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/types';
 import type { SessionUser } from '@/lib/auth/session';

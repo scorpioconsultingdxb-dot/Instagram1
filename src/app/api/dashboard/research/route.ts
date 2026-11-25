@@ -16,10 +16,10 @@ import {
 } from '@/lib/dashboard/store';
 import {
   buildUserProvidedProfileData,
-  getUserResearchProState,
+  loadUserResearchProState,
   parseResearchCsvImport,
+  persistUserResearchProState,
   pushHistory,
-  updateUserResearchProState,
   type ResearchProjectRecord,
 } from '@/lib/research/workspace-pro';
 
@@ -87,7 +87,7 @@ export async function GET() {
 
   return NextResponse.json({
     ok: true,
-    research: getUserResearchProState(user.id),
+    research: await loadUserResearchProState(user.id),
   });
 }
 
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     };
 
-    const research = updateUserResearchProState(user.id, (state) => ({
+    const research = await persistUserResearchProState(user.id, (state) => ({
       ...state,
       projects: [project, ...state.projects],
       history: pushHistory(state.history, 'project_created', `Created project "${project.title}"`),
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
 
   if (action.type === 'update_project') {
     let found = false;
-    const research = updateUserResearchProState(user.id, (state) => {
+    const research = await persistUserResearchProState(user.id, (state) => {
       const nextProjects = state.projects.map((p) => {
         if (p.id !== action.id) return p;
         found = true;
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'delete_project') {
-    const research = updateUserResearchProState(user.id, (state) => ({
+    const research = await persistUserResearchProState(user.id, (state) => ({
       ...state,
       projects: state.projects
         .filter((p) => p.id !== action.id)
@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'save_filter') {
-    const research = updateUserResearchProState(user.id, (state) => ({
+    const research = await persistUserResearchProState(user.id, (state) => ({
       ...state,
       savedFilters: [
         {
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'delete_filter') {
-    const research = updateUserResearchProState(user.id, (state) => ({
+    const research = await persistUserResearchProState(user.id, (state) => ({
       ...state,
       savedFilters: state.savedFilters.filter((f) => f.id !== action.id),
     }));
@@ -232,7 +232,7 @@ export async function POST(request: NextRequest) {
       if (res.ok) updatedCount += 1;
     }
 
-    const research = updateUserResearchProState(user.id, (state) => ({
+    const research = await persistUserResearchProState(user.id, (state) => ({
       ...state,
       history: pushHistory(
         state.history,
@@ -311,7 +311,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const research = updateUserResearchProState(user.id, (state) => ({
+  const research = await persistUserResearchProState(user.id, (state) => ({
     ...state,
     projects: action.projectId
       ? state.projects.map((p) =>

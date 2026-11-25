@@ -1,40 +1,53 @@
-# Viewora — Development Backlog (Updated After Phase 3)
+# Viewora — Development Backlog (Updated After Database Activation Audit)
 
 **Date:** 2026-11-25  
-**Status Legend:** `Pending Infrastructure` · `Deferred (By Scope Restriction)` · `Future Enhancement`
+**Status Legend:** `Pending Owner Infrastructure` · `Pending Enhancement` · `Deferred (By Scope Restriction)`
 
 ---
 
-## 1. Pending Infrastructure (Requires Live Services / Owner-Managed Environment)
+## 1. Pending Owner Infrastructure (Required Before Live Commercial Launch)
 
-1. **PostgreSQL 16 Prisma Migration for Phase 3 Modules (`Pending Infrastructure`):**
-   - Persist Phase 3 state (`research-pro`, `report-builder`, `agency-workspaces`, `automation-center`, `referrals-store`, extended `UserPreference` columns) directly in PostgreSQL 16 tables with RLS policies and `viewora_app` role grants, plus extend `npm run test:db` to verify them against live PG16.
-2. **Distributed Worker & Cron Scheduler (`Pending Infrastructure`):**
-   - Attach a dedicated worker process / cloud scheduler (e.g., Cloud Run Job / BullMQ / Postgres `SKIP LOCKED`) to execute `automation_rule_run` and scheduled report jobs automatically across instances.
+1. **Local Windows PostgreSQL Provisioning & Live Scenario B Execution (`Pending Owner Infrastructure`):**
+   - Provide local `postgres` superuser password to create `viewora` / `viewora_test` DBs and `viewora_admin` / `viewora_app` roles on the detected native PostgreSQL 14.25 instance (or install PostgreSQL 16), populate `.env.local`, and run `npm.cmd run env:check`, `db:migrate:deploy`, `db:seed` (2×), `db:health`, `db:bootstrap-admin`, `test:db`, and `node scripts/e2e-postgres.mjs` to capture real PostgreSQL-connected screenshots (`pg_e2e_*.png`).
+2. **Windows Application Control Policy for `pg_restore.exe` (`Pending Owner Infrastructure`):**
+   - Allowlist `C:\Program Files\PostgreSQL\14\bin\pg_restore.exe` (or install signed PostgreSQL 16 binaries) to execute a local Windows backup/restore drill via `npm.cmd run db:backup` + `db:restore` + `verify-backup-restore.mjs`.
 3. **Cloud Object Storage Driver (`Pending Infrastructure`):**
-   - Implement an S3/GCS/R2 `FileStorageDriver` alongside `LocalFileStorage` for stateless horizontal scaling of custom avatar/cover uploads and export archives.
-4. **Live Lighthouse CI & Real-User RUM (`Pending Infrastructure`):**
-   - Run automated Lighthouse CLI audits and field Core Web Vitals monitoring on a deployed staging HTTPS origin (local workstation does not have standalone `lighthouse` CLI or Docker/PostgreSQL installed).
-5. **Manual Assistive Technology Audit (`Pending Manual QA`):**
-   - Execute screen-reader walkthroughs (NVDA, VoiceOver) and axe-core sweeps across all 16 dashboard modules and 5 locales.
+   - Implement an S3 / GCS / Cloudflare R2 driver for `FileStorageDriver` (`src/lib/storage/local-files.ts`) before horizontal autoscaling or serverless deployment so customer avatar/cover uploads persist across stateless instances.
+4. **Distributed Background Worker & Cron Scheduler (`Pending Infrastructure`):**
+   - Connect `JobQueueEngine` to a PostgreSQL `background_jobs` (`SKIP LOCKED`) worker / cloud scheduler for automatic scheduled automation execution.
+5. **Live Lighthouse CI & Assistive Technology Audit (`Pending Staging & Manual QA`):**
+   - Run automated Lighthouse CI and manual screen-reader checks (NVDA / VoiceOver) against a deployed HTTPS staging URL.
 
-## 2. Explicitly Deferred by Scope Restrictions (Do Not Activate Until Authorized)
+---
 
-1. **Stripe Billing & Affiliate Payouts (`Deferred — PAYMENTS_ENABLED=false`):** Live checkout, subscription webhooks, invoicing, and referral commission payouts remain locked off.
-2. **Official Meta Graph API / Business Discovery (`Deferred`):** Interfaces preserved (`src/lib/providers/meta-official.ts`, `/api/meta/oauth/start`); credentials and App Review remain unactivated.
-3. **Gemini Live API (`Deferred`):** `src/lib/ai/gemini.ts` preserves budget/kill-switch and prompt-sanitization interfaces; falls back transparently to deterministic structured templates when unconfigured.
-4. **Resend Transactional Email (`Deferred`):** `src/lib/email/resend.ts` preserves deduplication and SPF/DKIM/DMARC readiness; external dispatch remains inactive.
-5. **External Analytics Providers (`Deferred`):** First-party consent-aware funnel analytics preserved; no third-party tracking scripts added.
+## 2. Pending Engineering Enhancements (Post-Activation)
 
-## 3. Completed in Phase 3 (Archived from Open Backlog)
+1. **Promote `referrals/service.ts` to Native PostgreSQL Tables (`Pending Enhancement`):**
+   - Wire `src/lib/referrals/service.ts` directly to the existing `referral_codes`, `referral_attributions`, and `affiliate_accounts` Prisma models (currently fails closed cleanly with `503` on read-only filesystems).
+2. **Dedicated Normalized Tables for Phase 3 Modules (`Optional Future Optimization`):**
+   - Phase 3 user-owned modules (`researchPro`, `customReports`, `agencyOrg`, `automation`) now persist natively in PostgreSQL under RLS-protected `user_preferences.notification_preferences._modules` (zero disk writes, full `ON DELETE CASCADE`). If cross-workspace SQL analytics over custom reports or agency comments is needed at high scale, promote them into dedicated relational tables via an additive migration.
 
-- [x] Stage 21: 7-segment, 7-goal save-and-resume onboarding + genuine Getting-Started Checklist
-- [x] Stage 22: Research Workspace Pro (nested collections, saved filters, bulk tagging, safe CSV importer)
-- [x] Stage 23: Personal Digital HQ 2.0 (bio, interests, default landing section, magic-byte verified PNG/JPEG/WebP avatar & cover uploads)
-- [x] Stage 24: Deterministic Analytics Engine (`engine.ts` + `engine.test.ts` + UI stats & 3-Pt SMA)
-- [x] Stage 25: Professional Report Builder (9 types, reorderable sections, version history, formula-safe CSV/Markdown/print)
-- [x] Stage 26: Agency & Team Collaboration Center (multi-client workspaces, seat/workspace quotas, roles, isolated team comments)
-- [x] Stage 27: Workflow & Automation Center (`JobQueueEngine` cancellation + templates + internal rules + honest inactive external triggers)
-- [x] Stage 28: Referral & Growth Center (durable codes, self/duplicate fraud blocks, UTM campaigns, `/[locale]/r/[code]`, partner applications)
-- [x] Stage 29: Enterprise Administration (`maintenance_mode`, support response templates, job queue & storage footprint, partner review)
-- [x] Stage 30: Security hardening (CSV formula injection fix, dev ephemeral secret `globalThis` fix), 77 automated tests, 302-page build, throttled CWV & 11 verified screenshots.
+---
+
+## 3. Explicitly Deferred by Scope Restrictions (Do Not Activate Until Authorized)
+
+1. **Stripe Billing & Affiliate Payouts (`Deferred — PAYMENTS_ENABLED=false`):** Locked off across env validation, database feature flag, UI, and API routes.
+2. **Official Meta Graph API / Business Discovery (`Deferred`):** Interfaces preserved; unactivated.
+3. **Gemini Live API (`Deferred`):** Budget/kill-switch interfaces preserved; falls back cleanly to deterministic templates.
+4. **Resend Transactional Email (`Deferred`):** Deduplication interfaces preserved; external email delivery inactive.
+5. **External Analytics Providers (`Deferred`):** First-party consent-aware funnel analytics preserved.
+
+---
+
+## 4. Completed in Database Activation & Hardening Pass
+
+- [x] Thorough Windows PostgreSQL detection (discovered running `postgresql-x64-14` + `pgbouncer` at `C:\Program Files\PostgreSQL\14\bin` and WDAC block on `pg_restore.exe`/`pg_isready.exe`)
+- [x] Created `scripts/db/check-env.mjs` (`npm run env:check`) preflight validator with zero secret output
+- [x] Hardened `scripts/db/create-admin.ts` (`npm run db:bootstrap-admin`) with strong mixed-class password validation (`bootstrap-validation.ts`) and promotion audit logging
+- [x] Enhanced `scripts/db/backup.ps1` & `restore.ps1` with automatic Windows `PostgreSQL\{17..13}\bin` discovery and `DATABASE_ADMIN_URL` restore support
+- [x] Fixed silent PostgreSQL drop of 15 Personal Digital HQ 2.0 / Onboarding / Dashboard fields (`profile-prefs.repo.ts`)
+- [x] Removed browser-only `localStorage` widget visibility persistence (`CustomerDashboard.tsx`) in favor of account-owned `/api/auth/profile` persistence
+- [x] Persisted Research Pro, Report Builder, Agency Center, and Automation Center natively in RLS-protected PostgreSQL (`user-module-state.repo.ts`) for read-only filesystem & multi-instance safety
+- [x] Tightened `GET /api/support` with explicit customer RLS context (`{ userId, role: 'user' }`) and set new user `onboardingCompleted: false` on registration
+- [x] Extended `scripts/e2e-postgres.mjs` to cover free tools, Report Builder, Support tickets, Personal HQ bio/widgets, and full process restart verification
+- [x] Added `src/lib/integration/db-activation.test.ts` (+3 tests; total **84/84 passing** across 17 suites) and re-verified strict Scenario A production QA (**78/78 routes HTTP 200**, `0` errors)

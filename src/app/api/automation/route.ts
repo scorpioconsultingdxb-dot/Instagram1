@@ -6,10 +6,10 @@ import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
 import { defaultJobQueue } from '@/lib/jobs/queue';
 import {
   AUTOMATION_TEMPLATES,
-  executeInternalAutomationRule,
-  getUserAutomationState,
+  executePersistedAutomationRule,
   isExternalInactiveTrigger,
-  updateUserAutomationState,
+  loadUserAutomationState,
+  persistUserAutomationState,
 } from '@/lib/automation/service';
 
 const automationActionSchema = z.discriminatedUnion('type', [
@@ -74,7 +74,7 @@ export async function GET() {
 
   return NextResponse.json({
     ok: true,
-    automation: getUserAutomationState(user.id),
+    automation: await loadUserAutomationState(user.id),
     templates: AUTOMATION_TEMPLATES,
     queueSummary: defaultJobQueue.getSummary(),
   });
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
       runCount: 0,
       createdAt: now,
     };
-    const automation = updateUserAutomationState(user.id, (state) => ({
+    const automation = await persistUserAutomationState(user.id, (state) => ({
       ...state,
       rules: [rule, ...state.rules].slice(0, 30),
     }));
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'toggle_rule') {
-    const automation = updateUserAutomationState(user.id, (state) => ({
+    const automation = await persistUserAutomationState(user.id, (state) => ({
       ...state,
       rules: state.rules.map((r) =>
         r.id === action.id
@@ -138,12 +138,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'run_rule') {
-    const current = getUserAutomationState(user.id);
+    const current = await loadUserAutomationState(user.id);
     const rule = current.rules.find((r) => r.id === action.id);
     if (!rule) {
       return NextResponse.json({ ok: false, error: 'Automation rule not found.' }, { status: 404 });
     }
-    const result = executeInternalAutomationRule({
+    const result = await executePersistedAutomationRule({
       userId: user.id,
       rule,
       idempotencySlot: `${Date.now()}`,
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'delete_rule') {
-    const automation = updateUserAutomationState(user.id, (state) => ({
+    const automation = await persistUserAutomationState(user.id, (state) => ({
       ...state,
       rules: state.rules.filter((r) => r.id !== action.id),
     }));
@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'create_task') {
-    const automation = updateUserAutomationState(user.id, (state) => ({
+    const automation = await persistUserAutomationState(user.id, (state) => ({
       ...state,
       tasks: [
         {
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'toggle_task') {
-    const automation = updateUserAutomationState(user.id, (state) => ({
+    const automation = await persistUserAutomationState(user.id, (state) => ({
       ...state,
       tasks: state.tasks.map((t) =>
         t.id === action.id ? { ...t, completed: action.completed } : t
@@ -193,7 +193,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, automation });
   }
 
-  const automation = updateUserAutomationState(user.id, (state) => ({
+  const automation = await persistUserAutomationState(user.id, (state) => ({
     ...state,
     tasks: state.tasks.filter((t) => t.id !== action.id),
   }));

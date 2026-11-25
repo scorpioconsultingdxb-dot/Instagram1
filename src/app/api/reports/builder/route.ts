@@ -14,10 +14,10 @@ import {
   buildReportCsv,
   buildReportMarkdown,
   createDefaultSections,
-  deleteUserReport,
-  listUserReports,
+  loadUserReports,
+  persistUserReport,
+  removeUserReport,
   REPORT_TYPES,
-  saveUserReport,
   type CustomReportDocument,
 } from '@/lib/reports/builder';
 
@@ -88,7 +88,7 @@ export async function GET() {
   if (!isDatabaseConfigured() && !isLocalDevFallbackAllowed()) {
     return NextResponse.json({ ok: false, error: 'Storage is unavailable.' }, { status: 503 });
   }
-  return NextResponse.json({ ok: true, reports: listUserReports(user.id) });
+  return NextResponse.json({ ok: true, reports: await loadUserReports(user.id) });
 }
 
 export async function POST(request: NextRequest) {
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
   const canPdf = hasEntitlement(entitlements, 'pdf_export');
 
   const action = parsed.data;
-  const existing = listUserReports(user.id);
+  const existing = await loadUserReports(user.id);
 
   if (action.type === 'create') {
     const now = new Date().toISOString();
@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     };
 
-    const reports = saveUserReport(user.id, doc);
+    const reports = await persistUserReport(user.id, doc);
     return NextResponse.json({ ok: true, report: doc, reports }, { status: 201 });
   }
 
@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
       ].slice(0, 15),
       updatedAt: now,
     };
-    const reports = saveUserReport(user.id, updated);
+    const reports = await persistUserReport(user.id, updated);
     return NextResponse.json({ ok: true, report: updated, reports });
   }
 
@@ -244,12 +244,12 @@ export async function POST(request: NextRequest) {
       createdAt: now,
       updatedAt: now,
     };
-    const reports = saveUserReport(user.id, copy);
+    const reports = await persistUserReport(user.id, copy);
     return NextResponse.json({ ok: true, report: copy, reports }, { status: 201 });
   }
 
   if (action.type === 'delete') {
-    const reports = deleteUserReport(user.id, action.id);
+    const reports = await removeUserReport(user.id, action.id);
     return NextResponse.json({ ok: true, reports });
   }
 

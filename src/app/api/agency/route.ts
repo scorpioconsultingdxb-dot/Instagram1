@@ -12,8 +12,8 @@ import { hasEntitlement } from '@/lib/entitlements/helpers';
 import {
   assertWorkspaceOwnership,
   generateInvitationToken,
-  getAgencyOrgState,
-  updateAgencyOrgState,
+  loadAgencyOrgState,
+  persistAgencyOrgState,
 } from '@/lib/agency/service';
 
 const agencyActionSchema = z.discriminatedUnion('type', [
@@ -82,7 +82,7 @@ export async function GET() {
       workspaces: entitlements.rules.workspaces.numericLimit,
       agencyDashboard: hasEntitlement(entitlements, 'agency_dashboard'),
     },
-    agency: getAgencyOrgState(user.id, user.email),
+    agency: await loadAgencyOrgState(user.id, user.email),
   });
 }
 
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
   const seatLimit = entitlements.rules.team_seats.numericLimit ?? 1;
   const workspaceLimit = entitlements.rules.workspaces.numericLimit ?? 1;
   const canAgency = hasEntitlement(entitlements, 'agency_dashboard');
-  const current = getAgencyOrgState(user.id, user.email);
+  const current = await loadAgencyOrgState(user.id, user.email);
   const action = parsed.data;
   const now = new Date().toISOString();
 
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
     }
 
     const wsId = `cws-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const agency = updateAgencyOrgState(user.id, user.email, (state) => ({
+    const agency = await persistAgencyOrgState(user.id, user.email, (state) => ({
       ...state,
       clientWorkspaces: [
         {
@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = generateInvitationToken();
-    const agency = updateAgencyOrgState(user.id, user.email, (state) => ({
+    const agency = await persistAgencyOrgState(user.id, user.email, (state) => ({
       ...state,
       members: [
         ...state.members,
@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const agency = updateAgencyOrgState(user.id, user.email, (state) => ({
+    const agency = await persistAgencyOrgState(user.id, user.email, (state) => ({
       ...state,
       members: state.members.map((m) =>
         m.id === action.memberId ? { ...m, role: action.role } : m
@@ -279,7 +279,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const agency = updateAgencyOrgState(user.id, user.email, (state) => ({
+    const agency = await persistAgencyOrgState(user.id, user.email, (state) => ({
       ...state,
       members: state.members.map((m) =>
         m.id === action.memberId ? { ...m, status: 'revoked' } : m
@@ -303,7 +303,7 @@ export async function POST(request: NextRequest) {
     if (!owned) {
       return NextResponse.json({ ok: false, error: 'Client workspace not found.' }, { status: 404 });
     }
-    const agency = updateAgencyOrgState(user.id, user.email, (state) => ({
+    const agency = await persistAgencyOrgState(user.id, user.email, (state) => ({
       ...state,
       clientWorkspaces: state.clientWorkspaces.map((w) =>
         w.id === action.workspaceId
@@ -335,7 +335,7 @@ export async function POST(request: NextRequest) {
   if (!owned) {
     return NextResponse.json({ ok: false, error: 'Client workspace not found.' }, { status: 404 });
   }
-  const agency = updateAgencyOrgState(user.id, user.email, (state) => ({
+  const agency = await persistAgencyOrgState(user.id, user.email, (state) => ({
     ...state,
     comments: [
       {

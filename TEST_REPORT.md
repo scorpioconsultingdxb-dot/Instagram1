@@ -1,62 +1,58 @@
-# Viewora — Automated & Browser Test Report (Phase 3 — Stage 30)
+# Viewora — Automated, Runtime & Database Verification Test Report
 
 **Date:** 2026-11-25  
-**Environment:** Windows Workstation · Node.js `v24` · Next.js `15.5.29` · Vitest `3.2.7` · Headless Google Chrome (CDP)
+**Environment:** Windows Workstation · Node.js `v24.19.0` · Next.js `15.5.29` · Prisma `6.19.3` · Vitest `3.2.7` · Headless Google Chrome (CDP)
 
 ---
 
-## 1. Static Analysis, Unit & Integration Suites
+## 1. Automated Verification Results (Executed Today)
 
-| Check | Command | Result | Details |
+| Check | Command | Result | Measured Output |
 | --- | --- | --- | --- |
+| **Prisma Schema Validation** | `npx.cmd prisma validate` | **PASS** | Valid 40-model PostgreSQL schema |
+| **Prisma Client Generation** | `npx.cmd prisma generate` | **PASS** | Prisma Client `v6.19.3` generated cleanly |
+| **Node Script Syntax Checks** | `node --check scripts/db/check-env.mjs` & `scripts/e2e-postgres.mjs` | **PASS** | `0` syntax errors |
 | **ESLint** | `npm.cmd run lint` | **PASS** | `0` errors, `0` warnings |
-| **TypeScript** | `npm.cmd run typecheck` | **PASS** | `tsc --noEmit` — `0` errors |
-| **Automated Vitest Suite** | `npm.cmd run test` | **PASS** | **15 / 15 test files · 77 / 77 tests passed** |
-| **Production Build** | `npm.cmd run build` | **PASS** | **302 / 302 static pages generated** cleanly |
-| **Live PostgreSQL 16 Suite** | `npm.cmd run test:db` | **Pending Infrastructure (Local)** | Local Docker/PostgreSQL 16 not installed on workstation; PG16 migrations + 2× seed + `viewora_app` RLS previously verified in CI Run `45636280310` |
+| **TypeScript Typecheck** | `npm.cmd run typecheck` | **PASS** | `0` errors |
+| **Automated Unit & Repo Suite** | `npm.cmd run test` | **PASS** | **17 / 17 test files · 84 / 84 tests passed** (`9.82s`) |
+| **Env Preflight Diagnostic** | `npm.cmd run env:check` | **PASS (Expected Fail-Closed)** | Auto-detected `C:\Program Files\PostgreSQL\14\bin`; flagged missing `.env.local` (`DATABASE_URL`, `AUTH_SECRET`) without exposing secrets |
+| **Production Build** | `npm.cmd run build` | **PASS** | **302 / 302 static pages** generated (`103 kB` shared JS) |
+| **Zero Supabase Guard** | Recursive `src/` + `package.json` scan | **PASS** | `0` matches for `@supabase`, `SUPABASE_URL`, or `SUPABASE_ANON` |
 
-### Phase 3 Test Coverage Additions (+11 New Tests)
-- `src/lib/analytics/engine.test.ts` (**4 tests — PASS**): ERF/ERR null-vs-zero semantics, period growth zero denominators, SMA, statistical summary (`min`/`max`/`mean`/`median`/`stdDev`), format mix, posting consistency, benchmark percentile rank, data completeness.
-- `src/lib/integration/phase3-stages-21-to-29.test.ts` (**7 tests — PASS**): 7 segments & 7 goals schema, external media URL rejection, magic-byte PNG/JPEG/WebP validation & SVG/HTML/oversized/cross-user rejection, CSV importer duplicate/formula/malformed handling, CSV formula-injection sanitization, Template-Generated versioned reports, Agency cross-client isolation, `JobQueueEngine` cancellation & external inactive trigger blocking, referral self/duplicate fraud checks & locked payouts, `maintenance_mode` flag vs locked `payments_enabled`.
-
----
-
-## 2. Headless Chrome End-to-End & Responsive Verification
-
-### A. Production Server (`next start` — `127.0.0.1:3031`)
-- `/api/auth/login` without `DATABASE_URL`: **`HTTP 503`** (Fail-closed verified)
-- `/api/billing/checkout` (payments disabled): **`HTTP 503`** (Disabled verified)
-- **6 Viewports (`375×812`, `390×844`, `768×1024`, `1024×768`, `1440×900`, `1920×1080`):** `0px` horizontal overflow across all 6.
-- **5 Locales (`en`, `pt-BR`, `es`, `de`, `fr`):** `0px` horizontal overflow and matching `<html lang>` across all 5.
-- **WCAG 2.2 AA DOM Checks:** `h1Count=1`, skip link present, `0` unlabeled buttons, `0` empty links, `0` missing-alt images.
-
-### B. Authenticated Interactive Flows (Isolated Demo Mode — `127.0.0.1:3033`)
-- Sign-in (`admin@viewora.demo`): **PASS** (`authenticated: true`)
-- Stage 21 Onboarding (all 7 segments rendered): **PASS**
-- Stage 22 Research Pro (project created + CSV `@meridian.studio` committed): **PASS**
-- Stage 24 Deterministic Analytics (`Data Completeness`, `Publishing Consistency`, `3-Pt SMA`): **PASS**
-- Stage 25 Report Builder (`TEMPLATE-GENERATED · NOT AI-GENERATED` + saved brief): **PASS**
-- Stage 26 Agency Center (`Nordic Roasters Client` + teammate invite + isolation badge): **PASS**
-- Stage 27 Automation Center (rule created + executed via `JobQueueEngine` → `completed` + auto task): **PASS**
-- Stage 28 Referrals & `/en/r/[code]` landing page (payouts inactive + UTM campaign): **PASS**
-- Stage 23 Profile HQ 2.0 Media Upload: Valid PNG **`HTTP 200`**, malicious SVG **`HTTP 400`** (**PASS**)
-- Stage 29 Enterprise Admin Console (`Background Job Queue Health`, `Isolated Customer File Storage Footprint: 1 file`, `Payouts Disabled`): **PASS**
-- Mobile `390×844` overflow on `/en/dashboard/projects` & `/en/dashboard/report-builder`: **`0px`**
-- Browser Console Errors / Uncaught Page Errors: **`0` / `0`**
+### New Tests Added in This Pass (`src/lib/integration/db-activation.test.ts` — 3 / 3 PASS)
+1. **Super Admin Bootstrap Validation:** Rejects short passwords, placeholder strings (`Replace-With-*`), and email-substring passwords; normalizes and accepts mixed-class >= 12-char passwords.
+2. **PostgreSQL Personal Digital HQ 2.0 & Onboarding Persistence Under RLS:** Verifies `biography`, `interests`, `onboardingSegment`, `onboardingCompleted`, `coverPosition`, and `widgetVisibility` persist and reload through `saveDbProfilePrefs` / `getDbProfilePrefs` with transaction-local RLS context (`set_config`).
+3. **PostgreSQL User Module State Coexistence:** Verifies `updateDbUserModuleState` / `readDbUserModuleState` persist Phase 3 module documents (`customReports`) under `user_preferences.notification_preferences._modules` without clobbering `hqExtended` fields.
 
 ---
 
-## 3. Captured Phase 3 Screenshots (Visually Inspected)
+## 2. Scenario A — Strict Production Runtime Verification (No DB + Simulated Read-Only Filesystem)
 
-Saved in `C:\Users\Scorpio\.gemini\antigravity\brain\36811d4f-f53f-4027-a394-ebcca0dde9f6\`:
-1. `phase3_onboarding_1440px.png`
-2. `phase3_research_pro_1440px.png`
-3. `phase3_analytics_1440px.png`
-4. `phase3_report_builder_1440px.png`
-5. `phase3_agency_1440px.png`
-6. `phase3_automation_1440px.png`
-7. `phase3_referrals_1440px.png`
-8. `phase3_profile_hq_1440px.png`
-9. `phase3_admin_1440px.png`
-10. `phase3_research_pro_390px_mobile.png`
-11. `phase3_report_builder_390px_mobile.png`
+Executed via `strict_recovery_qa.mjs` against real `next start` (`NODE_ENV=production`, `DATABASE_URL=""`, `DEMO_MODE_ENABLED="false"`, `PAYMENTS_ENABLED="false"`, unwritable `VIEWORA_DATA_DIR=Z:\readonly-sim\.viewora-data`):
+
+- **Public Routes Checked:** **78 / 78 returned HTTP 200** with non-empty content and zero `[data-error-boundary]` triggers (5 locales × homepage, pricing, tools, data-transparency, 11 info pages, 12 tool pages, login, register, forgot-password).
+- **Responsive Viewports (`375px`, `390px`, `768px`, `1024px`, `1440px`, `1920px`):** `0px` horizontal overflow across all 6.
+- **Dark Theme & Interactive Free Tool Check:** Passed cleanly (Engagement Rate Calculator computes deterministic output without DB).
+- **Auth Unavailable Pages (`/login`, `/register`):** Graceful Viewora branded message, zero developer env var leaks, disabled submit actions, and direct free-tools navigation.
+- **Zero-Tolerance Error Counts:** `0` console errors · `0` uncaught page errors · `0` failed 5xx requests · `0` server stderr errors.
+
+---
+
+## 3. Scenario B — Live PostgreSQL Integration & E2E Status (Honest Classification)
+
+| Suite | Command | Current Local Status | Details |
+| --- | --- | --- | --- |
+| **Live PostgreSQL Integration + RLS Isolation Suite** | `npm.cmd run test:db` | **Pending Owner Credentials** | Local `postgresql-x64-14` is running on port `5432` but requires the owner's `postgres` password to create `viewora_test` and `.env.local` |
+| **PostgreSQL Production Browser E2E + Restart Persistence** | `node scripts/e2e-postgres.mjs` | **Pending Owner Credentials** | Extended to verify homepage, free tools, registration, onboarding, saved profiles/folders/notes, Personal HQ bio/widgets, Report Builder, Support tickets, membership, full `next start` restart, admin dashboard, and confirmed account deletion |
+| **Backup & Disposable Restore Drill** | `npm.cmd run db:backup` / `db:restore` / `verify-backup-restore.mjs` | **Pending Owner Credentials & App Control Policy** | Requires `.env.local` + allowlisting `pg_restore.exe` (currently blocked by Windows Application Control under `PostgreSQL\14\bin`) or installing PG16 |
+| **Historical PG16 CI Baseline** | GitHub Actions CI Run `45636280310` | **Previously Passed (Pre-Phase 3)** | Must be re-executed after owner provisions `.env.local` |
+
+---
+
+## 4. Verified Screenshots Inventory (Strictly Classified)
+
+- **Scenario A Production Screenshots (Verified Today — No DB / Read-Only FS):**
+  `recovery_homepage_1440px.png`, `recovery_homepage_390px_mobile.png`, `recovery_data_transparency_1440px.png`, `recovery_tools_1440px.png`, `recovery_pricing_1440px.png`, `recovery_login_1440px.png`, `recovery_register_1440px.png`.
+- **Isolated Local Demo Screenshots (Phase 3 UI Fixtures — NOT Real PostgreSQL Evidence):**
+  `phase3_onboarding_1440px.png`, `phase3_research_pro_1440px.png`, `phase3_analytics_1440px.png`, `phase3_report_builder_1440px.png`, `phase3_agency_1440px.png`, `phase3_automation_1440px.png`, `phase3_referrals_1440px.png`, `phase3_profile_hq_1440px.png`, `phase3_admin_1440px.png`, `phase3_research_pro_390px_mobile.png`, `phase3_report_builder_390px_mobile.png`.
+- **Scenario B Real PostgreSQL Customer Screenshots (`pg_e2e_*.png`):** **Pending Owner `.env.local` Provisioning.**

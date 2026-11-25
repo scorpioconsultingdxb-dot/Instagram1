@@ -46,10 +46,17 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: 'Storage is unavailable.' }, { status: 503 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    referral: getUserReferralDashboard(user.id),
-  });
+  try {
+    return NextResponse.json({
+      ok: true,
+      referral: getUserReferralDashboard(user.id),
+    });
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: 'Referral storage is temporarily unavailable.' },
+      { status: 503 }
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -75,67 +82,74 @@ export async function POST(request: NextRequest) {
   }
 
   const action = parsed.data;
-  if (action.type === 'create_campaign') {
-    const campaign = createReferralCampaign({
-      ownerUserId: user.id,
-      name: action.name,
-      utmSource: action.utmSource,
-      utmMedium: action.utmMedium,
+  try {
+    if (action.type === 'create_campaign') {
+      const campaign = createReferralCampaign({
+        ownerUserId: user.id,
+        name: action.name,
+        utmSource: action.utmSource,
+        utmMedium: action.utmMedium,
+        utmCampaign: action.utmCampaign,
+      });
+      return NextResponse.json(
+        { ok: true, campaign, referral: getUserReferralDashboard(user.id) },
+        { status: 201 }
+      );
+    }
+
+    if (action.type === 'apply_partner') {
+      const application = submitAffiliateApplication({
+        userId: user.id,
+        email: user.email,
+        organization: action.organization,
+        channelUrl: action.channelUrl,
+        audienceNotes: action.audienceNotes,
+      });
+      return NextResponse.json(
+        { ok: true, application, referral: getUserReferralDashboard(user.id) },
+        { status: 201 }
+      );
+    }
+
+    // claim_code
+    if (!action.consentVerified) {
+      return NextResponse.json(
+        { ok: false, error: 'First-party attribution consent is required before claiming a referral code.' },
+        { status: 400 }
+      );
+    }
+    const attribution = attributeReferral({
+      code: action.code,
+      referredUserId: user.id,
+      consentVerified: true,
       utmCampaign: action.utmCampaign,
     });
-    return NextResponse.json(
-      { ok: true, campaign, referral: getUserReferralDashboard(user.id) },
-      { status: 201 }
-    );
-  }
+    if (!attribution) {
+      return NextResponse.json({ ok: false, error: 'Referral code not found.' }, { status: 404 });
+    }
+    if (attribution.status !== 'attributed_pending_billing') {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            attribution.status === 'rejected_self_referral'
+              ? 'Self-referrals are automatically blocked.'
+              : 'This account already has a recorded referral attribution.',
+          attribution,
+        },
+        { status: 409 }
+      );
+    }
 
-  if (action.type === 'apply_partner') {
-    const application = submitAffiliateApplication({
-      userId: user.id,
-      email: user.email,
-      organization: action.organization,
-      channelUrl: action.channelUrl,
-      audienceNotes: action.audienceNotes,
+    return NextResponse.json({
+      ok: true,
+      attribution,
+      referral: getUserReferralDashboard(user.id),
     });
+  } catch {
     return NextResponse.json(
-      { ok: true, application, referral: getUserReferralDashboard(user.id) },
-      { status: 201 }
+      { ok: false, error: 'Referral storage is temporarily unavailable.' },
+      { status: 503 }
     );
   }
-
-  // claim_code
-  if (!action.consentVerified) {
-    return NextResponse.json(
-      { ok: false, error: 'First-party attribution consent is required before claiming a referral code.' },
-      { status: 400 }
-    );
-  }
-  const attribution = attributeReferral({
-    code: action.code,
-    referredUserId: user.id,
-    consentVerified: true,
-    utmCampaign: action.utmCampaign,
-  });
-  if (!attribution) {
-    return NextResponse.json({ ok: false, error: 'Referral code not found.' }, { status: 404 });
-  }
-  if (attribution.status !== 'attributed_pending_billing') {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          attribution.status === 'rejected_self_referral'
-            ? 'Self-referrals are automatically blocked.'
-            : 'This account already has a recorded referral attribution.',
-        attribution,
-      },
-      { status: 409 }
-    );
-  }
-
-  return NextResponse.json({
-    ok: true,
-    attribution,
-    referral: getUserReferralDashboard(user.id),
-  });
 }

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { buildPageMetadata } from '@/lib/seo/metadata';
-import { isDemoModeEnabled, isSupabaseConfigured } from '@/lib/env';
+import { isDatabaseConfigured, isDemoModeEnabled } from '@/lib/env';
 import { LoginForm } from '@/components/auth/LoginForm';
 
 export const dynamic = 'force-dynamic';
@@ -50,7 +50,7 @@ export default async function TopLevelLoginPage({
           <LoginForm
             locale={safeLocale}
             dict={dict}
-            supabaseConfigured={isSupabaseConfigured()}
+            databaseConfigured={isDatabaseConfigured()}
             demoModeEnabled={isDemoModeEnabled()}
             redirectTo={next}
           />

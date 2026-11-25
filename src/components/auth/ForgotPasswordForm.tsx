@@ -7,10 +7,10 @@ import type { Locale } from '@/i18n/config';
 
 export function ForgotPasswordForm({
   locale,
-  supabaseConfigured,
+  databaseConfigured,
 }: {
   locale: Locale;
-  supabaseConfigured: boolean;
+  databaseConfigured: boolean;
 }) {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -52,11 +52,11 @@ export function ForgotPasswordForm({
 
   return (
     <div className="space-y-4">
-      {!supabaseConfigured ? (
+      {!databaseConfigured ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-          <strong>Recovery Emails Inactive:</strong> Live Supabase Auth and verified email delivery
-          are not configured in this environment. Submitting this form will report the exact backend
-          status rather than simulating a sent email.
+          <strong>Database Required for Recovery:</strong> Configure{' '}
+          <code className="font-mono">DATABASE_URL</code> to generate single-use password reset
+          tokens. External email delivery remains disabled until authorized.
         </div>
       ) : null}
 

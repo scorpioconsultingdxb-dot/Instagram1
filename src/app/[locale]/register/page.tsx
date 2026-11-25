@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { buildPageMetadata } from '@/lib/seo/metadata';
-import { isDemoModeEnabled, isSupabaseConfigured } from '@/lib/env';
+import { isDatabaseConfigured, isDemoModeEnabled } from '@/lib/env';
 import type { CustomerSegment } from '@/lib/entitlements/types';
 import { SignupForm } from '@/components/auth/SignupForm';
 
@@ -56,7 +56,7 @@ export default async function RegisterPage({
             initialHandle={handle}
             initialSegment={safeSegment}
             redirectTo={next}
-            supabaseConfigured={isSupabaseConfigured()}
+            databaseConfigured={isDatabaseConfigured()}
             demoModeEnabled={isDemoModeEnabled()}
           />
         </div>

@@ -1,11 +1,18 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { deleteLocalUser, getCurrentSessionUser, LOCAL_SESSION_COOKIE } from '@/lib/auth/session';
+import {
+  buildSessionCookieOptions,
+  deleteLocalUser,
+  getCurrentSessionUser,
+  LOCAL_SESSION_COOKIE,
+  SESSION_COOKIE_NAME,
+} from '@/lib/auth/session';
 import { deleteAccountProfilePrefs } from '@/lib/auth/profile-prefs';
 import { deleteUserWorkspaceState } from '@/lib/dashboard/store';
 import { persistAuditLog } from '@/lib/admin/store';
-import { isSupabaseConfigured } from '@/lib/env';
-import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
+import { isDatabaseConfigured } from '@/lib/env';
+import { deleteDbUserAccount } from '@/lib/db/repositories/users.repo';
+import { defaultFileStorage } from '@/lib/storage/local-files';
 
 const deleteSchema = z.object({
   confirmEmail: z.string().email(),
@@ -26,34 +33,46 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (isSupabaseConfigured()) {
-    const admin = createSupabaseAdminClient();
-    if (admin) {
-      await admin.auth.admin.deleteUser(user.id);
+  if (isDatabaseConfigured()) {
+    try {
+      await deleteDbUserAccount(user.id, user.email);
+    } catch (err) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            err instanceof Error
+              ? `Account deletion failed: ${err.message}`
+              : 'Unable to delete account in database.',
+        },
+        { status: 500 }
+      );
     }
-    const supabase = await createSupabaseServerClient();
-    await supabase?.auth.signOut();
   } else {
     deleteLocalUser(user.id);
+    await persistAuditLog({
+      actorId: 'system',
+      actorEmail: user.email,
+      action: 'user.account.deleted',
+      targetType: 'user',
+      targetId: user.id,
+      diff: { selfServiceDeletion: true, deletedUserId: user.id },
+    });
   }
 
-  // Always purge local persistent preferences and private workspace records for this account
+  // Always purge any local dev preferences, workspace records, and stored customer files
   deleteAccountProfilePrefs(user.id);
   deleteUserWorkspaceState(user.id);
-
-  await persistAuditLog({
-    actorId: 'system',
-    actorEmail: user.email,
-    action: 'user.account.deleted',
-    targetType: 'user',
-    targetId: user.id,
-    diff: { selfServiceDeletion: true, deletedUserId: user.id },
-  });
+  await defaultFileStorage.deleteOwnerNamespace(user.id).catch(() => undefined);
 
   const response = NextResponse.json({
     ok: true,
-    message: 'Your account deletion request has been processed and your session ended.',
+    message: 'Your account deletion request has been processed and all active sessions ended.',
   });
-  response.cookies.set(LOCAL_SESSION_COOKIE, '', { path: '/', maxAge: 0, httpOnly: true });
+  const expiredOpts = buildSessionCookieOptions(0);
+  response.cookies.set(SESSION_COOKIE_NAME, '', expiredOpts);
+  response.cookies.set(LOCAL_SESSION_COOKIE, '', expiredOpts);
+  response.cookies.set('viewora.authjs.session-token', '', expiredOpts);
+  response.cookies.set('__Secure-viewora.authjs.session-token', '', expiredOpts);
   return response;
 }

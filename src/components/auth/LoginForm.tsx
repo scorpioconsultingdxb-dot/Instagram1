@@ -27,13 +27,13 @@ function safeClientRedirect(raw: string | undefined, fallback: string): string {
 export function LoginForm({
   locale,
   dict: providedDict,
-  supabaseConfigured,
+  databaseConfigured,
   demoModeEnabled,
   redirectTo,
 }: {
   locale: Locale;
   dict?: Dictionary;
-  supabaseConfigured: boolean;
+  databaseConfigured: boolean;
   demoModeEnabled: boolean;
   redirectTo?: string;
 }) {
@@ -190,17 +190,17 @@ export function LoginForm({
       </form>
 
       {/* Honest Auth Mode Status */}
-      {supabaseConfigured ? (
+      {databaseConfigured ? (
         <p className="flex items-center justify-center gap-1.5 text-[11px] text-[#64748B] dark:text-[#94A3B8]">
           <ShieldCheck className="h-3.5 w-3.5 text-[#34D399]" aria-hidden="true" />
-          {t.protectedBySupabase}
+          {t.protectedByAuth}
         </p>
       ) : !demoModeEnabled ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
           <p className="font-bold">{t.authNotConfiguredTitle}</p>
           <p className="mt-1 leading-relaxed">
-            Configure <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> and{' '}
-            <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to activate production
+            Configure <code className="font-mono">DATABASE_URL</code> and{' '}
+            <code className="font-mono">AUTH_SECRET</code> to activate independent PostgreSQL
             sign-in. Isolated local demo login is disabled by default (
             <code className="font-mono">DEMO_MODE_ENABLED=false</code>).
           </p>

@@ -117,7 +117,7 @@ export interface Dictionary {
     newToViewora: string;
     createFreeAccount: string;
     redirectNoticePrefix: string;
-    protectedBySupabase: string;
+    protectedByAuth: string;
     authNotConfiguredTitle: string;
     localDemoTitle: string;
     localDemoBody: string;

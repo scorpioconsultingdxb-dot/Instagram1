@@ -1,5 +1,5 @@
-import { isSupabaseConfigured } from '@/lib/env';
-import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
+import { isDatabaseConfigured } from '@/lib/env';
+import { loadDbFunnelEvents, persistDbFunnelEvent } from '@/lib/db/repositories/admin.repo';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 
 export type FunnelEventName =
@@ -106,14 +106,7 @@ export function recordFunnelEvent(input: {
   return record;
 }
 
-export function getFunnelSummary(): {
-  counts: Record<FunnelEventName, number>;
-  searchToSignupRate: number;
-  signupToUpgradeIntentRate: number;
-  recent: FunnelEventRecord[];
-  isSample: boolean;
-} {
-  const recorded = loadRecordedFunnelEvents();
+function summarizeFunnelRecords(recorded: FunnelEventRecord[]) {
   const isSample = recorded.length === 0;
   const source = isSample ? SAMPLE_BASELINE_EVENTS : recorded;
 
@@ -152,49 +145,8 @@ export function getFunnelSummary(): {
   };
 }
 
-function summarizeFunnelRecords(recorded: FunnelEventRecord[]): {
-  counts: Record<FunnelEventName, number>;
-  searchToSignupRate: number;
-  signupToUpgradeIntentRate: number;
-  recent: FunnelEventRecord[];
-  isSample: boolean;
-} {
-  const isSample = recorded.length === 0;
-  const source = isSample ? SAMPLE_BASELINE_EVENTS : recorded;
-
-  const counts: Record<FunnelEventName, number> = {
-    search_performed: 0,
-    results_viewed: 0,
-    premium_preview_viewed: 0,
-    signup_started: 0,
-    signup_completed: 0,
-    pricing_viewed: 0,
-    upgrade_intent: 0,
-  };
-
-  for (const evt of source) {
-    if (evt.eventName in counts) {
-      counts[evt.eventName] += 1;
-    }
-  }
-
-  const searchToSignupRate =
-    counts.search_performed > 0
-      ? Number(((counts.signup_completed / counts.search_performed) * 100).toFixed(1))
-      : 0;
-
-  const signupToUpgradeIntentRate =
-    counts.signup_completed > 0
-      ? Number(((counts.upgrade_intent / counts.signup_completed) * 100).toFixed(1))
-      : 0;
-
-  return {
-    counts,
-    searchToSignupRate,
-    signupToUpgradeIntentRate,
-    recent: source.slice(0, 20),
-    isSample,
-  };
+export function getFunnelSummary() {
+  return summarizeFunnelRecords(loadRecordedFunnelEvents());
 }
 
 export async function persistFunnelEvent(input: {
@@ -204,73 +156,24 @@ export async function persistFunnelEvent(input: {
   userId?: string | null;
   properties?: Record<string, string | number | boolean>;
 }): Promise<FunnelEventRecord> {
-  if (!isSupabaseConfigured()) {
-    return recordFunnelEvent(input);
+  if (isDatabaseConfigured()) {
+    try {
+      return await persistDbFunnelEvent(input);
+    } catch {
+      return recordFunnelEvent(input);
+    }
   }
-  try {
-    const supabase = createSupabaseAdminClient() ?? (await createSupabaseServerClient());
-    if (!supabase) return recordFunnelEvent(input);
-
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const { data, error } = await supabase
-      .from('funnel_events')
-      .insert({
-        user_id: input.userId && uuidRegex.test(input.userId) ? input.userId : null,
-        session_id: input.sessionId,
-        event_name: input.eventName,
-        locale: input.locale,
-        properties: input.properties ?? {},
-      })
-      .select('id, event_name, locale, session_id, user_id, properties, created_at')
-      .single();
-
-    if (error || !data) return recordFunnelEvent(input);
-    return {
-      id: String(data.id),
-      eventName: data.event_name as FunnelEventName,
-      locale: String(data.locale),
-      sessionId: String(data.session_id),
-      userId: (data.user_id as string | null) ?? null,
-      properties: (data.properties as Record<string, string | number | boolean> | null) ?? {},
-      createdAt: String(data.created_at ?? new Date().toISOString()),
-      isSample: false,
-    };
-  } catch {
-    return recordFunnelEvent(input);
-  }
+  return recordFunnelEvent(input);
 }
 
-export async function loadFunnelSummary(): Promise<{
-  counts: Record<FunnelEventName, number>;
-  searchToSignupRate: number;
-  signupToUpgradeIntentRate: number;
-  recent: FunnelEventRecord[];
-  isSample: boolean;
-}> {
-  if (!isSupabaseConfigured()) {
-    return getFunnelSummary();
+export async function loadFunnelSummary() {
+  if (isDatabaseConfigured()) {
+    try {
+      const records = await loadDbFunnelEvents();
+      return summarizeFunnelRecords(records);
+    } catch {
+      return getFunnelSummary();
+    }
   }
-  try {
-    const supabase = createSupabaseAdminClient() ?? (await createSupabaseServerClient());
-    if (!supabase) return getFunnelSummary();
-    const { data, error } = await supabase
-      .from('funnel_events')
-      .select('id, event_name, locale, session_id, user_id, properties, created_at')
-      .order('created_at', { ascending: false })
-      .limit(500);
-    if (error || !data) return getFunnelSummary();
-    const records: FunnelEventRecord[] = (data as Array<Record<string, unknown>>).map((row) => ({
-      id: String(row.id),
-      eventName: row.event_name as FunnelEventName,
-      locale: String(row.locale),
-      sessionId: String(row.session_id),
-      userId: (row.user_id as string | null) ?? null,
-      properties: (row.properties as Record<string, string | number | boolean> | null) ?? {},
-      createdAt: String(row.created_at ?? new Date().toISOString()),
-      isSample: false,
-    }));
-    return summarizeFunnelRecords(records);
-  } catch {
-    return getFunnelSummary();
-  }
+  return getFunnelSummary();
 }

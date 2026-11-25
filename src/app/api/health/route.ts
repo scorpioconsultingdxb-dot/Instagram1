@@ -5,8 +5,8 @@ import {
   isDemoModeEnabled,
   isEmailDeliveryEnabled,
   isPaymentsEnabled,
-  isSupabaseConfigured,
 } from '@/lib/env';
+import { checkDatabaseHealth } from '@/lib/db/prisma';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { defaultJobQueue } from '@/lib/jobs/queue';
 import { getAiCostSummary } from '@/lib/ai/gemini';
@@ -14,12 +14,15 @@ import { getAiCostSummary } from '@/lib/ai/gemini';
 export const dynamic = 'force-dynamic';
 
 /**
- * Operational System Health endpoint (Section 39).
- * Reports only measured runtime status — never fabricates uptime percentages.
+ * Operational System Health endpoint.
+ * Reports measured PostgreSQL connectivity and runtime status — never fabricates uptime.
  */
 export async function GET() {
   const correlationId = randomUUID();
-  const providers = await defaultProviderRegistry.checkAllHealth();
+  const [dbHealth, providers] = await Promise.all([
+    checkDatabaseHealth(),
+    defaultProviderRegistry.checkAllHealth(),
+  ]);
   const jobSummary = defaultJobQueue.getSummary();
   const aiSummary = getAiCostSummary();
 
@@ -31,8 +34,11 @@ export async function GET() {
       uptimeMeasured: 'unavailable_external_monitor_required',
       services: {
         database: {
-          configured: isSupabaseConfigured(),
-          status: isSupabaseConfigured() ? 'configured' : 'not_configured',
+          engine: dbHealth.engine,
+          configured: dbHealth.configured,
+          reachable: dbHealth.reachable,
+          status: dbHealth.status,
+          latencyMs: dbHealth.latencyMs,
         },
         demoMode: {
           enabled: isDemoModeEnabled(),

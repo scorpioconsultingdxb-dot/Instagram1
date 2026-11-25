@@ -4,6 +4,8 @@ import { normalizeInstagramInput } from '@/lib/instagram/normalize';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { getCurrentSessionUser } from '@/lib/auth/session';
 import { loadIsFeatureFlagEnabled, recordSearchMetric } from '@/lib/admin/store';
+import { isDatabaseConfigured } from '@/lib/env';
+import { persistDbSearchEvent } from '@/lib/db/repositories/admin.repo';
 
 const ANON_SEARCH_COOKIE = 'viewora_anon_searches';
 const FREE_ANON_SEARCH_LIMIT = 1;
@@ -26,7 +28,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Check if user is authenticated (supports both Supabase Auth and isolated local demo sessions)
+  // Check if user is authenticated via independent PostgreSQL session or isolated local demo mode
   const sessionUser = await getCurrentSessionUser();
   const isAuthenticated = Boolean(sessionUser);
 
@@ -55,22 +57,36 @@ export async function GET(request: NextRequest) {
   });
   const latencyMs = Date.now() - startedAt;
 
+  const availability =
+    result.meta.availability === 'private_account'
+      ? 'private_account'
+      : result.data
+        ? 'available'
+        : 'unavailable';
+  const dataClass =
+    result.meta.dataClass === 'live' || result.meta.dataClass === 'cached'
+      ? result.meta.dataClass
+      : 'demo';
+
   try {
-    recordSearchMetric({
-      normalizedUsername: normalized.username,
-      availability:
-        result.meta.availability === 'private_account'
-          ? 'private_account'
-          : result.data
-            ? 'available'
-            : 'unavailable',
-      dataClass:
-        result.meta.dataClass === 'live' || result.meta.dataClass === 'cached'
-          ? result.meta.dataClass
-          : 'demo',
-      providerId: result.meta.providerId,
-      latencyMs,
-    });
+    if (isDatabaseConfigured()) {
+      await persistDbSearchEvent({
+        userId: sessionUser?.id ?? null,
+        normalizedUsername: normalized.username,
+        providerId: result.meta.providerId,
+        dataClass,
+        availability,
+        latencyMs,
+      });
+    } else {
+      recordSearchMetric({
+        normalizedUsername: normalized.username,
+        availability,
+        dataClass,
+        providerId: result.meta.providerId,
+        latencyMs,
+      });
+    }
   } catch {
     // Non-blocking telemetry recording
   }

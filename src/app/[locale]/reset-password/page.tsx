@@ -1,31 +1,31 @@
-import Link from 'next/link';
-import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/config';
+import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
+import { ResetPasswordForm } from '@/components/auth/ResetPasswordForm';
+
+export const dynamic = 'force-dynamic';
 
 export default async function ResetPasswordPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ token?: string }>;
 }) {
   const { locale } = await params;
-  const safeLocale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
+  const { token } = await searchParams;
+  const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
 
   return (
     <div className="mx-auto max-w-md px-4 py-16">
-      <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm dark:border-slate-800 dark:bg-[#131C2E]">
-        <h1 className="text-xl font-extrabold text-[#0F172A] dark:text-white">
+      <div className="viewora-card-elevated rounded-3xl p-7">
+        <h1 className="font-display text-xl font-extrabold text-[#0F172A] dark:text-white">
           Set a new password
         </h1>
-        <p className="mt-2 text-sm text-[#64748B] dark:text-slate-300">
-          Arrive at this page from your Supabase password-recovery email link to set a new password
-          for your account.
+        <p className="mt-2 text-sm text-[#64748B] dark:text-[#94A3B8]">
+          Provide your single-use password reset token and choose a new password. All prior sessions
+          will be signed out automatically.
         </p>
-        <div className="mt-6">
-          <Link
-            href={`/${safeLocale}/login`}
-            className="inline-block rounded-xl bg-[#7957FF] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#6441f5]"
-          >
-            Return to Sign in
-          </Link>
+        <div className="mt-5">
+          <ResetPasswordForm locale={safeLocale} initialToken={token ?? ''} />
         </div>
       </div>
     </div>

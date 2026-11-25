@@ -5,8 +5,8 @@ import {
   profilePatchSchema,
   saveAccountProfilePrefs,
 } from '@/lib/auth/profile-prefs';
-import { getWorkspaceUsageStats } from '@/lib/dashboard/store';
-import { isSupabaseConfigured } from '@/lib/env';
+import { loadWorkspaceUsageStats } from '@/lib/dashboard/store';
+import { isDatabaseConfigured } from '@/lib/env';
 
 export async function GET() {
   const user = await getCurrentSessionUser();
@@ -14,8 +14,10 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
   }
 
-  const profile = await getAccountProfilePrefs(user.id);
-  const usage = getWorkspaceUsageStats(user.id);
+  const [profile, usage] = await Promise.all([
+    getAccountProfilePrefs(user.id),
+    loadWorkspaceUsageStats(user.id),
+  ]);
 
   return NextResponse.json({
     ok: true,
@@ -49,7 +51,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ ok: false, error: saved.error }, { status: 500 });
   }
 
-  if (parsed.data.fullName && !isSupabaseConfigured()) {
+  if (parsed.data.fullName && !isDatabaseConfigured()) {
     upsertLocalUser({ ...user, fullName: parsed.data.fullName.trim() });
   }
 

@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { isSupabaseConfigured } from '@/lib/env';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
+import { getDbProfilePrefs, saveDbProfilePrefs } from '@/lib/db/repositories/profile-prefs.repo';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 
 export const personalShortcutSchema = z.object({
@@ -107,63 +107,9 @@ function writeLocalPrefs(userId: string, patch: PersonalProfilePatch): PersonalP
 }
 
 export async function getAccountProfilePrefs(userId: string): Promise<PersonalProfilePrefs> {
-  if (isSupabaseConfigured()) {
-    const supabase = await createSupabaseServerClient();
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select(
-          'full_name, professional_title, organization, avatar_preset, avatar_emoji, cover_preset, preferred_locale, theme_preference, accent_preset, timezone, default_date_range, dashboard_density, sidebar_default_collapsed, workspace_name, personal_shortcuts, updated_at'
-        )
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (!error && data) {
-        const defaults = createDefaultProfilePrefs();
-        const shortcutsParsed = z
-          .array(personalShortcutSchema)
-          .safeParse(data.personal_shortcuts);
-        return {
-          fullName: (data.full_name as string | null) ?? undefined,
-          professionalTitle: (data.professional_title as string | null) ?? defaults.professionalTitle,
-          organization: (data.organization as string | null) ?? defaults.organization,
-          avatarPreset:
-            (data.avatar_preset as PersonalProfilePrefs['avatarPreset'] | null) ??
-            defaults.avatarPreset,
-          avatarEmoji: (data.avatar_emoji as string | null) ?? '',
-          coverPreset:
-            (data.cover_preset as PersonalProfilePrefs['coverPreset'] | null) ??
-            defaults.coverPreset,
-          preferredLocale:
-            (data.preferred_locale as PersonalProfilePrefs['preferredLocale'] | null) ??
-            defaults.preferredLocale,
-          themePreference:
-            (data.theme_preference as PersonalProfilePrefs['themePreference'] | null) ??
-            defaults.themePreference,
-          accentPreset:
-            (data.accent_preset as PersonalProfilePrefs['accentPreset'] | null) ??
-            defaults.accentPreset,
-          timezone: (data.timezone as string | null) ?? defaults.timezone,
-          defaultDateRange:
-            (data.default_date_range as PersonalProfilePrefs['defaultDateRange'] | null) ??
-            defaults.defaultDateRange,
-          dashboardDensity:
-            (data.dashboard_density as PersonalProfilePrefs['dashboardDensity'] | null) ??
-            defaults.dashboardDensity,
-          sidebarDefaultCollapsed:
-            typeof data.sidebar_default_collapsed === 'boolean'
-              ? data.sidebar_default_collapsed
-              : defaults.sidebarDefaultCollapsed,
-          workspaceName: (data.workspace_name as string | null) ?? defaults.workspaceName,
-          personalShortcuts: shortcutsParsed.success
-            ? shortcutsParsed.data
-            : defaults.personalShortcuts,
-          updatedAt: (data.updated_at as string | null) ?? new Date().toISOString(),
-        };
-      }
-    }
+  if (isDatabaseConfigured()) {
+    return getDbProfilePrefs(userId);
   }
-
   return readLocalPrefs(userId);
 }
 
@@ -171,39 +117,26 @@ export async function saveAccountProfilePrefs(
   userId: string,
   patch: PersonalProfilePatch
 ): Promise<{ ok: true; profile: PersonalProfilePrefs } | { ok: false; error: string }> {
-  if (isSupabaseConfigured()) {
-    const supabase = await createSupabaseServerClient();
-    if (!supabase) {
-      return { ok: false, error: 'Database client unavailable. Preferences were not saved.' };
+  if (isDatabaseConfigured()) {
+    try {
+      const profile = await saveDbProfilePrefs(userId, patch);
+      return { ok: true, profile };
+    } catch (err) {
+      return {
+        ok: false,
+        error:
+          err instanceof Error
+            ? `Failed to persist profile preferences: ${err.message}`
+            : 'Failed to persist profile preferences to PostgreSQL.',
+      };
     }
+  }
 
-    const dbPatch: Record<string, unknown> = {};
-    if (patch.fullName !== undefined) dbPatch.full_name = patch.fullName;
-    if (patch.professionalTitle !== undefined) dbPatch.professional_title = patch.professionalTitle;
-    if (patch.organization !== undefined) dbPatch.organization = patch.organization;
-    if (patch.avatarPreset !== undefined) dbPatch.avatar_preset = patch.avatarPreset;
-    if (patch.avatarEmoji !== undefined) dbPatch.avatar_emoji = patch.avatarEmoji;
-    if (patch.coverPreset !== undefined) dbPatch.cover_preset = patch.coverPreset;
-    if (patch.preferredLocale !== undefined) dbPatch.preferred_locale = patch.preferredLocale;
-    if (patch.themePreference !== undefined) dbPatch.theme_preference = patch.themePreference;
-    if (patch.accentPreset !== undefined) dbPatch.accent_preset = patch.accentPreset;
-    if (patch.timezone !== undefined) dbPatch.timezone = patch.timezone;
-    if (patch.defaultDateRange !== undefined) dbPatch.default_date_range = patch.defaultDateRange;
-    if (patch.dashboardDensity !== undefined) dbPatch.dashboard_density = patch.dashboardDensity;
-    if (patch.sidebarDefaultCollapsed !== undefined) {
-      dbPatch.sidebar_default_collapsed = patch.sidebarDefaultCollapsed;
-    }
-    if (patch.workspaceName !== undefined) dbPatch.workspace_name = patch.workspaceName;
-    if (patch.personalShortcuts !== undefined) {
-      dbPatch.personal_shortcuts = patch.personalShortcuts;
-    }
-
-    const { error } = await supabase.from('profiles').update(dbPatch).eq('id', userId);
-    if (error) {
-      return { ok: false, error: `Failed to persist profile preferences: ${error.message}` };
-    }
-    const fresh = await getAccountProfilePrefs(userId);
-    return { ok: true, profile: fresh };
+  if (!isLocalDevFallbackAllowed()) {
+    return {
+      ok: false,
+      error: 'PostgreSQL DATABASE_URL is not configured. Preferences were not saved.',
+    };
   }
 
   try {
@@ -230,7 +163,6 @@ export function deleteAccountProfilePrefs(userId: string): void {
   );
 }
 
-// Synchronous backwards-compatible wrappers for legacy callers
 export function getExtendedProfilePrefs(userId: string): PersonalProfilePrefs {
   return readLocalPrefs(userId);
 }

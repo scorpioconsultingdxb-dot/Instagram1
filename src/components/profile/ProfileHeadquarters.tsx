@@ -472,7 +472,9 @@ export function ProfileHeadquarters({
                   <li>
                     • Authentication:{' '}
                     <strong className="text-[#0F172A] dark:text-white">
-                      {user.authMode === 'supabase' ? 'Supabase Auth' : 'Isolated Local Demo'}
+                      {user.authMode === 'database'
+                        ? 'Independent PostgreSQL + Auth.js'
+                        : 'Isolated Local Demo'}
                     </strong>
                   </li>
                   <li>

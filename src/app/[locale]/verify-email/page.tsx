@@ -1,39 +1,35 @@
-import Link from 'next/link';
 import { MailCheck } from 'lucide-react';
-import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/config';
+import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
+import { VerifyEmailForm } from '@/components/auth/VerifyEmailForm';
+
+export const dynamic = 'force-dynamic';
 
 export default async function VerifyEmailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ token?: string }>;
 }) {
   const { locale } = await params;
-  const safeLocale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
+  const { token } = await searchParams;
+  const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
 
   return (
-    <div className="mx-auto max-w-md px-4 py-16 text-center">
-      <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-[#131C2E]">
-        <MailCheck className="mx-auto h-10 w-10 text-[#7957FF]" aria-hidden="true" />
-        <h1 className="mt-4 text-xl font-extrabold text-[#0F172A] dark:text-white">
-          Check your email inbox
-        </h1>
-        <p className="mt-2 text-sm text-[#64748B] dark:text-slate-300">
-          If an account exists for that email address and Supabase email delivery is configured, a
-          secure verification or recovery link has been sent.
-        </p>
-        <div className="mt-6 flex justify-center gap-3">
-          <Link
-            href={`/${safeLocale}/login`}
-            className="rounded-xl bg-[#7957FF] px-4 py-2 text-xs font-semibold text-white hover:bg-[#6441f5]"
-          >
-            Go to Sign in
-          </Link>
-          <Link
-            href={`/${safeLocale}`}
-            className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
-          >
-            Back Home
-          </Link>
+    <div className="mx-auto max-w-md px-4 py-16">
+      <div className="viewora-card-elevated rounded-3xl p-8">
+        <div className="text-center">
+          <MailCheck className="mx-auto h-10 w-10 text-[#7957FF]" aria-hidden="true" />
+          <h1 className="mt-4 font-display text-xl font-extrabold text-[#0F172A] dark:text-white">
+            Verify your email address
+          </h1>
+          <p className="mt-2 text-sm text-[#64748B] dark:text-[#94A3B8]">
+            Confirm your Viewora account using your single-use verification token. External email
+            delivery remains disabled until configured.
+          </p>
+        </div>
+        <div className="mt-6">
+          <VerifyEmailForm locale={safeLocale} initialToken={token ?? ''} />
         </div>
       </div>
     </div>

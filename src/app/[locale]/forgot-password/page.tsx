@@ -1,5 +1,5 @@
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
-import { isSupabaseConfigured } from '@/lib/env';
+import { isDatabaseConfigured } from '@/lib/env';
 import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
 
 export const dynamic = 'force-dynamic';
@@ -19,13 +19,12 @@ export default async function ForgotPasswordPage({
           Reset your password
         </h1>
         <p className="mt-2 text-sm text-[#64748B] dark:text-[#94A3B8]">
-          Password recovery uses Supabase Auth&apos;s signed recovery links. Enter your account
-          email below to check delivery availability and request a reset link.
+          Enter your Viewora account email to generate a single-use, expiring password reset token.
         </p>
         <div className="mt-5">
           <ForgotPasswordForm
             locale={safeLocale}
-            supabaseConfigured={isSupabaseConfigured()}
+            databaseConfigured={isDatabaseConfigured()}
           />
         </div>
       </div>

@@ -31,7 +31,7 @@ export function SignupForm({
   initialHandle,
   initialSegment = 'personal',
   redirectTo,
-  supabaseConfigured,
+  databaseConfigured,
   demoModeEnabled,
 }: {
   locale: Locale;
@@ -39,7 +39,7 @@ export function SignupForm({
   initialHandle?: string;
   initialSegment?: CustomerSegment;
   redirectTo?: string;
-  supabaseConfigured: boolean;
+  databaseConfigured: boolean;
   demoModeEnabled: boolean;
 }) {
   const dict = providedDict ?? getDictionary(locale);
@@ -131,17 +131,18 @@ export function SignupForm({
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
-      {!supabaseConfigured && !demoModeEnabled ? (
+      {!databaseConfigured && !demoModeEnabled ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-          <p className="font-bold">Supabase Auth Configuration Required</p>
+          <p className="font-bold">PostgreSQL Database Configuration Required</p>
           <p className="mt-1 leading-relaxed">
-            New account registration requires live Supabase credentials. Local demo registration is
-            disabled by default (<code className="font-mono">DEMO_MODE_ENABLED=false</code>).
+            New account registration requires a configured PostgreSQL{' '}
+            <code className="font-mono">DATABASE_URL</code>. Local demo registration is disabled by
+            default (<code className="font-mono">DEMO_MODE_ENABLED=false</code>).
           </p>
         </div>
       ) : null}
 
-      {!supabaseConfigured && demoModeEnabled ? (
+      {!databaseConfigured && demoModeEnabled ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
           <strong>{t.localDemoTitle}:</strong> {t.localDemoSignupNotice}
         </div>

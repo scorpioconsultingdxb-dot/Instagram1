@@ -135,7 +135,7 @@ export const es: Dictionary = {
     newToViewora: '¿Nuevo en Viewora?',
     createFreeAccount: 'Crear una cuenta gratis',
     redirectNoticePrefix: 'Después de iniciar sesión, volverás directamente a',
-    protectedBySupabase: 'Protegido por Supabase Auth y cookies de sesión HttpOnly.',
+    protectedByAuth: 'Protegido por sesiones PostgreSQL independientes, Auth.js y cookies HttpOnly.',
     authNotConfiguredTitle: 'Autenticación en Vivo Aún No Configurada',
     localDemoTitle: 'Modo Demo Local Aislado (No es Autenticación de Producción)',
     localDemoBody:
@@ -167,7 +167,7 @@ export const es: Dictionary = {
     alreadyRegistered: '¿Ya tienes cuenta?',
     signInLink: 'Iniciar sesión',
     localDemoSignupNotice:
-      'Las cuentas creadas aquí se guardan localmente solo para evaluación y no son cuentas de producción de Supabase Auth.',
+      'Las cuentas creadas aquí se guardan localmente solo para evaluación y no son cuentas PostgreSQL de producción.',
   },
   tools: {
     directoryBadge: '12 Herramientas Gratis de Instagram · Sin Registro',

@@ -7,10 +7,12 @@ import {
   loadUserEntitlementOverrides,
   resolveEntitlements,
 } from '@/lib/entitlements/service';
+import { isDatabaseConfigured } from '@/lib/env';
+import { getPrismaClient } from '@/lib/db/prisma';
 
 /**
  * GDPR / LGPD / UAE PDPL Personal Data Export endpoint.
- * Returns the authenticated user's own account data only.
+ * Returns strictly the authenticated user's own account data and records a DataExportRequest.
  */
 export async function GET() {
   const user = await getCurrentSessionUser();
@@ -24,6 +26,7 @@ export async function GET() {
     getAccountProfilePrefs(user.id),
     loadUserWorkspaceState(user.id),
   ]);
+
   const entitlements = resolveEntitlements({
     planCode: user.planCode,
     billingInterval: user.billingInterval,
@@ -32,8 +35,22 @@ export async function GET() {
     overrides,
   });
 
+  const now = new Date();
+  if (isDatabaseConfigured()) {
+    await getPrismaClient()
+      .dataExportRequest.create({
+        data: {
+          userId: user.id,
+          status: 'completed',
+          format: 'json',
+          completedAt: now,
+        },
+      })
+      .catch(() => undefined);
+  }
+
   const payload = {
-    exportedAt: new Date().toISOString(),
+    exportedAt: now.toISOString(),
     dataController: 'Viewora',
     account: {
       id: user.id,
@@ -43,15 +60,18 @@ export async function GET() {
       role: user.role,
       planCode: user.planCode,
       billingInterval: user.billingInterval,
+      emailVerified: user.emailVerified ?? null,
       emailPreferences: user.emailPreferences,
       createdAt: user.createdAt,
       authMode: user.authMode,
     },
     profilePreferences: profilePrefs,
     workspace: {
+      workspaces: workspace.workspaces,
       folders: workspace.folders,
       savedProfiles: workspace.savedProfiles.map((p) => ({
         username: p.username,
+        workspace: p.workspace,
         folderId: p.folderId,
         tags: p.tags,
         privateNote: p.privateNote,
@@ -59,6 +79,7 @@ export async function GET() {
         savedAt: p.savedAt,
       })),
       comparisons: workspace.comparisons,
+      notificationsCount: workspace.notifications.length,
       reportsCount: workspace.reports.length,
       exportsCount: workspace.exports.length,
     },

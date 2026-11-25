@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getCurrentSessionUser, upsertLocalUser } from '@/lib/auth/session';
-import { isSupabaseConfigured } from '@/lib/env';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
+import { updateDbAccountPreferences } from '@/lib/db/repositories/users.repo';
 
 const prefsSchema = z.object({
   segment: z.enum(['personal', 'business', 'agency']).optional(),
@@ -28,32 +28,25 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Invalid preferences payload.' }, { status: 400 });
   }
 
-  if (isSupabaseConfigured()) {
-    const supabase = await createSupabaseServerClient();
-    if (!supabase) {
+  if (isDatabaseConfigured()) {
+    try {
+      await updateDbAccountPreferences(user.id, {
+        segment: parsed.data.segment,
+        emailPreferences: parsed.data.emailPreferences,
+      });
+    } catch (err) {
       return NextResponse.json(
-        { ok: false, error: 'Database service unavailable. Preferences were not saved.' },
-        { status: 503 }
-      );
-    }
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        ...(parsed.data.segment ? { segment: parsed.data.segment } : {}),
-        ...(parsed.data.emailPreferences
-          ? { email_preferences: parsed.data.emailPreferences }
-          : {}),
-        onboarding_completed: true,
-      })
-      .eq('id', user.id);
-
-    if (error) {
-      return NextResponse.json(
-        { ok: false, error: `Could not save preferences: ${error.message}` },
+        {
+          ok: false,
+          error:
+            err instanceof Error
+              ? `Could not save preferences: ${err.message}`
+              : 'Could not save preferences to PostgreSQL.',
+        },
         { status: 500 }
       );
     }
-  } else {
+  } else if (isLocalDevFallbackAllowed()) {
     try {
       upsertLocalUser({
         ...user,
@@ -71,6 +64,11 @@ export async function PATCH(request: NextRequest) {
         { status: 500 }
       );
     }
+  } else {
+    return NextResponse.json(
+      { ok: false, error: 'PostgreSQL database is not configured. Preferences were not saved.' },
+      { status: 503 }
+    );
   }
 
   return NextResponse.json({ ok: true, persistedAt: new Date().toISOString() });

@@ -1,5 +1,18 @@
-import { isSupabaseConfigured } from '@/lib/env';
-import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
+import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
+import {
+  loadDbAuditLogs,
+  loadDbBroadcastNotifications,
+  loadDbCmsContent,
+  loadDbFeatureFlags,
+  loadDbSupportTickets,
+  persistDbAuditLog,
+  persistDbBroadcastCreate,
+  persistDbBroadcastToggle,
+  persistDbCmsContentUpdate,
+  persistDbFeatureFlagToggle,
+  persistDbSupportTicketCreate,
+  persistDbSupportTicketUpdate,
+} from '@/lib/db/repositories/admin.repo';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 
 export interface FeatureFlagRecord {
@@ -202,7 +215,6 @@ function createDefaultAdminState(): PersistedAdminState {
 
 function loadAdminState(): PersistedAdminState {
   const state = readJsonStore<PersistedAdminState>(ADMIN_STORE, createDefaultAdminState);
-  // Enforce invariant: payments_enabled is ALWAYS locked false
   const payFlag = state.featureFlags.find((f) => f.key === 'payments_enabled');
   if (payFlag) {
     payFlag.enabled = false;
@@ -447,9 +459,7 @@ export function recordSearchMetric(params: {
 export function getApiUsageMetrics(): ApiUsageMetric[] {
   const recorded = loadAdminState().recordedProviderCalls ?? {};
   const entries = Object.entries(recorded);
-  if (entries.length === 0) {
-    return SAMPLE_API_USAGE;
-  }
+  if (entries.length === 0) return SAMPLE_API_USAGE;
   return entries.map(([providerId, stat]) => ({
     providerId,
     requests24h: stat.requests,
@@ -462,51 +472,24 @@ export function getApiUsageMetrics(): ApiUsageMetric[] {
 
 export function getSearchAnalyticsMetrics(): SearchAnalyticsMetric[] {
   const recorded = Object.values(loadAdminState().recordedSearchCounts ?? {});
-  if (recorded.length === 0) {
-    return SAMPLE_SEARCH_ANALYTICS;
-  }
+  if (recorded.length === 0) return SAMPLE_SEARCH_ANALYTICS;
   return recorded.sort((a, b) => b.searches24h - a.searches24h);
 }
 
 // ============================================================================
-// Database-Backed Async Admin Persistence (Supabase Postgres + Local Fallback)
+// Independent PostgreSQL (Prisma) Admin Persistence
 // ============================================================================
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function asUuidOrNull(value: string | null | undefined): string | null {
-  if (!value) return null;
-  return UUID_REGEX.test(value) ? value : null;
-}
-
-async function getSupabaseForAdmin() {
-  return createSupabaseAdminClient() ?? (await createSupabaseServerClient());
-}
-
 export async function loadFeatureFlags(): Promise<FeatureFlagRecord[]> {
-  if (!isSupabaseConfigured()) return listFeatureFlags();
-  try {
-    const supabase = await getSupabaseForAdmin();
-    if (!supabase) return listFeatureFlags();
-    const { data, error } = await supabase
-      .from('feature_flags')
-      .select('key, description, enabled, locked, updated_at')
-      .order('key', { ascending: true });
-    if (error || !data || data.length === 0) return listFeatureFlags();
-    return (data as Array<Record<string, unknown>>).map((row) => {
-      const key = String(row.key);
-      const isPayments = key === 'payments_enabled';
-      return {
-        key,
-        description: String(row.description ?? ''),
-        enabled: isPayments ? false : Boolean(row.enabled),
-        locked: isPayments ? true : Boolean(row.locked),
-        updatedAt: String(row.updated_at ?? new Date().toISOString()),
-      };
-    });
-  } catch {
-    return listFeatureFlags();
+  if (isDatabaseConfigured()) {
+    try {
+      const flags = await loadDbFeatureFlags();
+      if (flags.length > 0) return flags;
+    } catch {
+      // Fall back to safe defaults if DB is unreachable
+    }
   }
+  return listFeatureFlags();
 }
 
 export async function loadIsFeatureFlagEnabled(key: string): Promise<boolean> {
@@ -527,78 +510,25 @@ export async function persistFeatureFlagToggle(
       error: `Feature flag "${key}" is locked and cannot be toggled without explicit authorization.`,
     };
   }
-  if (!isSupabaseConfigured()) {
-    return toggleFeatureFlag(key, enabled);
+  if (isDatabaseConfigured()) {
+    return persistDbFeatureFlagToggle(key, enabled, updatedBy);
   }
-  const supabase = await getSupabaseForAdmin();
-  if (!supabase) return toggleFeatureFlag(key, enabled);
-
-  const { data: existing, error: fetchErr } = await supabase
-    .from('feature_flags')
-    .select('key, description, enabled, locked, updated_at')
-    .eq('key', key)
-    .maybeSingle();
-
-  if (fetchErr || !existing) {
-    return { ok: false, error: `Unknown feature flag: ${key}` };
+  if (!isLocalDevFallbackAllowed()) {
+    return { ok: false, error: 'PostgreSQL DATABASE_URL is not configured.' };
   }
-  if (existing.locked) {
-    return {
-      ok: false,
-      error: `Feature flag "${key}" is locked and cannot be toggled without explicit authorization.`,
-    };
-  }
-
-  const updatePayload: Record<string, unknown> = { enabled };
-  const safeUpdatedBy = asUuidOrNull(updatedBy);
-  if (safeUpdatedBy) updatePayload.updated_by = safeUpdatedBy;
-
-  const { data: updated, error: updateErr } = await supabase
-    .from('feature_flags')
-    .update(updatePayload)
-    .eq('key', key)
-    .select('key, description, enabled, locked, updated_at')
-    .single();
-
-  if (updateErr || !updated) {
-    return { ok: false, error: updateErr?.message ?? 'Failed to persist feature flag.' };
-  }
-
-  return {
-    ok: true,
-    flag: {
-      key: String(updated.key),
-      description: String(updated.description ?? ''),
-      enabled: Boolean(updated.enabled),
-      locked: Boolean(updated.locked),
-      updatedAt: String(updated.updated_at ?? new Date().toISOString()),
-    },
-  };
+  return toggleFeatureFlag(key, enabled);
 }
 
 export async function loadCmsContent(): Promise<CmsContentRecord[]> {
-  if (!isSupabaseConfigured()) return listCmsContent();
-  try {
-    const supabase = await getSupabaseForAdmin();
-    if (!supabase) return listCmsContent();
-    const { data, error } = await supabase
-      .from('cms_content')
-      .select('id, slug, locale, content_type, title, body, is_published, updated_at')
-      .order('updated_at', { ascending: false });
-    if (error || !data || data.length === 0) return listCmsContent();
-    return (data as Array<Record<string, unknown>>).map((row) => ({
-      id: String(row.id),
-      slug: String(row.slug),
-      locale: row.locale as CmsContentRecord['locale'],
-      contentType: row.content_type as CmsContentRecord['contentType'],
-      title: String(row.title),
-      body: String(row.body),
-      isPublished: Boolean(row.is_published),
-      updatedAt: String(row.updated_at ?? new Date().toISOString()),
-    }));
-  } catch {
-    return listCmsContent();
+  if (isDatabaseConfigured()) {
+    try {
+      const items = await loadDbCmsContent();
+      if (items.length > 0) return items;
+    } catch {
+      // Fall back to static defaults
+    }
   }
+  return listCmsContent();
 }
 
 export async function persistCmsContentUpdate(
@@ -606,63 +536,22 @@ export async function persistCmsContentUpdate(
   patch: Partial<Pick<CmsContentRecord, 'title' | 'body' | 'isPublished'>>,
   updatedBy?: string
 ): Promise<CmsContentRecord | null> {
-  if (!isSupabaseConfigured()) {
-    return updateCmsContent(id, patch);
+  if (isDatabaseConfigured()) {
+    return persistDbCmsContentUpdate(id, patch, updatedBy);
   }
-  const supabase = await getSupabaseForAdmin();
-  if (!supabase) return updateCmsContent(id, patch);
-
-  const dbPatch: Record<string, unknown> = {};
-  if (typeof patch.title === 'string') dbPatch.title = patch.title;
-  if (typeof patch.body === 'string') dbPatch.body = patch.body;
-  if (typeof patch.isPublished === 'boolean') dbPatch.is_published = patch.isPublished;
-  const safeUpdatedBy = asUuidOrNull(updatedBy);
-  if (safeUpdatedBy) dbPatch.updated_by = safeUpdatedBy;
-
-  const { data, error } = await supabase
-    .from('cms_content')
-    .update(dbPatch)
-    .eq('id', id)
-    .select('id, slug, locale, content_type, title, body, is_published, updated_at')
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return {
-    id: String(data.id),
-    slug: String(data.slug),
-    locale: data.locale as CmsContentRecord['locale'],
-    contentType: data.content_type as CmsContentRecord['contentType'],
-    title: String(data.title),
-    body: String(data.body),
-    isPublished: Boolean(data.is_published),
-    updatedAt: String(data.updated_at ?? new Date().toISOString()),
-  };
+  if (!isLocalDevFallbackAllowed()) return null;
+  return updateCmsContent(id, patch);
 }
 
 export async function loadSupportTickets(): Promise<SupportTicketRecord[]> {
-  if (!isSupabaseConfigured()) return listSupportTickets();
-  try {
-    const supabase = await getSupabaseForAdmin();
-    if (!supabase) return listSupportTickets();
-    const { data, error } = await supabase
-      .from('support_tickets')
-      .select('id, email, subject, message, status, priority, admin_notes, created_at')
-      .order('created_at', { ascending: false });
-    if (error || !data) return listSupportTickets();
-    return (data as Array<Record<string, unknown>>).map((row) => ({
-      id: String(row.id),
-      email: String(row.email),
-      subject: String(row.subject),
-      message: String(row.message),
-      status: row.status as SupportTicketRecord['status'],
-      priority: row.priority as SupportTicketRecord['priority'],
-      adminNotes: String(row.admin_notes ?? ''),
-      createdAt: String(row.created_at ?? new Date().toISOString()),
-      isSample: false,
-    }));
-  } catch {
-    return listSupportTickets();
+  if (isDatabaseConfigured()) {
+    try {
+      return await loadDbSupportTickets();
+    } catch {
+      return [];
+    }
   }
+  return listSupportTickets();
 }
 
 export async function persistSupportTicketCreate(
@@ -670,100 +559,38 @@ export async function persistSupportTicketCreate(
     userId?: string | null;
   }
 ): Promise<SupportTicketRecord | null> {
-  if (!isSupabaseConfigured()) {
-    return createSupportTicket(ticket);
+  if (isDatabaseConfigured()) {
+    try {
+      return await persistDbSupportTicketCreate(ticket);
+    } catch {
+      return null;
+    }
   }
-  const supabase = await getSupabaseForAdmin();
-  if (!supabase) return null;
-
-  const { data, error } = await supabase
-    .from('support_tickets')
-    .insert({
-      user_id: asUuidOrNull(ticket.userId),
-      email: ticket.email,
-      subject: ticket.subject,
-      message: ticket.message,
-      priority: ticket.priority,
-      status: 'open',
-      admin_notes: '',
-    })
-    .select('id, email, subject, message, status, priority, admin_notes, created_at')
-    .single();
-
-  if (error || !data) {
-    return null;
-  }
-  return {
-    id: String(data.id),
-    email: String(data.email),
-    subject: String(data.subject),
-    message: String(data.message),
-    status: data.status as SupportTicketRecord['status'],
-    priority: data.priority as SupportTicketRecord['priority'],
-    adminNotes: String(data.admin_notes ?? ''),
-    createdAt: String(data.created_at ?? new Date().toISOString()),
-    isSample: false,
-  };
+  if (!isLocalDevFallbackAllowed()) return null;
+  return createSupportTicket(ticket);
 }
 
 export async function persistSupportTicketUpdate(
   id: string,
-  patch: Partial<Pick<SupportTicketRecord, 'status' | 'priority' | 'adminNotes'>>
+  patch: Partial<Pick<SupportTicketRecord, 'status' | 'priority' | 'adminNotes'>>,
+  actorId?: string
 ): Promise<SupportTicketRecord | null> {
-  if (!isSupabaseConfigured()) {
-    return updateSupportTicket(id, patch);
+  if (isDatabaseConfigured()) {
+    return persistDbSupportTicketUpdate(id, patch, actorId);
   }
-  const supabase = await getSupabaseForAdmin();
-  if (!supabase) return updateSupportTicket(id, patch);
-
-  const dbPatch: Record<string, unknown> = {};
-  if (patch.status !== undefined) dbPatch.status = patch.status;
-  if (patch.priority !== undefined) dbPatch.priority = patch.priority;
-  if (typeof patch.adminNotes === 'string') dbPatch.admin_notes = patch.adminNotes;
-
-  const { data, error } = await supabase
-    .from('support_tickets')
-    .update(dbPatch)
-    .eq('id', id)
-    .select('id, email, subject, message, status, priority, admin_notes, created_at')
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return {
-    id: String(data.id),
-    email: String(data.email),
-    subject: String(data.subject),
-    message: String(data.message),
-    status: data.status as SupportTicketRecord['status'],
-    priority: data.priority as SupportTicketRecord['priority'],
-    adminNotes: String(data.admin_notes ?? ''),
-    createdAt: String(data.created_at ?? new Date().toISOString()),
-    isSample: false,
-  };
+  if (!isLocalDevFallbackAllowed()) return null;
+  return updateSupportTicket(id, patch);
 }
 
 export async function loadBroadcastNotifications(): Promise<BroadcastNotificationRecord[]> {
-  if (!isSupabaseConfigured()) return listBroadcastNotifications();
-  try {
-    const supabase = await getSupabaseForAdmin();
-    if (!supabase) return listBroadcastNotifications();
-    const { data, error } = await supabase
-      .from('broadcast_notifications')
-      .select('id, title, body, category, target_segment, is_active, created_at')
-      .order('created_at', { ascending: false });
-    if (error || !data) return listBroadcastNotifications();
-    return (data as Array<Record<string, unknown>>).map((row) => ({
-      id: String(row.id),
-      title: String(row.title),
-      body: String(row.body),
-      category: row.category as BroadcastNotificationRecord['category'],
-      targetSegment: row.target_segment as BroadcastNotificationRecord['targetSegment'],
-      isActive: Boolean(row.is_active),
-      createdAt: String(row.created_at ?? new Date().toISOString()),
-    }));
-  } catch {
-    return listBroadcastNotifications();
+  if (isDatabaseConfigured()) {
+    try {
+      return await loadDbBroadcastNotifications();
+    } catch {
+      return [];
+    }
   }
+  return listBroadcastNotifications();
 }
 
 export async function loadActiveBroadcastNotifications(
@@ -776,132 +603,48 @@ export async function loadActiveBroadcastNotifications(
 export async function persistBroadcastCreate(
   input: Omit<BroadcastNotificationRecord, 'id' | 'createdAt'> & { createdBy?: string }
 ): Promise<BroadcastNotificationRecord | null> {
-  if (!isSupabaseConfigured()) {
-    return createBroadcastNotification(input);
+  if (isDatabaseConfigured()) {
+    try {
+      return await persistDbBroadcastCreate(input);
+    } catch {
+      return null;
+    }
   }
-  const supabase = await getSupabaseForAdmin();
-  if (!supabase) return null;
-
-  const { data, error } = await supabase
-    .from('broadcast_notifications')
-    .insert({
-      title: input.title,
-      body: input.body,
-      category: input.category,
-      target_segment: input.targetSegment,
-      is_active: input.isActive,
-      created_by: asUuidOrNull(input.createdBy),
-    })
-    .select('id, title, body, category, target_segment, is_active, created_at')
-    .single();
-
-  if (error || !data) return null;
-  return {
-    id: String(data.id),
-    title: String(data.title),
-    body: String(data.body),
-    category: data.category as BroadcastNotificationRecord['category'],
-    targetSegment: data.target_segment as BroadcastNotificationRecord['targetSegment'],
-    isActive: Boolean(data.is_active),
-    createdAt: String(data.created_at ?? new Date().toISOString()),
-  };
+  if (!isLocalDevFallbackAllowed()) return null;
+  return createBroadcastNotification(input);
 }
 
 export async function persistBroadcastToggle(
   id: string,
   isActive: boolean
 ): Promise<BroadcastNotificationRecord | null> {
-  if (!isSupabaseConfigured()) {
-    return toggleBroadcastNotification(id, isActive);
+  if (isDatabaseConfigured()) {
+    return persistDbBroadcastToggle(id, isActive);
   }
-  const supabase = await getSupabaseForAdmin();
-  if (!supabase) return toggleBroadcastNotification(id, isActive);
-
-  const { data, error } = await supabase
-    .from('broadcast_notifications')
-    .update({ is_active: isActive })
-    .eq('id', id)
-    .select('id, title, body, category, target_segment, is_active, created_at')
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return {
-    id: String(data.id),
-    title: String(data.title),
-    body: String(data.body),
-    category: data.category as BroadcastNotificationRecord['category'],
-    targetSegment: data.target_segment as BroadcastNotificationRecord['targetSegment'],
-    isActive: Boolean(data.is_active),
-    createdAt: String(data.created_at ?? new Date().toISOString()),
-  };
+  if (!isLocalDevFallbackAllowed()) return null;
+  return toggleBroadcastNotification(id, isActive);
 }
 
 export async function loadAuditLogs(): Promise<AuditLogRecord[]> {
-  if (!isSupabaseConfigured()) return listAuditLogs();
-  try {
-    const supabase = await getSupabaseForAdmin();
-    if (!supabase) return listAuditLogs();
-    const { data, error } = await supabase
-      .from('audit_logs')
-      .select('id, actor_id, action, target_type, target_id, diff, created_at')
-      .order('created_at', { ascending: false })
-      .limit(200);
-    if (error || !data) return listAuditLogs();
-    return (data as Array<Record<string, unknown>>).map((row) => {
-      const diff = (row.diff as Record<string, unknown> | null) ?? {};
-      const actorEmail =
-        typeof diff._actorEmail === 'string'
-          ? diff._actorEmail
-          : String(row.actor_id ?? 'system@viewora.local');
-      return {
-        id: String(row.id),
-        actorId: String(row.actor_id ?? 'system'),
-        actorEmail,
-        action: String(row.action),
-        targetType: String(row.target_type),
-        targetId: String(row.target_id ?? ''),
-        diff,
-        createdAt: String(row.created_at ?? new Date().toISOString()),
-      };
-    });
-  } catch {
-    return listAuditLogs();
+  if (isDatabaseConfigured()) {
+    try {
+      return await loadDbAuditLogs();
+    } catch {
+      return [];
+    }
   }
+  return listAuditLogs();
 }
 
 export async function persistAuditLog(
   entry: Omit<AuditLogRecord, 'id' | 'createdAt'>
 ): Promise<AuditLogRecord> {
-  if (!isSupabaseConfigured()) {
-    return recordAuditLog(entry);
+  if (isDatabaseConfigured()) {
+    try {
+      return await persistDbAuditLog(entry);
+    } catch {
+      // Non-blocking audit fallback only in dev
+    }
   }
-  const supabase = await getSupabaseForAdmin();
-  if (!supabase) return recordAuditLog(entry);
-
-  const { data, error } = await supabase
-    .from('audit_logs')
-    .insert({
-      actor_id: asUuidOrNull(entry.actorId),
-      action: entry.action,
-      target_type: entry.targetType,
-      target_id: entry.targetId,
-      diff: { ...entry.diff, _actorEmail: entry.actorEmail },
-    })
-    .select('id, actor_id, action, target_type, target_id, diff, created_at')
-    .single();
-
-  if (error || !data) {
-    return recordAuditLog(entry);
-  }
-
-  return {
-    id: String(data.id),
-    actorId: String(data.actor_id ?? entry.actorId),
-    actorEmail: entry.actorEmail,
-    action: String(data.action),
-    targetType: String(data.target_type),
-    targetId: String(data.target_id ?? ''),
-    diff: (data.diff as Record<string, unknown> | null) ?? entry.diff,
-    createdAt: String(data.created_at ?? new Date().toISOString()),
-  };
+  return recordAuditLog(entry);
 }

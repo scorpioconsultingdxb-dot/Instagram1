@@ -1,22 +1,30 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { isDemoModeEnabled, isSupabaseConfigured } from '@/lib/env';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { getEnv, isDatabaseConfigured, isDemoModeEnabled } from '@/lib/env';
 import {
+  buildSessionCookieOptions,
   deriveLocalUserId,
   encodeSignedSessionCookie,
   listLocalDemoUsers,
   LOCAL_SESSION_COOKIE,
+  SESSION_COOKIE_NAME,
   upsertLocalUser,
 } from '@/lib/auth/session';
-import { recordFunnelEvent } from '@/lib/analytics/funnel';
+import {
+  createDbSession,
+  registerUserWithWorkspace,
+  SESSION_TTL_MS,
+} from '@/lib/db/repositories/users.repo';
+import { checkAuthRateLimit, extractClientIp } from '@/lib/auth/rate-limit';
+import { captureDevAuthEmail } from '@/lib/auth/dev-mail';
+import { persistFunnelEvent } from '@/lib/analytics/funnel';
 
 const signupSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
-  fullName: z.string().min(2).max(80),
+  password: z.string().min(8).max(128),
+  fullName: z.string().trim().min(2).max(80),
   segment: z.enum(['personal', 'business', 'agency']).default('personal'),
-  locale: z.string().default('en'),
+  locale: z.enum(['en', 'pt-BR', 'es', 'de', 'fr']).default('en'),
   emailPreferences: z
     .object({
       productUpdates: z.boolean().default(false),
@@ -33,6 +41,15 @@ const signupSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const ip = extractClientIp(request.headers);
+  const ipLimit = checkAuthRateLimit({ scope: 'signup', identifier: `ip:${ip}`, maxAttempts: 10 });
+  if (!ipLimit.allowed) {
+    return NextResponse.json(
+      { ok: false, error: 'Too many registration attempts. Please try again later.' },
+      { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } }
+    );
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = signupSchema.safeParse(body);
   if (!parsed.success) {
@@ -47,47 +64,69 @@ export async function POST(request: NextRequest) {
 
   const email = parsed.data.email.trim().toLowerCase();
 
-  if (isSupabaseConfigured()) {
-    const supabase = await createSupabaseServerClient();
-    if (!supabase) {
-      return NextResponse.json({ ok: false, error: 'Auth service unavailable.' }, { status: 503 });
-    }
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password: parsed.data.password,
-      options: {
-        data: {
-          full_name: parsed.data.fullName,
-          segment: parsed.data.segment,
+  if (isDatabaseConfigured()) {
+    try {
+      const reg = await registerUserWithWorkspace({
+        email,
+        password: parsed.data.password,
+        fullName: parsed.data.fullName,
+        segment: parsed.data.segment,
+        preferredLocale: parsed.data.locale,
+        emailPreferences: parsed.data.emailPreferences,
+      });
+
+      if (!reg.ok) {
+        return NextResponse.json(
+          { ok: false, error: reg.error },
+          { status: reg.code === 'EMAIL_EXISTS' ? 409 : 400 }
+        );
+      }
+
+      const appUrl = getEnv().NEXT_PUBLIC_APP_URL.replace(/\/+$/, '');
+      captureDevAuthEmail({
+        to: reg.user.email,
+        subject: 'Verify your Viewora email address',
+        kind: 'email_verification',
+        actionUrl: `${appUrl}/${parsed.data.locale}/verify-email?token=${encodeURIComponent(reg.verificationTokenRaw)}`,
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(),
+      });
+
+      const session = await createDbSession({
+        userId: reg.user.id,
+        ipAddress: ip,
+        userAgent: request.headers.get('user-agent'),
+        ttlMs: SESSION_TTL_MS,
+      });
+
+      await persistFunnelEvent({
+        eventName: 'signup_completed',
+        locale: parsed.data.locale,
+        sessionId: reg.user.id,
+        userId: reg.user.id,
+        properties: { segment: reg.user.segment },
+      }).catch(() => undefined);
+
+      const response = NextResponse.json(
+        {
+          ok: true,
+          mode: 'database',
+          user: reg.user,
+          verificationPending: true,
         },
-      },
-    });
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+        { status: 201 }
+      );
+      response.cookies.set(
+        SESSION_COOKIE_NAME,
+        session.rawToken,
+        buildSessionCookieOptions(Math.floor(SESSION_TTL_MS / 1000))
+      );
+      return response;
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: 'Database registration service is temporarily unavailable.' },
+        { status: 503 }
+      );
     }
-
-    if (data.user) {
-      await supabase
-        .from('profiles')
-        .update({
-          full_name: parsed.data.fullName,
-          segment: parsed.data.segment,
-          preferred_locale: parsed.data.locale,
-          onboarding_completed: true,
-          email_preferences: parsed.data.emailPreferences,
-        })
-        .eq('id', data.user.id);
-    }
-
-    recordFunnelEvent({
-      eventName: 'signup_completed',
-      locale: parsed.data.locale,
-      sessionId: data.user?.id ?? 'anon',
-      userId: data.user?.id ?? null,
-      properties: { segment: parsed.data.segment },
-    });
-
-    return NextResponse.json({ ok: true, mode: 'supabase' });
   }
 
   if (!isDemoModeEnabled()) {
@@ -95,7 +134,7 @@ export async function POST(request: NextRequest) {
       {
         ok: false,
         error:
-          'Registration requires configured Supabase credentials. Isolated demo mode is disabled by default (DEMO_MODE_ENABLED=false).',
+          'Registration requires a configured PostgreSQL DATABASE_URL. Isolated demo mode is disabled by default (DEMO_MODE_ENABLED=false).',
       },
       { status: 503 }
     );
@@ -106,7 +145,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: 'An account with this email already exists. Please sign in instead.',
+        error: 'Unable to complete registration with the provided email address.',
       },
       { status: 409 }
     );
@@ -125,20 +164,19 @@ export async function POST(request: NextRequest) {
     authMode: 'local_demo',
   });
 
-  recordFunnelEvent({
+  await persistFunnelEvent({
     eventName: 'signup_completed',
     locale: parsed.data.locale,
     sessionId: newUser.id,
     userId: newUser.id,
     properties: { segment: newUser.segment },
-  });
+  }).catch(() => undefined);
 
-  const response = NextResponse.json({ ok: true, mode: 'local_demo', user: newUser });
-  response.cookies.set(LOCAL_SESSION_COOKIE, encodeSignedSessionCookie(newUser.email), {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 7,
-  });
+  const response = NextResponse.json({ ok: true, mode: 'local_demo', user: newUser }, { status: 201 });
+  response.cookies.set(
+    LOCAL_SESSION_COOKIE,
+    encodeSignedSessionCookie(newUser.email),
+    buildSessionCookieOptions(60 * 60 * 24 * 7)
+  );
   return response;
 }

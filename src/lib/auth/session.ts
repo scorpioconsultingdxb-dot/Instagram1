@@ -1,8 +1,13 @@
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { cookies } from 'next/headers';
-import { isDemoModeEnabled, isSupabaseConfigured } from '@/lib/env';
-import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
+import { isDatabaseConfigured, isDemoModeEnabled, isLocalDevFallbackAllowed } from '@/lib/env';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
+import {
+  getDbSessionUserById,
+  listDbAdminUsers,
+  persistDbAdminUserUpdate,
+  resolveDbSessionByRawToken,
+} from '@/lib/db/repositories/users.repo';
 import type {
   BillingInterval,
   CustomerSegment,
@@ -26,14 +31,22 @@ export interface SessionUser {
   planCode: PlanCode;
   billingInterval: BillingInterval;
   onboardingCompleted: boolean;
+  emailVerified?: string | null;
   emailPreferences: EmailPreferences;
   createdAt?: string;
-  authMode: 'supabase' | 'local_demo';
+  authMode: 'database' | 'local_demo';
 }
 
-const LOCAL_SESSION_COOKIE = 'viewora_session';
-const LOCAL_SIGNING_SECRET =
-  process.env.SUPABASE_SERVICE_ROLE_KEY || 'viewora-local-dev-session-secret-only';
+export const SESSION_COOKIE_NAME =
+  process.env.NODE_ENV === 'production' ? '__Host-viewora_session' : 'viewora_session';
+// Backwards-compatible alias for existing tests and helpers
+export const LOCAL_SESSION_COOKIE = 'viewora_session';
+
+function resolveLocalSigningSecret(): string {
+  const configured = (process.env.AUTH_SECRET || '').trim();
+  if (configured.length >= 16) return configured;
+  return 'viewora-local-dev-session-secret-only';
+}
 
 const DEFAULT_LOCAL_USERS: SessionUser[] = [
   {
@@ -45,6 +58,7 @@ const DEFAULT_LOCAL_USERS: SessionUser[] = [
     planCode: 'free',
     billingInterval: 'monthly',
     onboardingCompleted: true,
+    emailVerified: '2026-09-12T10:00:00.000Z',
     emailPreferences: {
       productUpdates: false,
       weeklyDigest: true,
@@ -63,6 +77,7 @@ const DEFAULT_LOCAL_USERS: SessionUser[] = [
     planCode: 'premium',
     billingInterval: 'annual',
     onboardingCompleted: true,
+    emailVerified: '2026-08-03T14:30:00.000Z',
     emailPreferences: {
       productUpdates: true,
       weeklyDigest: true,
@@ -81,6 +96,7 @@ const DEFAULT_LOCAL_USERS: SessionUser[] = [
     planCode: 'agency',
     billingInterval: 'annual',
     onboardingCompleted: true,
+    emailVerified: '2026-06-18T09:15:00.000Z',
     emailPreferences: {
       productUpdates: true,
       weeklyDigest: true,
@@ -99,6 +115,7 @@ const DEFAULT_LOCAL_USERS: SessionUser[] = [
     planCode: 'agency',
     billingInterval: 'annual',
     onboardingCompleted: true,
+    emailVerified: '2026-01-15T08:00:00.000Z',
     emailPreferences: {
       productUpdates: true,
       weeklyDigest: true,
@@ -216,7 +233,7 @@ export function updateLocalUserPlan(userId: string, planCode: PlanCode): Session
 }
 
 function signPayload(payload: string): string {
-  return createHmac('sha256', LOCAL_SIGNING_SECRET).update(payload).digest('hex');
+  return createHmac('sha256', resolveLocalSigningSecret()).update(payload).digest('hex');
 }
 
 export function encodeSignedSessionCookie(email: string): string {
@@ -238,61 +255,62 @@ export function decodeSignedSessionCookie(token: string | undefined): string | n
   return email;
 }
 
+export function buildSessionCookieOptions(maxAgeSeconds: number) {
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: maxAgeSeconds,
+  };
+}
+
+/**
+ * Resolves the currently authenticated user without any Supabase dependency:
+ *   1. Independent PostgreSQL + Prisma database session (revocable HttpOnly cookie)
+ *   2. Auth.js v5 session (`auth()`) mapped to PostgreSQL `users` table
+ *   3. Explicitly isolated local demo session ONLY when `DATABASE_URL` is absent
+ *      AND `DEMO_MODE_ENABLED=true`.
+ */
 export async function getCurrentSessionUser(): Promise<SessionUser | null> {
-  // 1. Official Supabase Auth path when Supabase credentials are configured
-  if (isSupabaseConfigured()) {
-    const supabase = await createSupabaseServerClient();
-    if (!supabase) return null;
+  const cookieStore = await cookies();
 
-    const { data: authData } = await supabase.auth.getUser();
-    if (!authData.user) return null;
+  if (isDatabaseConfigured()) {
+    // 1a. Revocable database-backed session token cookie
+    const rawDbToken =
+      cookieStore.get(SESSION_COOKIE_NAME)?.value ?? cookieStore.get(LOCAL_SESSION_COOKIE)?.value;
+    if (rawDbToken && !rawDbToken.includes('|')) {
+      try {
+        const dbUser = await resolveDbSessionByRawToken(rawDbToken);
+        if (dbUser) return dbUser;
+      } catch {
+        // Fall through to Auth.js session check
+      }
+    }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name, role, segment, onboarding_completed, email_preferences, created_at')
-      .eq('id', authData.user.id)
-      .maybeSingle();
+    // 1b. Auth.js v5 session fallback (lazy-loaded to avoid eager next/server import in non-Next runtimes)
+    try {
+      const { auth } = await import('@/lib/auth/auth');
+      const authJsSession = await auth();
+      const userId = authJsSession?.user?.id;
+      if (userId) {
+        const dbUser = await getDbSessionUserById(userId);
+        if (dbUser) return dbUser;
+      }
+    } catch {
+      // Ignore Auth.js read failure when no session cookie exists
+    }
 
-    const { data: sub } = await supabase
-      .from('subscriptions')
-      .select('billing_interval, plans(code)')
-      .eq('user_id', authData.user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const planRecord = sub?.plans as unknown as { code?: PlanCode } | null;
-    const prefs = (profile?.email_preferences as Partial<EmailPreferences> | null) ?? {};
-
-    return {
-      id: authData.user.id,
-      email: authData.user.email ?? '',
-      fullName: (profile?.full_name as string | null) ?? authData.user.email ?? 'Viewora User',
-      role: (profile?.role as UserRole | null) ?? 'user',
-      segment: (profile?.segment as CustomerSegment | null) ?? 'personal',
-      planCode: planRecord?.code ?? 'free',
-      billingInterval: (sub?.billing_interval as BillingInterval | null) ?? 'monthly',
-      onboardingCompleted: Boolean(profile?.onboarding_completed),
-      emailPreferences: {
-        productUpdates: Boolean(prefs.productUpdates),
-        weeklyDigest: Boolean(prefs.weeklyDigest),
-        trackingAlerts: prefs.trackingAlerts ?? true,
-        marketing: Boolean(prefs.marketing),
-      },
-      createdAt:
-        (profile?.created_at as string | null) ??
-        authData.user.created_at ??
-        new Date().toISOString(),
-      authMode: 'supabase',
-    };
+    return null;
   }
 
   // 2. Server-controlled Demo Mode (STRICTLY disabled by default: DEMO_MODE_ENABLED=false)
   if (!isDemoModeEnabled()) {
     return null;
   }
-  const cookieStore = await cookies();
-  const rawToken = cookieStore.get(LOCAL_SESSION_COOKIE)?.value;
+
+  const rawToken =
+    cookieStore.get(SESSION_COOKIE_NAME)?.value ?? cookieStore.get(LOCAL_SESSION_COOKIE)?.value;
   const email = decodeSignedSessionCookie(rawToken);
   if (!email) return null;
 
@@ -313,7 +331,7 @@ export function isAdminRole(role: UserRole): boolean {
 
 /**
  * Validates that a redirect target is a safe relative internal path.
- * Blocks protocol-relative URLs (//evil.com) and external origins.
+ * Blocks protocol-relative URLs (//evil.com), backslashes, and external origins.
  */
 export function sanitizeRedirectPath(
   raw: string | null | undefined,
@@ -328,138 +346,49 @@ export function sanitizeRedirectPath(
 }
 
 export async function loadAdminUsers(): Promise<SessionUser[]> {
-  if (!isSupabaseConfigured()) {
-    return listLocalDemoUsers();
+  if (isDatabaseConfigured()) {
+    return listDbAdminUsers();
   }
-  try {
-    const supabase = createSupabaseAdminClient() ?? (await createSupabaseServerClient());
-    if (!supabase) return listLocalDemoUsers();
-
-    const [{ data: profiles, error: profErr }, { data: subs }] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('id, email, full_name, role, segment, onboarding_completed, email_preferences, created_at')
-        .order('created_at', { ascending: false })
-        .limit(200),
-      supabase
-        .from('subscriptions')
-        .select('user_id, billing_interval, created_at, plans(code)')
-        .order('created_at', { ascending: false }),
-    ]);
-
-    if (profErr || !profiles) return listLocalDemoUsers();
-
-    const latestSubByUser = new Map<
-      string,
-      { planCode: PlanCode; billingInterval: BillingInterval }
-    >();
-    for (const s of (subs as Array<Record<string, unknown>> | null) ?? []) {
-      const uid = String(s.user_id ?? '');
-      if (!uid || latestSubByUser.has(uid)) continue;
-      const planObj = s.plans as { code?: PlanCode } | null;
-      latestSubByUser.set(uid, {
-        planCode: planObj?.code ?? 'free',
-        billingInterval: (s.billing_interval as BillingInterval | null) ?? 'monthly',
-      });
-    }
-
-    return (profiles as Array<Record<string, unknown>>).map((row) => {
-      const id = String(row.id);
-      const sub = latestSubByUser.get(id);
-      const prefs = (row.email_preferences as Partial<EmailPreferences> | null) ?? {};
-      return {
-        id,
-        email: String(row.email ?? ''),
-        fullName: String(row.full_name ?? row.email ?? 'Viewora User'),
-        role: (row.role as UserRole | null) ?? 'user',
-        segment: (row.segment as CustomerSegment | null) ?? 'personal',
-        planCode: sub?.planCode ?? 'free',
-        billingInterval: sub?.billingInterval ?? 'monthly',
-        onboardingCompleted: Boolean(row.onboarding_completed),
-        emailPreferences: {
-          productUpdates: Boolean(prefs.productUpdates),
-          weeklyDigest: Boolean(prefs.weeklyDigest),
-          trackingAlerts: prefs.trackingAlerts ?? true,
-          marketing: Boolean(prefs.marketing),
-        },
-        createdAt: String(row.created_at ?? new Date().toISOString()),
-        authMode: 'supabase',
-      };
-    });
-  } catch {
-    return listLocalDemoUsers();
+  if (!isLocalDevFallbackAllowed() && !isDemoModeEnabled()) {
+    return [];
   }
+  return listLocalDemoUsers();
 }
 
 export async function loadAdminUserById(userId: string): Promise<SessionUser | null> {
-  if (!isSupabaseConfigured()) {
-    return getLocalUserById(userId);
+  if (isDatabaseConfigured()) {
+    return getDbSessionUserById(userId);
   }
-  const users = await loadAdminUsers();
-  return users.find((u) => u.id === userId) ?? null;
+  if (!isLocalDevFallbackAllowed() && !isDemoModeEnabled()) {
+    return null;
+  }
+  return getLocalUserById(userId);
 }
 
 export async function persistAdminUserUpdate(
   userId: string,
   patch: { role?: UserRole; planCode?: PlanCode }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!isSupabaseConfigured()) {
-    if (patch.role && !updateLocalUserRole(userId, patch.role)) {
-      return { ok: false, error: 'Target user not found.' };
-    }
-    if (patch.planCode && !updateLocalUserPlan(userId, patch.planCode)) {
-      return { ok: false, error: 'Target user not found.' };
-    }
-    return { ok: true };
-  }
-
-  const supabase = createSupabaseAdminClient() ?? (await createSupabaseServerClient());
-  if (!supabase) return { ok: false, error: 'Database client unavailable.' };
-
-  if (patch.role) {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: patch.role })
-      .eq('id', userId);
-    if (error) return { ok: false, error: error.message };
-  }
-
-  if (patch.planCode) {
-    const { data: planRow, error: planErr } = await supabase
-      .from('plans')
-      .select('id')
-      .eq('code', patch.planCode)
-      .maybeSingle();
-    if (planErr || !planRow) {
-      return { ok: false, error: `Plan "${patch.planCode}" not found in database.` };
-    }
-    const { data: existingSub } = await supabase
-      .from('subscriptions')
-      .select('id')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existingSub?.id) {
-      const { error: subErr } = await supabase
-        .from('subscriptions')
-        .update({ plan_id: String(planRow.id) })
-        .eq('id', String(existingSub.id));
-      if (subErr) return { ok: false, error: subErr.message };
-    } else {
-      const { error: subErr } = await supabase.from('subscriptions').insert({
-        user_id: userId,
-        plan_id: String(planRow.id),
-        billing_interval: 'monthly',
-        status: 'active',
-        payment_provider: 'disabled',
-      });
-      if (subErr) return { ok: false, error: subErr.message };
+  if (isDatabaseConfigured()) {
+    try {
+      return await persistDbAdminUserUpdate(userId, patch);
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed to update user in PostgreSQL.',
+      };
     }
   }
 
+  if (!isLocalDevFallbackAllowed() && !isDemoModeEnabled()) {
+    return { ok: false, error: 'PostgreSQL DATABASE_URL is not configured.' };
+  }
+
+  if (patch.role && !updateLocalUserRole(userId, patch.role)) {
+    return { ok: false, error: 'Target user not found.' };
+  }
+  if (patch.planCode && !updateLocalUserPlan(userId, patch.planCode)) {
+    return { ok: false, error: 'Target user not found.' };
+  }
   return { ok: true };
 }
-
-export { LOCAL_SESSION_COOKIE };

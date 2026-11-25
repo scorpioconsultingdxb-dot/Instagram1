@@ -1,38 +1,19 @@
-# Viewora — Development Backlog (Post Phase 4 — Stages 31–40)
+# Viewora — Development Backlog (Post Phase 4.1 → Phase 5)
 
-**Date:** 2026-11-25  
-**Status Legend:** `Pre-GA Staging Gate` · `Optional Future Scale` · `Deferred (By Scope Restriction)`
+**Updated:** 2026-11-26
 
----
+## Priority 1 — Phase 5 Staging Infrastructure & External Integrations
 
-## 1. Pre-GA Staging Gates
+1. **Managed PostgreSQL 16 Staging & Automated Backups:** Deploy Migrations 1–5 to managed Linux PostgreSQL 16 with PgBouncer transaction pooling (`?pgbouncer=true`) and scheduled `pg_dump -Fc` + automated restore drills (unblocked from workstation Windows App Control).
+2. **Official Meta Business Discovery Provider Activation:** Configure approved Meta App credentials and OAuth callback flows for live public business/creator account snapshots.
+3. **Gemini AI Live Provider & Cost Guardrails:** Enable `GEMINI_API_KEY` with per-tier rate limits and token cost budgets already modeled in `cost_budgets`.
+4. **Transactional Email & Scheduled Cron Runner:** Connect SMTP/Resend for real email verification, password resets, and weekly digests; schedule external cron to invoke `POST /api/jobs/run` with `CRON_SECRET`.
+5. **S3/R2/GCS Signed Media Storage Adapter:** Optional swap of `/api/auth/media` persistence from PostgreSQL JSONB to managed object storage at scale.
 
-1. **Transitive Dependency Security Patch Review (`Pre-GA Staging Gate`):**
-   - Resolve the `6` high / `1` moderate transitive vulnerabilities reported by `npm audit --omit=dev` (0 critical) and re-run full regression + build verification.
-2. **HTTPS Staging Lighthouse CI & Manual Assistive-Tech Walkthrough (`Pre-GA Staging Gate`):**
-   - Run automated Lighthouse CI (targeting Mobile 90+, A11y 95+, Best Practices 95+, SEO 95+) and manual NVDA / VoiceOver screen-reader testing against the deployed staging HTTPS origin.
-3. **Managed Cloud PostgreSQL 16 Provisioning (`Pre-GA Staging Gate`):**
-   - Deploy with `viewora_app` + PgBouncer (`?sslmode=require`), separate `DATABASE_ADMIN_URL`, automated daily PITR backups, and S3/GCS/R2 optional blob offload if high-volume media uploads exceed JSONB storage targets (customer avatars/covers already persist durably in PostgreSQL `_media` with zero ephemeral disk dependency).
-4. **Distributed Worker / Cron Scheduler (`Pre-GA Staging Gate`):**
-   - Attach a dedicated worker polling PostgreSQL `background_jobs` (`SKIP LOCKED`) for scheduled automation runs across replicas.
+## Priority 2 — Pre-Launch QA & Tooling Hygiene
 
-## 2. Explicitly Deferred by Scope Restrictions
-
-1. **Stripe Billing & Affiliate Payouts (`PAYMENTS_ENABLED=false` locked)**
-2. **Official Meta Graph API / Business Discovery**
-3. **Gemini Live API**
-4. **Resend Transactional Email Delivery**
-5. **External Third-Party Analytics Providers**
-
-## 3. Completed in Phase 4 (Stages 31–40)
-
-- [x] Stage 31: Accessibility motion/contrast CSS hooks, shimmer skeleton, glass surface, 6-viewport & 5-locale verification
-- [x] Stage 32: First-party PostgreSQL activation funnel milestones (`onboarding_completed`, `first_saved_profile`, `first_project_created`, `first_report_created`), removed sample substitution on live DB
-- [x] Stage 33: Durable PostgreSQL RLS customer media storage (`_media`) + account-persisted Accessibility Preferences (`reducedMotion`, `highContrast`)
-- [x] Stage 34: 5 Dashboard Layout Presets (`dashboard-presets.ts`) + keyboard-accessible widget reordering persisted in PostgreSQL
-- [x] Stage 35: Research project duplication (`duplicate_project`), PostgreSQL RLS persistence, provenance transparency
-- [x] Stage 36: All 10 Report Studio 3.0 templates persisted in PostgreSQL RLS with formula-safe exports
-- [x] Stage 37: In-app Customer Feedback & Feature Request intake (`/api/feedback`) persisted to PostgreSQL `support_tickets` + `audit_logs`
-- [x] Stage 38: Native PostgreSQL `referral_codes`, `referral_attributions`, and `affiliate_accounts` repository (`referrals.repo.ts`) with self/duplicate/30-day guards & locked `payoutsEnabled: false`
-- [x] Stage 39: Last-Super-Admin protection (`409`), self-suspension block (`400`), `revoke_user_sessions` admin action, live `databaseHealth` & PG `referralOverview`
-- [x] Stage 40: Full QA (**86/86 unit tests**, **6/6 live PG RLS tests**, **303 static pages**, **live PG E2E on isolated `viewora_test`**, **78/78 Scenario B read-only routes**, clean `viewora` baseline preserved)
+6. **Hosted Lighthouse & Core Web Vitals Audit:** Capture real HTTPS/CDN Lighthouse scores and field RUM metrics on staging.
+7. **Manual Screen-Reader Accessibility Pass:** Conduct human testing with NVDA, VoiceOver, and JAWS across Dashboard 3.0, Report Studio 3.0, and Admin 3.0.
+8. **Dev Dependency Major Upgrade (`vitest` v3 → v5):** Migrate test runner major version to resolve the 3 dev-only `vitest` / `tinypool` / `@vitest/mocker` advisories.
+9. **Support Ticket Assignee Management:** Add `assignedToId` selection in Admin Support Queue (schema column `support_tickets.assigned_to_id` already exists).
+10. **Payments Activation (Explicit Approval Gate):** Only activate Stripe checkout/webhooks (`PAYMENTS_ENABLED=true`) after legal, pricing, and owner sign-off.

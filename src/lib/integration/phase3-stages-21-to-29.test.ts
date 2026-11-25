@@ -108,9 +108,29 @@ describe('Phase 3 (Stages 21–29) — Integration, Security & Governance Suite'
   });
 
   it('Stage 23: enforces strict magic-byte validation and blocks SVG/HTML/oversized/cross-user media', async () => {
-    const validPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
-    const validJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
-    const validWebp = Buffer.from('RIFF\x20\x00\x00\x00WEBP', 'latin1');
+    const validPng = Buffer.alloc(33);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(validPng, 0);
+    validPng.writeUInt32BE(13, 8);
+    validPng.write('IHDR', 12, 'ascii');
+    validPng.writeUInt32BE(64, 16);
+    validPng.writeUInt32BE(64, 20);
+    const validJpeg = Buffer.alloc(22);
+    validJpeg[0] = 0xff;
+    validJpeg[1] = 0xd8;
+    validJpeg[2] = 0xff;
+    validJpeg[3] = 0xc0;
+    validJpeg.writeUInt16BE(11, 4);
+    validJpeg[6] = 8;
+    validJpeg.writeUInt16BE(64, 7);
+    validJpeg.writeUInt16BE(64, 9);
+    const validWebp = Buffer.alloc(30);
+    validWebp.write('RIFF', 0, 'ascii');
+    validWebp.writeUInt32LE(22, 4);
+    validWebp.write('WEBP', 8, 'ascii');
+    validWebp.write('VP8L', 12, 'ascii');
+    validWebp.writeUInt32LE(10, 16);
+    validWebp[20] = 0x2f;
+    validWebp.writeUInt32LE((63 | (63 << 14)) >>> 0, 21);
     const maliciousSvg = Buffer.from('<svg onload="alert(1)"></svg>', 'utf8');
     const maliciousHtml = Buffer.from('<html><script>alert(1)</script></html>', 'utf8');
     const oversized = Buffer.alloc(MAX_IMAGE_UPLOAD_BYTES + 1, 0x89);

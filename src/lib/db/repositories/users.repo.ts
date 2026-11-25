@@ -461,12 +461,35 @@ export async function revokeDbSessionById(
   return res.count > 0;
 }
 
+export class LastSuperAdminError extends Error {
+  constructor(message = 'Cannot demote or suspend the last active Super Admin account.') {
+    super(message);
+    this.name = 'LastSuperAdminError';
+  }
+}
+
 export async function suspendDbUserAccount(
   userId: string,
-  client: PrismaClient = getPrismaClient()
+  client: PrismaClient = getPrismaClient(),
+  options?: { enforceLastSuperAdminGuard?: boolean }
 ): Promise<void> {
   const now = new Date();
   await client.$transaction(async (tx) => {
+    if (options?.enforceLastSuperAdminGuard) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('viewora:super_admin_guard'))`;
+      const target = await tx.user.findUnique({
+        where: { id: userId },
+        select: { role: true, accountStatus: true },
+      });
+      if (target?.role === 'super_admin' && target.accountStatus === 'active') {
+        const activeCount = await tx.user.count({
+          where: { role: 'super_admin', accountStatus: 'active' },
+        });
+        if (activeCount <= 1) {
+          throw new LastSuperAdminError('Cannot suspend the last active Super Admin account.');
+        }
+      }
+    }
     await tx.user.update({
       where: { id: userId },
       data: { accountStatus: 'suspended' },
@@ -568,48 +591,74 @@ export async function listDbAdminUsers(
 export async function persistDbAdminUserUpdate(
   userId: string,
   patch: { role?: UserRole; planCode?: PlanCode },
-  client: PrismaClient = getPrismaClient()
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const target = await client.user.findUnique({ where: { id: userId }, select: { id: true } });
+  client: PrismaClient = getPrismaClient(),
+  options?: { enforceLastSuperAdminGuard?: boolean }
+): Promise<{ ok: true } | { ok: false; code?: 'LAST_SUPER_ADMIN' | 'NOT_FOUND'; error: string }> {
+  const target = await client.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, accountStatus: true },
+  });
   if (!target) {
-    return { ok: false, error: 'Target user not found.' };
+    return { ok: false, code: 'NOT_FOUND', error: 'Target user not found.' };
   }
 
-  await client.$transaction(async (tx) => {
-    if (patch.role) {
-      await tx.user.update({
-        where: { id: userId },
-        data: { role: patch.role },
-      });
-    }
+  try {
+    await client.$transaction(async (tx) => {
+      if (patch.role) {
+        if (options?.enforceLastSuperAdminGuard && patch.role !== 'super_admin') {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('viewora:super_admin_guard'))`;
+          const freshTarget = await tx.user.findUnique({
+            where: { id: userId },
+            select: { role: true, accountStatus: true },
+          });
+          if (freshTarget?.role === 'super_admin' && freshTarget.accountStatus === 'active') {
+            const activeCount = await tx.user.count({
+              where: { role: 'super_admin', accountStatus: 'active' },
+            });
+            if (activeCount <= 1) {
+              throw new LastSuperAdminError('Cannot demote the last active Super Admin account.');
+            }
+          }
+        }
+        await tx.user.update({
+          where: { id: userId },
+          data: { role: patch.role },
+        });
+      }
 
-    if (patch.planCode) {
-      const plan = await tx.plan.findUnique({ where: { code: patch.planCode } });
-      if (!plan) {
-        throw new Error(`Plan "${patch.planCode}" not found in database.`);
-      }
-      const latestSub = await tx.subscription.findFirst({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-      });
-      if (latestSub) {
-        await tx.subscription.update({
-          where: { id: latestSub.id },
-          data: { planId: plan.id },
+      if (patch.planCode) {
+        const plan = await tx.plan.findUnique({ where: { code: patch.planCode } });
+        if (!plan) {
+          throw new Error(`Plan "${patch.planCode}" not found in database.`);
+        }
+        const latestSub = await tx.subscription.findFirst({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
         });
-      } else {
-        await tx.subscription.create({
-          data: {
-            userId,
-            planId: plan.id,
-            billingInterval: 'monthly',
-            status: 'active',
-            paymentProvider: 'disabled',
-          },
-        });
+        if (latestSub) {
+          await tx.subscription.update({
+            where: { id: latestSub.id },
+            data: { planId: plan.id },
+          });
+        } else {
+          await tx.subscription.create({
+            data: {
+              userId,
+              planId: plan.id,
+              billingInterval: 'monthly',
+              status: 'active',
+              paymentProvider: 'disabled',
+            },
+          });
+        }
       }
+    });
+  } catch (err) {
+    if (err instanceof LastSuperAdminError) {
+      return { ok: false, code: 'LAST_SUPER_ADMIN', error: err.message };
     }
-  });
+    throw err;
+  }
 
   return { ok: true };
 }

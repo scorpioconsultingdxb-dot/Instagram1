@@ -161,6 +161,35 @@ export async function saveDbUserMedia(
   );
 }
 
+export async function readDbUserMediaQuotaBytes(
+  userId: string,
+  excludeKind?: 'avatar' | 'cover',
+  client: PrismaClient = getPrismaClient()
+): Promise<number> {
+  return withUserRlsContext(
+    { userId, role: 'user' },
+    async (tx) => {
+      const pref = await tx.userPreference.findUnique({
+        where: { userId },
+        select: { notificationPreferences: true },
+      });
+      const root = extractRecord(pref?.notificationPreferences);
+      const media = extractRecord(root._media);
+      let total = 0;
+      for (const kind of ['avatar', 'cover'] as const) {
+        if (kind === excludeKind) continue;
+        const item = media[kind];
+        if (item && typeof item === 'object') {
+          const size = Number((item as Partial<DbStoredMediaRecord>).sizeBytes ?? 0);
+          if (Number.isFinite(size) && size > 0) total += size;
+        }
+      }
+      return total;
+    },
+    client
+  );
+}
+
 export async function deleteDbUserMedia(
   userId: string,
   kind: 'avatar' | 'cover',

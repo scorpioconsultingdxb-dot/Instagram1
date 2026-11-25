@@ -4,11 +4,15 @@ import { getCurrentSessionUser } from '@/lib/auth/session';
 import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import { isDatabaseConfigured } from '@/lib/env';
 import { defaultFileStorage } from '@/lib/storage/local-files';
-import { validateImageBuffer } from '@/lib/storage/image-validation';
+import {
+  MAX_CUSTOMER_MEDIA_TOTAL_BYTES,
+  validateImageBuffer,
+} from '@/lib/storage/image-validation';
 import { getAccountProfilePrefs, saveAccountProfilePrefs } from '@/lib/auth/profile-prefs';
 import {
   deleteDbUserMedia,
   readDbUserMedia,
+  readDbUserMediaQuotaBytes,
   saveDbUserMedia,
 } from '@/lib/db/repositories/user-module-state.repo';
 
@@ -117,6 +121,18 @@ export async function POST(request: NextRequest) {
 
   if (isDatabaseConfigured()) {
     try {
+      const otherBytes = await readDbUserMediaQuotaBytes(user.id, kind);
+      const nextTotalBytes = otherBytes + buffer.byteLength;
+      if (nextTotalBytes > MAX_CUSTOMER_MEDIA_TOTAL_BYTES) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Account media storage quota (${Math.round(MAX_CUSTOMER_MEDIA_TOTAL_BYTES / (1024 * 1024))} MB total across avatar & cover) would be exceeded. Remove or compress an existing image first.`,
+          },
+          { status: 413 }
+        );
+      }
+
       const storageKey = `pg:${user.id}/media/${kind}-${Date.now()}.${validation.extension}`;
       await saveDbUserMedia(user.id, kind, {
         contentType: validation.contentType,
@@ -143,7 +159,11 @@ export async function POST(request: NextRequest) {
         kind,
         url: mediaUrl,
         sizeBytes: buffer.byteLength,
+        width: validation.width,
+        height: validation.height,
         contentType: validation.contentType,
+        quotaUsedBytes: nextTotalBytes,
+        quotaLimitBytes: MAX_CUSTOMER_MEDIA_TOTAL_BYTES,
         storage: 'postgresql',
       });
     } catch {

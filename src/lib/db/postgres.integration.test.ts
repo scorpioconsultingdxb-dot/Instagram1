@@ -20,6 +20,7 @@ import {
 import { getDbProfilePrefs, saveDbProfilePrefs } from '@/lib/db/repositories/profile-prefs.repo';
 import {
   readDbUserMedia,
+  readDbUserMediaQuotaBytes,
   readDbUserModuleState,
   saveDbUserMedia,
   deleteDbUserMedia,
@@ -35,6 +36,7 @@ import {
 } from '@/lib/db/repositories/referrals.repo';
 import {
   countActiveSuperAdmins,
+  LastSuperAdminError,
   revokeAllDbUserSessions,
 } from '@/lib/db/repositories/users.repo';
 import {
@@ -841,5 +843,139 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     expect(revoked).toBeGreaterThanOrEqual(1);
     expect(await resolveDbSessionByRawToken(s.rawToken, appClient)).toBeNull();
     expect(await countActiveSuperAdmins(appClient)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('enforces database-level audit_logs immutability (REVOKE + trigger), media quota accounting, and concurrent advisory-locked Last-Super-Admin guard', async () => {
+    const email1 = `p41-sa1-${randomUUID().slice(0, 8)}@viewora.test`;
+    const email2 = `p41-sa2-${randomUUID().slice(0, 8)}@viewora.test`;
+
+    const r1 = await registerUserWithWorkspace(
+      {
+        email: email1,
+        password: 'SuperAdmin1Pass!2026',
+        fullName: 'Phase41 SuperAdmin One',
+        segment: 'agency',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      appClient
+    );
+    const r2 = await registerUserWithWorkspace(
+      {
+        email: email2,
+        password: 'SuperAdmin2Pass!2026',
+        fullName: 'Phase41 SuperAdmin Two',
+        segment: 'agency',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      appClient
+    );
+    expect(r1.ok && r2.ok).toBe(true);
+    if (!r1.ok || !r2.ok) return;
+    createdUserIds.push(r1.user.id, r2.user.id);
+
+    // 1. Database-level audit_logs immutability (append-only enforced by REVOKE + trigger)
+    const auditRec = await persistDbAuditLog(
+      {
+        actorId: r1.user.id,
+        actorEmail: email1,
+        action: 'phase41.immutability.probe',
+        targetType: 'system',
+        targetId: 'audit-guard',
+        diff: { original: true },
+      },
+      appClient
+    );
+
+    // Runtime role (viewora_test_app) MUST be rejected on UPDATE and DELETE
+    await expect(
+      appClient.$executeRaw`UPDATE public.audit_logs SET action = 'tampered' WHERE id = ${auditRec.id}::uuid`
+    ).rejects.toThrow();
+    await expect(
+      appClient.$executeRaw`DELETE FROM public.audit_logs WHERE id = ${auditRec.id}::uuid`
+    ).rejects.toThrow();
+
+    // Even admin role MUST be blocked by the BEFORE UPDATE OR DELETE PostgreSQL trigger
+    await expect(
+      adminClient.$executeRaw`UPDATE public.audit_logs SET action = 'tampered_by_admin' WHERE id = ${auditRec.id}::uuid`
+    ).rejects.toThrow(/append-only|prohibited/i);
+    await expect(
+      adminClient.$executeRaw`DELETE FROM public.audit_logs WHERE id = ${auditRec.id}::uuid`
+    ).rejects.toThrow(/append-only|prohibited/i);
+
+    // 2. Per-customer PostgreSQL media quota accounting (excludes kind being replaced)
+    await saveDbUserMedia(
+      r1.user.id,
+      'avatar',
+      {
+        contentType: 'image/png',
+        extension: 'png',
+        sizeBytes: 120_000,
+        sha256: 'hash-a',
+        base64: 'AAAA',
+        storedAt: new Date().toISOString(),
+      },
+      appClient
+    );
+    await saveDbUserMedia(
+      r1.user.id,
+      'cover',
+      {
+        contentType: 'image/png',
+        extension: 'png',
+        sizeBytes: 250_000,
+        sha256: 'hash-c',
+        base64: 'CCCC',
+        storedAt: new Date().toISOString(),
+      },
+      appClient
+    );
+    expect(await readDbUserMediaQuotaBytes(r1.user.id, undefined, appClient)).toBe(370_000);
+    expect(await readDbUserMediaQuotaBytes(r1.user.id, 'avatar', appClient)).toBe(250_000);
+    expect(await readDbUserMediaQuotaBytes(r1.user.id, 'cover', appClient)).toBe(120_000);
+
+    // 3. Concurrent advisory-locked Last-Super-Admin protection
+    // Ensure only these two super_admins exist in isolated viewora_test during the race check
+    const preexistingSuperAdmins = await adminClient.user.count({
+      where: { role: 'super_admin', accountStatus: 'active' },
+    });
+    if (preexistingSuperAdmins === 0) {
+      await persistDbAdminUserUpdate(r1.user.id, { role: 'super_admin' }, appClient);
+      await persistDbAdminUserUpdate(r2.user.id, { role: 'super_admin' }, appClient);
+
+      const [resA, resB] = await Promise.all([
+        persistDbAdminUserUpdate(r1.user.id, { role: 'user' }, appClient, {
+          enforceLastSuperAdminGuard: true,
+        }),
+        persistDbAdminUserUpdate(r2.user.id, { role: 'user' }, appClient, {
+          enforceLastSuperAdminGuard: true,
+        }),
+      ]);
+
+      const succeeded = [resA, resB].filter((r) => r.ok);
+      const blocked = [resA, resB].filter((r) => !r.ok && r.code === 'LAST_SUPER_ADMIN');
+      expect(succeeded).toHaveLength(1);
+      expect(blocked).toHaveLength(1);
+      expect(await countActiveSuperAdmins(appClient)).toBe(1);
+
+      // Attempting to suspend the sole remaining Super Admin MUST reject with LastSuperAdminError
+      const remainingId = resA.ok ? r2.user.id : r1.user.id;
+      await expect(
+        suspendDbUserAccount(remainingId, appClient, { enforceLastSuperAdminGuard: true })
+      ).rejects.toThrow(LastSuperAdminError);
+
+      // Clean up temporary super_admin role before afterAll deletes test accounts
+      await persistDbAdminUserUpdate(remainingId, { role: 'user' }, appClient);
+    }
+
+    // 4. Deleting a user who authored an audit log STILL succeeds cleanly via ON DELETE SET NULL
+    //    while keeping the forensic audit record intact and unmodified!
+    await deleteDbUserAccount(r1.user.id, email1, appClient);
+    const preservedAudit = await adminClient.auditLog.findUnique({ where: { id: auditRec.id } });
+    expect(preservedAudit).not.toBeNull();
+    expect(preservedAudit?.actorId).toBeNull();
+    expect(preservedAudit?.actorEmail).toBe(email1);
+    expect(preservedAudit?.action).toBe('phase41.immutability.probe');
   });
 });

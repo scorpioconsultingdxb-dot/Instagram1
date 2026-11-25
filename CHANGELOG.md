@@ -1,5 +1,19 @@
 # Viewora — Changelog
 
+## [Phase 4.1 — Stages 40.1–40.10: Security Hardening, Real PDF Export & Commercial Quality] — 2026-11-26
+### Security & Database Governance
+- **Stage 40.1 (Zero Production Advisories):** Remediated all 7 production vulnerabilities (`6 High, 1 Moderate → 0 Total` in `npm audit --omit=dev`) via compatible `zod@^4.6.7` upgrade and targeted SemVer overrides (`postcss@^8.5.33`, `effect@^3.22.5`, `deepmerge-ts@^8.0.2`).
+- **Stage 40.9 (Migration 5 — Database-Enforced Audit Immutability):** Revoked `UPDATE`/`DELETE`/`TRUNCATE` on `public.audit_logs` from `viewora_app` and `viewora_test_app`, installed `BEFORE UPDATE OR DELETE` PostgreSQL trigger `trg_audit_logs_immutable` (`ERRCODE 42501`, preserving `ON DELETE SET NULL` RI cascades during account deletion), and revoked `CREATE ON SCHEMA public FROM PUBLIC`.
+- **Concurrent Admin Locking:** Wrapped Last-Super-Admin demotion and suspension checks in PostgreSQL `pg_advisory_xact_lock(hashtext('viewora:super_admin_guard'))` (`HTTP 409 Conflict` on race attempts).
+- **Stage 40.4 (Hardened Media Storage):** Added PNG (`IHDR`), JPEG (`SOF*`), and WebP (`VP8`/`VP8L`/`VP8X`) binary header dimension validation blocking truncated headers, zero dimensions, `> 8192px`, and `> 25 MP` decompression bombs, plus a `3 MB` per-customer total media quota (`HTTP 413`).
+
+### Added & Enhanced
+- **Stage 40.5 (Dashboard 3.0):** Added strictly owner/RLS-scoped `GET /api/dashboard/search`, wired debounced live workspace search + `sessionStorage` Recent items into `CommandPalette`, and upgraded Dashboard Overview to render widgets dynamically in persisted `widgetOrder` with HTML5 Drag-and-Drop + keyboard `ArrowUp`/`ArrowDown` controls.
+- **Stage 40.6 (Real Binary `%PDF-1.4` Export & Studio 3.0):** Implemented pure TypeScript `%PDF-1.4` generator (`src/lib/reports/pdf.ts`), live `application/pdf` download endpoint (`GET/POST /api/reports/builder`), Report Studio 3.0 Live Preview, Search/Status filters, Archive/Restore, and Research Pro 1-click templates & Duplicate Project button.
+- **Stage 40.7 (Retention UI):** Added Notification Category filter pills, real Workspace Activity Summary, contextual Help Center links, and in-app Product Feedback / Feature Request form (`/api/feedback`).
+- **Stage 40.8 (Super Admin 3.0):** Added Customer Detail Drawer with confirmed **Revoke All Active Sessions**, live **PostgreSQL Health** badge/card, read-only **Backup Archive Status**, and **Activation Funnel Milestones**.
+- **Stage 40.10 (Verification & Reports):** Expanded test suite to **19/19 unit suites (89/89 tests)**, **7/7 live PostgreSQL integration tests**, **304/304 static pages**, **7/7 live PG E2E milestones (14 screenshots, 0 errors)**, **78/78 Scenario B no-DB routes**, and authored all 14 Phase 4.1 engineering & governance reports while keeping operational `viewora` 100% untouched.
+
 ## [Phase 4 — Stages 31–40] — 2026-11-25
 ### Added
 - **Stage 31:** User-controlled `[data-reduced-motion="true"]` & `[data-high-contrast="true"]` CSS hooks, `.viewora-skeleton` shimmer, and `.viewora-glass` utilities.

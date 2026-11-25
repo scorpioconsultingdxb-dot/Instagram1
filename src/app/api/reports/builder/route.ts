@@ -21,6 +21,7 @@ import {
   REPORT_TYPES,
   type CustomReportDocument,
 } from '@/lib/reports/builder';
+import { buildReportPdfBuffer } from '@/lib/reports/pdf';
 
 const sectionSchema = z.object({
   id: z.string().min(1).max(40),
@@ -77,11 +78,11 @@ const actionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('export'),
     id: z.string().min(1),
-    format: z.enum(['csv', 'markdown', 'print']),
+    format: z.enum(['csv', 'markdown', 'print', 'pdf']),
   }),
 ]);
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getCurrentSessionUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
@@ -89,6 +90,51 @@ export async function GET() {
   if (!isDatabaseConfigured() && !isLocalDevFallbackAllowed()) {
     return NextResponse.json({ ok: false, error: 'Storage is unavailable.' }, { status: 503 });
   }
+
+  const downloadId = request.nextUrl.searchParams.get('download');
+  const format = request.nextUrl.searchParams.get('format');
+  if (downloadId && format === 'pdf') {
+    const [plans, overrides, reports] = await Promise.all([
+      loadConfiguredPlans(),
+      loadUserEntitlementOverrides(user.id),
+      loadUserReports(user.id),
+    ]);
+    const entitlements = resolveEntitlements({
+      planCode: user.planCode,
+      billingInterval: user.billingInterval,
+      userId: user.id,
+      plans,
+      overrides,
+    });
+    if (!hasEntitlement(entitlements, 'pdf_export')) {
+      return NextResponse.json(
+        { ok: false, error: 'PDF report exports require the Premium, Pro, or Agency plan.' },
+        { status: 403 }
+      );
+    }
+    const target = reports.find((r) => r.id === downloadId);
+    if (!target) {
+      return NextResponse.json({ ok: false, error: 'Report not found.' }, { status: 404 });
+    }
+    const ws = await loadUserWorkspaceState(user.id);
+    const pdfBuffer = buildReportPdfBuffer(target, ws.savedProfiles);
+    await persistExportHistory(user.id, {
+      username: target.usernames[0] ?? 'custom-report',
+      format: 'pdf',
+      dataClass: 'estimate',
+    }).catch(() => undefined);
+    const safeName = `${target.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'viewora-report'}-v${target.version}.pdf`;
+    return new NextResponse(new Uint8Array(pdfBuffer), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${safeName}"`,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  }
+
   return NextResponse.json({ ok: true, reports: await loadUserReports(user.id) });
 }
 
@@ -273,7 +319,7 @@ export async function POST(request: NextRequest) {
       { status: 403 }
     );
   }
-  if (action.format === 'print' && !canPdf) {
+  if ((action.format === 'print' || action.format === 'pdf') && !canPdf) {
     return NextResponse.json(
       { ok: false, error: 'PDF / Print report exports require the Premium, Pro, or Agency plan.' },
       { status: 403 }
@@ -281,6 +327,24 @@ export async function POST(request: NextRequest) {
   }
 
   const ws = await loadUserWorkspaceState(user.id);
+  if (action.format === 'pdf') {
+    const pdfBuffer = buildReportPdfBuffer(target, ws.savedProfiles);
+    await persistExportHistory(user.id, {
+      username: target.usernames[0] ?? 'custom-report',
+      format: 'pdf',
+      dataClass: 'estimate',
+    }).catch(() => undefined);
+    const safeName = `${target.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'viewora-report'}-v${target.version}.pdf`;
+    return NextResponse.json({
+      ok: true,
+      format: 'pdf',
+      mimeType: 'application/pdf',
+      fileName: safeName,
+      byteLength: pdfBuffer.byteLength,
+      pdfBase64: pdfBuffer.toString('base64'),
+    });
+  }
+
   if (action.format === 'csv') {
     const csv = buildReportCsv(target, ws.savedProfiles);
     await persistExportHistory(user.id, {

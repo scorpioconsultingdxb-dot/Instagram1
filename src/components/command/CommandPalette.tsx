@@ -2,7 +2,10 @@
 
 import {
   BarChart3,
+  Clock,
   CreditCard,
+  FileText,
+  FolderKanban,
   Home,
   Moon,
   Search,
@@ -11,16 +14,18 @@ import {
   Sparkles,
   Sun,
   User,
+  Users,
   Wrench,
   X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Locale } from '@/i18n/config';
 import { FREE_TOOLS } from '@/lib/tools/catalog';
 import { useTheme } from '@/components/theme/ThemeProvider';
 
 export const OPEN_COMMAND_PALETTE_EVENT = 'viewora:open-command-palette';
+const RECENT_STORAGE_KEY = 'viewora:command-recent:v1';
 
 export function triggerCommandPalette(): void {
   if (typeof window !== 'undefined') {
@@ -30,11 +35,55 @@ export function triggerCommandPalette(): void {
 
 interface CommandItem {
   id: string;
-  group: 'Navigation' | 'Workspace' | 'Free Tools' | 'Preferences';
+  group: 'Recent' | 'My Workspace' | 'Navigation' | 'Workspace' | 'Free Tools' | 'Preferences';
   label: string;
   hint: string;
   icon: typeof Home;
   run: () => void;
+}
+
+interface RecentEntry {
+  id: string;
+  label: string;
+  hint: string;
+  path: string;
+}
+
+interface WorkspaceSearchHit {
+  id: string;
+  kind: 'profile' | 'folder' | 'project' | 'report';
+  title: string;
+  subtitle: string;
+  href: string;
+}
+
+function loadRecentEntries(): RecentEntry[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.sessionStorage.getItem(RECENT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (x): x is RecentEntry =>
+          Boolean(x && typeof x === 'object' && typeof (x as RecentEntry).path === 'string')
+      )
+      .slice(0, 4);
+  } catch {
+    return [];
+  }
+}
+
+function recordRecentEntry(entry: RecentEntry): RecentEntry[] {
+  const existing = loadRecentEntries().filter((e) => e.id !== entry.id);
+  const next = [entry, ...existing].slice(0, 4);
+  try {
+    window.sessionStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore private mode storage limits
+  }
+  return next;
 }
 
 export function CommandPalette({ locale }: { locale: Locale }) {
@@ -43,6 +92,9 @@ export function CommandPalette({ locale }: { locale: Locale }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [recent, setRecent] = useState<RecentEntry[]>([]);
+  const [workspaceHits, setWorkspaceHits] = useState<WorkspaceSearchHit[]>([]);
+  const [searchingWorkspace, setSearchingWorkspace] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -68,33 +120,79 @@ export function CommandPalette({ locale }: { locale: Locale }) {
     if (open) {
       setQuery('');
       setSelectedIndex(0);
+      setWorkspaceHits([]);
+      setRecent(loadRecentEntries());
       setTimeout(() => inputRef.current?.focus(), 20);
     }
   }, [open]);
 
-  const items: CommandItem[] = useMemo(() => {
-    const go = (path: string) => {
+  // Debounced authorized workspace search (profiles, folders, projects, reports belonging to current user)
+  useEffect(() => {
+    if (!open) return;
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setWorkspaceHits([]);
+      setSearchingWorkspace(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setSearchingWorkspace(true);
+      fetch(`/api/dashboard/search?q=${encodeURIComponent(trimmed)}`, {
+        signal: controller.signal,
+        cache: 'no-store',
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json: { ok?: boolean; results?: WorkspaceSearchHit[] } | null) => {
+          if (json?.ok && Array.isArray(json.results)) {
+            setWorkspaceHits(json.results);
+          } else {
+            setWorkspaceHits([]);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => setSearchingWorkspace(false));
+    }, 180);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, query]);
+
+  const navigateWithRecent = useCallback(
+    (id: string, label: string, hint: string, path: string) => {
+      setRecent(recordRecentEntry({ id, label, hint, path }));
       setOpen(false);
       router.push(`/${locale}${path}`);
-    };
+    },
+    [locale, router]
+  );
+
+  const items: CommandItem[] = useMemo(() => {
+    const go = (id: string, label: string, hint: string, path: string) => () =>
+      navigateWithRecent(id, label, hint, path);
 
     return [
-      { id: 'nav-home', group: 'Navigation', label: 'Homepage & Profile Search', hint: 'Explore public Instagram profiles', icon: Home, run: () => go('') },
-      { id: 'nav-tools', group: 'Navigation', label: 'All 12 Free Tools', hint: 'Calculators, generators & viewers', icon: Wrench, run: () => go('/tools') },
-      { id: 'nav-pricing', group: 'Navigation', label: 'Pricing & Plan Matrix', hint: 'Compare Free through Agency tiers', icon: CreditCard, run: () => go('/pricing') },
-      { id: 'nav-transparency', group: 'Navigation', label: 'Data Transparency Policy', hint: 'LIVE, CACHED, ESTIMATED & DEMO rules', icon: Shield, run: () => go('/data-transparency') },
-      { id: 'ws-dash', group: 'Workspace', label: 'Customer Dashboard', hint: 'Overview, charts, saved profiles', icon: BarChart3, run: () => go('/dashboard') },
-      { id: 'ws-profile', group: 'Workspace', label: 'My Profile — Personal Digital HQ', hint: 'Cover, avatar, membership & personalization', icon: User, run: () => go('/dashboard/profile') },
-      { id: 'ws-ai', group: 'Workspace', label: 'AI Intelligence Studio', hint: 'Generate structured Gemini profile reports', icon: Sparkles, run: () => go('/dashboard/ai-insights') },
-      { id: 'ws-settings', group: 'Workspace', label: 'Privacy & Account Settings', hint: 'Data export, security & preferences', icon: Settings, run: () => go('/dashboard/settings') },
-      { id: 'ws-admin', group: 'Workspace', label: 'Super Admin Control Center', hint: 'RBAC-protected operations console', icon: Shield, run: () => go('/admin') },
+      { id: 'nav-home', group: 'Navigation', label: 'Homepage & Profile Search', hint: 'Explore public Instagram profiles', icon: Home, run: go('nav-home', 'Homepage & Profile Search', 'Explore public Instagram profiles', '') },
+      { id: 'nav-tools', group: 'Navigation', label: 'All 12 Free Tools', hint: 'Calculators, generators & viewers', icon: Wrench, run: go('nav-tools', 'All 12 Free Tools', 'Calculators, generators & viewers', '/tools') },
+      { id: 'nav-pricing', group: 'Navigation', label: 'Pricing & Plan Matrix', hint: 'Compare Free through Agency tiers', icon: CreditCard, run: go('nav-pricing', 'Pricing & Plan Matrix', 'Compare Free through Agency tiers', '/pricing') },
+      { id: 'nav-transparency', group: 'Navigation', label: 'Data Transparency Policy', hint: 'LIVE, CACHED, ESTIMATED & DEMO rules', icon: Shield, run: go('nav-transparency', 'Data Transparency Policy', 'LIVE, CACHED, ESTIMATED & DEMO rules', '/data-transparency') },
+      { id: 'ws-dash', group: 'Workspace', label: 'Customer Dashboard', hint: 'Overview, charts, saved profiles', icon: BarChart3, run: go('ws-dash', 'Customer Dashboard', 'Overview, charts, saved profiles', '/dashboard') },
+      { id: 'ws-projects', group: 'Workspace', label: 'Research Workspace Pro', hint: 'Nested projects, CSV imports & bulk tags', icon: FolderKanban, run: go('ws-projects', 'Research Workspace Pro', 'Nested projects, CSV imports & bulk tags', '/dashboard/projects') },
+      { id: 'ws-reports', group: 'Workspace', label: 'Report Studio', hint: 'Template-generated PDF, CSV & Markdown briefs', icon: FileText, run: go('ws-reports', 'Report Studio', 'Template-generated PDF, CSV & Markdown briefs', '/dashboard/reports') },
+      { id: 'ws-profile', group: 'Workspace', label: 'My Profile — Personal Digital HQ', hint: 'Cover, avatar, membership & personalization', icon: User, run: go('ws-profile', 'My Profile — Personal Digital HQ', 'Cover, avatar, membership & personalization', '/dashboard/profile') },
+      { id: 'ws-ai', group: 'Workspace', label: 'AI Intelligence Studio', hint: 'Generate structured Gemini profile reports', icon: Sparkles, run: go('ws-ai', 'AI Intelligence Studio', 'Generate structured Gemini profile reports', '/dashboard/ai-insights') },
+      { id: 'ws-settings', group: 'Workspace', label: 'Privacy & Account Settings', hint: 'Data export, security & preferences', icon: Settings, run: go('ws-settings', 'Privacy & Account Settings', 'Data export, security & preferences', '/dashboard/settings') },
+      { id: 'ws-admin', group: 'Workspace', label: 'Super Admin Control Center', hint: 'RBAC-protected operations console', icon: Shield, run: go('ws-admin', 'Super Admin Control Center', 'RBAC-protected operations console', '/admin') },
       ...FREE_TOOLS.map((tool) => ({
         id: `tool-${tool.slug}`,
         group: 'Free Tools' as const,
         label: tool.name,
         hint: tool.category,
         icon: Wrench,
-        run: () => go(`/${tool.slug}`),
+        run: go(`tool-${tool.slug}`, tool.name, tool.category, `/${tool.slug}`),
       })),
       {
         id: 'pref-theme',
@@ -108,18 +206,47 @@ export function CommandPalette({ locale }: { locale: Locale }) {
         },
       },
     ];
-  }, [locale, resolvedTheme, router, toggleTheme]);
+  }, [navigateWithRecent, resolvedTheme, toggleTheme]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return items.slice(0, 12);
-    return items.filter(
+    if (!q) {
+      const recentItems: CommandItem[] = recent.map((r) => ({
+        id: `recent-${r.id}`,
+        group: 'Recent',
+        label: r.label,
+        hint: r.hint,
+        icon: Clock,
+        run: () => navigateWithRecent(r.id, r.label, r.hint, r.path),
+      }));
+      return [...recentItems, ...items.slice(0, 12)];
+    }
+
+    const dynamicWorkspaceItems: CommandItem[] = workspaceHits.map((hit) => ({
+      id: hit.id,
+      group: 'My Workspace',
+      label: hit.title,
+      hint: hit.subtitle,
+      icon:
+        hit.kind === 'profile'
+          ? Users
+          : hit.kind === 'project'
+            ? FolderKanban
+            : hit.kind === 'report'
+              ? FileText
+              : BarChart3,
+      run: () => navigateWithRecent(hit.id, hit.title, hit.subtitle, hit.href),
+    }));
+
+    const staticMatches = items.filter(
       (i) =>
         i.label.toLowerCase().includes(q) ||
         i.hint.toLowerCase().includes(q) ||
         i.group.toLowerCase().includes(q)
     );
-  }, [items, query]);
+
+    return [...dynamicWorkspaceItems, ...staticMatches];
+  }, [items, navigateWithRecent, query, recent, workspaceHits]);
 
   if (!open) return null;
 
@@ -157,9 +284,14 @@ export function CommandPalette({ locale }: { locale: Locale }) {
                 filtered[selectedIndex]!.run();
               }
             }}
-            placeholder="Jump to a tool, dashboard view, profile HQ, or action…"
+            placeholder="Search saved profiles, projects, reports, tools, or commands…"
             className="flex-1 bg-transparent text-sm text-[#0F172A] placeholder:text-[#64748B] focus:outline-none dark:text-[#F8FAFC] dark:placeholder:text-[#94A3B8]"
           />
+          {searchingWorkspace ? (
+            <span className="text-[10px] font-semibold text-[#6941EF] dark:text-[#A99AFF]">
+              Searching…
+            </span>
+          ) : null}
           <button
             type="button"
             onClick={() => setOpen(false)}
@@ -173,7 +305,7 @@ export function CommandPalette({ locale }: { locale: Locale }) {
         <div className="max-h-80 overflow-y-auto p-2">
           {filtered.length === 0 ? (
             <p className="px-4 py-8 text-center text-xs text-[#64748B] dark:text-[#94A3B8]">
-              No matching commands for &ldquo;{query}&rdquo;.
+              No matching commands or workspace items for &ldquo;{query}&rdquo;.
             </p>
           ) : (
             filtered.map((item, idx) => {

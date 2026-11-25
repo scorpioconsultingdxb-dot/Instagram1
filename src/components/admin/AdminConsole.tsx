@@ -36,6 +36,8 @@ import type {
 import type { AffiliateApplicationRecord } from '@/lib/referrals/service';
 import type { FunnelEventName } from '@/lib/analytics/funnel';
 import type { ExperimentDefinition } from '@/lib/experiments/ab';
+import type { DatabaseHealthResult } from '@/lib/db/prisma';
+import type { BackupDirectorySummary } from '@/lib/admin/backup-status';
 import { ConfirmDialog, StatusBanner } from '@/components/layout/PageShell';
 
 export type AdminTab =
@@ -58,6 +60,8 @@ export interface AdminConsoleProps {
   initialUsers: SessionUser[];
   initialPlans: PlanDefinition[];
   providerHealth: ProviderHealth[];
+  databaseHealth?: DatabaseHealthResult;
+  backupSummary?: BackupDirectorySummary;
   apiUsage: ApiUsageMetric[];
   searchAnalytics: SearchAnalyticsMetric[];
   conversionAnalytics: {
@@ -124,6 +128,8 @@ export function AdminConsole({
   initialUsers,
   initialPlans,
   providerHealth,
+  databaseHealth,
+  backupSummary,
   apiUsage,
   searchAnalytics,
   conversionAnalytics,
@@ -145,6 +151,8 @@ export function AdminConsole({
   const [userSearch, setUserSearch] = useState('');
   const [userPlanFilter, setUserPlanFilter] = useState<'all' | PlanCode>('all');
   const [userRoleFilter, setUserRoleFilter] = useState<'all' | UserRole>('all');
+  const [detailUser, setDetailUser] = useState<SessionUser | null>(null);
+  const [revokeSessionsTarget, setRevokeSessionsTarget] = useState<SessionUser | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<SessionUser | null>(null);
   const [suspendedIds, setSuspendedIds] = useState<Record<string, boolean>>({});
   const [overrideTarget, setOverrideTarget] = useState<SessionUser | null>(null);
@@ -287,10 +295,21 @@ export function AdminConsole({
             <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 font-mono text-[11px] font-bold uppercase text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]">
               {actor.role}
             </span>
+            {databaseHealth ? (
+              <span
+                className={`rounded-full px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
+                  databaseHealth.status === 'healthy'
+                    ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200'
+                    : 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-200'
+                }`}
+              >
+                PG: {databaseHealth.status}
+                {databaseHealth.latencyMs !== null ? ` · ${databaseHealth.latencyMs}ms` : ''}
+              </span>
+            ) : null}
           </div>
           <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
-            Signed in as {actor.email} · Least-privilege RBAC enforced server-side · All mutations
-            persist across restarts and append to immutable Audit Logs.
+            Signed in as {actor.email} · Least-privilege RBAC enforced server-side · Append-only Audit Logs enforced by PostgreSQL privileges &amp; trigger.
           </p>
         </div>
         <div className="grid grid-cols-3 gap-3 text-right tabular-nums">
@@ -523,6 +542,13 @@ export function AdminConsole({
                       </td>
                       <td className="py-3">
                         <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setDetailUser(u)}
+                            className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-slate-200"
+                          >
+                            Details
+                          </button>
                           {canManageEntitlements ? (
                             <button
                               type="button"
@@ -638,6 +664,79 @@ export function AdminConsole({
                 </div>
               </div>
             ) : null}
+
+            {detailUser ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-5 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h3 className="font-display text-sm font-bold text-[#0F172A] dark:text-white">
+                      Customer Account Details — {detailUser.fullName}
+                    </h3>
+                    <p className="mt-0.5 font-mono text-[11px] text-[#64748B]">
+                      ID: {detailUser.id} · {detailUser.email}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDetailUser(null)}
+                    className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-[#64748B] hover:text-[#0F172A] dark:border-[#263047] dark:text-slate-300"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                  <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-[#263047] dark:bg-[#131C2E]">
+                    <span className="block text-[10px] font-semibold uppercase text-[#64748B]">Plan</span>
+                    <span className="font-bold uppercase text-[#0F172A] dark:text-white">{detailUser.planCode}</span>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-[#263047] dark:bg-[#131C2E]">
+                    <span className="block text-[10px] font-semibold uppercase text-[#64748B]">RBAC Role</span>
+                    <span className="font-mono font-bold text-[#0F172A] dark:text-white">{detailUser.role}</span>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-[#263047] dark:bg-[#131C2E]">
+                    <span className="block text-[10px] font-semibold uppercase text-[#64748B]">Email Status</span>
+                    <span className="font-semibold text-[#0F172A] dark:text-white">
+                      {detailUser.emailVerified ? 'Verified' : 'Pending Verification'}
+                    </span>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-[#263047] dark:bg-[#131C2E]">
+                    <span className="block text-[10px] font-semibold uppercase text-[#64748B]">Segment</span>
+                    <span className="font-semibold capitalize text-[#0F172A] dark:text-white">{detailUser.segment}</span>
+                  </div>
+                </div>
+                <p className="mt-3 text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+                  Privacy boundary: Private customer research notes and saved profile commentary are protected by PostgreSQL RLS and remain strictly inaccessible to administrators.
+                </p>
+                {canManageUsers && detailUser.id !== actor.id ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRevokeSessionsTarget(detailUser)}
+                      className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
+                    >
+                      Revoke All Active Sessions
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <ConfirmDialog
+              open={revokeSessionsTarget !== null}
+              destructive
+              title={`Revoke all active sessions for ${revokeSessionsTarget?.email ?? ''}?`}
+              description="This immediately invalidates all database-backed sessions for this customer across every device and appends an entry to the immutable audit log."
+              confirmLabel="Revoke All Sessions"
+              onCancel={() => setRevokeSessionsTarget(null)}
+              onConfirm={async () => {
+                if (!revokeSessionsTarget) return;
+                await runAction(
+                  { type: 'revoke_user_sessions', userId: revokeSessionsTarget.id },
+                  `Revoked all active sessions for ${revokeSessionsTarget.email}.`
+                );
+                setRevokeSessionsTarget(null);
+              }}
+            />
 
             <ConfirmDialog
               open={suspendTarget !== null}
@@ -1482,8 +1581,46 @@ export function AdminConsole({
               </div>
             </div>
 
-            {/* Stage 29 Operational Telemetry: Job Queue, Storage Footprint & Partner Review */}
+            {/* Stage 29 & 40.8 Operational Telemetry: PostgreSQL Health, Backups, Job Queue & Storage */}
             <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                <h3 className="font-bold text-[#0F172A] dark:text-white">
+                  Live PostgreSQL Database Health
+                </h3>
+                {databaseHealth ? (
+                  <p className="mt-2 font-mono text-[11px] text-[#64748B] dark:text-slate-300">
+                    Engine: {databaseHealth.engine.toUpperCase()} · Status: {databaseHealth.status.toUpperCase()} ·
+                    Reachable: {databaseHealth.reachable ? 'YES' : 'NO'} · Latency:{' '}
+                    {databaseHealth.latencyMs !== null ? `${databaseHealth.latencyMs}ms` : 'N/A'}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-[11px] text-[#64748B]">Health probe unavailable.</p>
+                )}
+                <p className="mt-1 text-[11px] text-[#64748B]">
+                  RLS enforced on 23 policies under restricted runtime role; audit_logs append-only enforced by PostgreSQL trigger.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                <h3 className="font-bold text-[#0F172A] dark:text-white">
+                  Database Backup Archive Status (Read-Only)
+                </h3>
+                {backupSummary ? (
+                  <p className="mt-2 font-mono text-[11px] text-[#64748B] dark:text-slate-300">
+                    Snapshots: {backupSummary.backupCount} · Latest: {backupSummary.latestFileName ?? 'None'} ·
+                    Size:{' '}
+                    {backupSummary.latestSizeBytes !== null
+                      ? `${(backupSummary.latestSizeBytes / 1024).toFixed(1)} KB`
+                      : 'N/A'}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-[11px] text-[#64748B]">
+                  {backupSummary?.latestModifiedAt
+                    ? `Last snapshot recorded: ${new Date(backupSummary.latestModifiedAt).toLocaleString()}`
+                    : 'Run npm run db:backup to capture a protected snapshot.'}
+                </p>
+              </div>
+
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
                 <h3 className="font-bold text-[#0F172A] dark:text-white">
                   Background Job Queue Health (Recorded Runtime)
@@ -1672,6 +1809,26 @@ export function AdminConsole({
                     {conversionAnalytics.counts.upgrade_intent}
                   </p>
                 </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {(
+                  [
+                    ['onboarding_completed', 'Onboarding Done'],
+                    ['first_saved_profile', 'First Saved Profile'],
+                    ['first_project_created', 'First Research Project'],
+                    ['first_report_created', 'First Report Draft'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div
+                    key={key}
+                    className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-[#263047] dark:bg-[#0F172A]"
+                  >
+                    <p className="text-[11px] text-[#64748B]">{label}</p>
+                    <p className="mt-0.5 font-display text-lg font-extrabold tabular-nums text-[#0F172A] dark:text-white">
+                      {conversionAnalytics.counts[key] ?? 0}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
 

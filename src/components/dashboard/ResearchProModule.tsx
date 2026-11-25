@@ -5,6 +5,7 @@ import {
   Bookmark,
   CheckCircle2,
   Clock,
+  Copy,
   FileSpreadsheet,
   Filter,
   FolderKanban,
@@ -30,6 +31,30 @@ import { StatusBanner } from '@/components/layout/PageShell';
 const SAMPLE_CSV = `username,display_name,category,followers,following,posts,engagement_rate,tags,notes
 studio.meridian,Meridian Creative,Design Studio,42800,610,214,4.2,design;benchmark,Quarterly campaign reference
 craft.roasters,Craft Roasters Co,Specialty Coffee,19400,320,168,5.1,coffee;local,Strong carousel save rate`;
+
+const RESEARCH_TEMPLATES = [
+  {
+    id: 'creator_discovery',
+    label: 'Creator Discovery Audit',
+    title: 'Creator Discovery Audit',
+    objective: 'Evaluate public creator cadence, engagement consistency, and audience fit for upcoming partnerships.',
+    tags: 'creators, discovery, outreach',
+  },
+  {
+    id: 'competitor_benchmark',
+    label: 'Competitor Benchmark Set',
+    title: 'Competitor Benchmark Set',
+    objective: 'Track peer posting cadence, follower velocity, and positioning signals across category leaders.',
+    tags: 'competitors, benchmark, quarterly',
+  },
+  {
+    id: 'campaign_shortlist',
+    label: 'Campaign Shortlist',
+    title: 'Campaign Partner Shortlist',
+    objective: 'Curate and compare top eligible public accounts ahead of stakeholder brief export.',
+    tags: 'campaign, shortlist, priority',
+  },
+] as const;
 
 export function ResearchProModule({
   workspace,
@@ -365,10 +390,28 @@ export function ResearchProModule({
       {/* Create Project + Saved Filters Grid */}
       <div className="grid gap-5 lg:grid-cols-3">
         <section className="viewora-card rounded-2xl p-5 lg:col-span-2">
-          <h3 className="flex items-center gap-2 text-sm font-bold text-[#0F172A] dark:text-white">
-            <FolderKanban className="h-4 w-4 text-[#7957FF]" aria-hidden="true" />
-            New Research Project / Nested Collection
-          </h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-sm font-bold text-[#0F172A] dark:text-white">
+              <FolderKanban className="h-4 w-4 text-[#7957FF]" aria-hidden="true" />
+              New Research Project / Nested Collection
+            </h3>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {RESEARCH_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => {
+                    setTitle(tpl.title);
+                    setObjective(tpl.objective);
+                    setTagsRaw(tpl.tags);
+                  }}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-[#6941EF] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#A99AFF]"
+                >
+                  + {tpl.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <input
               type="text"
@@ -632,6 +675,20 @@ export function ResearchProModule({
                         }`}
                       >
                         <Star className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Duplicate project ${project.title}`}
+                        title="Duplicate project"
+                        onClick={() =>
+                          void runAction(
+                            { type: 'duplicate_project', id: project.id },
+                            `Duplicated "${project.title}".`
+                          )
+                        }
+                        className="rounded-lg p-1.5 text-slate-400 hover:text-[#6941EF] dark:hover:text-[#A99AFF]"
+                      >
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                       {project.status === 'archived' ? (
                         <button

@@ -1,20 +1,21 @@
-# Viewora — Commercial Launch Readiness Assessment (Phase 4 — Stage 40)
+# Viewora — Production Readiness Assessment (Updated Phase 4.1)
 
-**Date:** 2026-11-25  
-**Overall Verdict:** **VERIFIED COMMERCIAL RELEASE CANDIDATE ON LIVE POSTGRESQL 14.25 — READY FOR STAGING DEPLOYMENT & FINAL PRE-LAUNCH GATES** (External staging Lighthouse CI, manual screen-reader QA, production dependency patch review, distributed background worker, and explicitly deferred external APIs/Stripe billing remain before public commercial launch).
+**Date:** 2026-11-26  
+**Overall Verdict:** **READY FOR PHASE 5 STAGING & EXTERNAL API INTEGRATION — NOT YET COMMERCIAL PUBLIC LAUNCH READY** (pending external Phase 5 staging deployment, managed backups/HTTPS/monitoring, manual screen-reader QA, and approved external provider activations).
 
----
+## 1. Completed Pre-Staging Gates (Verified Green)
 
-## 1. Comprehensive Readiness Matrix
+- **Zero Production Dependency Vulnerabilities:** `npm audit --omit=dev` = **0 critical, 0 high, 0 moderate, 0 low**.
+- **Independent PostgreSQL Architecture (Zero Supabase):** 58 tables, 74 FKs, 147 indexes, 23 RLS policies, 5 forward migrations (`viewora` & `viewora_test`), restricted `NOBYPASSRLS` runtime roles.
+- **Database-Enforced Security Controls:** Append-only `audit_logs` enforced via PostgreSQL privilege revocation + `BEFORE UPDATE OR DELETE` trigger (`ERRCODE 42501`); concurrent Last-Super-Admin guard via `pg_advisory_xact_lock`; strict cross-tenant & private-note RLS isolation; revocable database sessions.
+- **Commercial Feature Completeness (Local Scope):** 5 locales, 12 free tools, Personal Digital HQ 3.0 with hardened media validation & 3 MB quota, Dashboard 3.0 with drag-and-drop/keyboard widget ordering & owner-scoped global search, Research Pro with templates & CSV importer, Report Studio 3.0 with real `%PDF-1.4` + formula-safe CSV + Markdown, Retention/Feedback UI, and Enterprise Super Admin 3.0.
+- **Permanent Restrictions Enforced:** `PAYMENTS_ENABLED=false`, `NEXT_PUBLIC_PAYMENTS_ENABLED=false`, `DEMO_MODE_ENABLED=false` in production, zero Supabase, zero unauthorized external API calls, permanent `Scorpio Marketing Agency` Super Admin preserved cleanly.
+- **Automated Quality Gates:** `tsc` 0 errors, `eslint` 0 errors/warnings, `vitest` 89/89 passing, live PG `test:db` 7/7 passing, `next build` 304 static pages, live PG E2E 7/7 milestones (0 console/page errors), Scenario B 78/78 routes HTTP 200.
 
-| Dimension | Classification | Evidence |
-| --- | --- | --- |
-| **Application Quality & Build** | **Implemented and verified** | `eslint` `0/0`, `tsc` `0`, **86/86 unit tests (18 suites)**, **303/303 static pages** (`103 kB` shared JS), zero Supabase |
-| **Live PostgreSQL 14.25 Core + Phase 4 Persistence** | **Implemented and verified** | `env:check` (`ok: true`), 4 SQL migrations on `viewora` & `viewora_test`, 2× seed, `db:health` healthy (`98 ms`), **6/6 live PG RLS tests (`test:db`)** including durable PG customer media & native PG referrals/affiliates |
-| **Customer & Admin E2E + Restart Persistence** | **Implemented and verified** | **`test:e2e:pg` PASS** on isolated `viewora_test` (`0` console/page errors, **11 live PG screenshots**); main `viewora` preserved cleanly (`Scorpio Marketing Agency`, `users: 1`, `openTickets: 0`, `auditLogs: 6`) |
-| **Scenario B Read-Only No-DB Public Resilience** | **Implemented and verified** | **78/78 public routes HTTP 200** on unwritable FS with `DATABASE_URL=""` and `DEMO_MODE_ENABLED=false`; `0` errors |
-| **Backup & Disposable Restore Fidelity** | **Implemented and verified** | Custom `.dump` + plain `.sql` restore into `viewora_restore_test`: **58/58 tables, 74/74 FKs, 147/147 indexes, 23/23 RLS policies**, `restrictedRoleReadVerified: true` |
-| **Admin Governance & Safety Guards** | **Implemented and verified** | Last-super-admin protection (`409`), self-suspension block (`400`), admin session revocation, locked `payments_enabled` (`403`), zero admin access to private customer notes |
-| **Dependency Vulnerabilities (`npm audit --omit=dev`)** | **Needs Review Before GA** | `0` critical, `6` high, `1` moderate in transitive deps — patch during staging prep |
-| **Staging Lighthouse CI & Manual AT Audit** | **Pending Staging / Manual QA** | Run Lighthouse CI on HTTPS staging host + manual NVDA/VoiceOver walkthrough |
-| **External APIs & Stripe Billing** | **Intentionally Inactive** | Preserved behind clean interfaces; `PAYMENTS_ENABLED=false` locked |
+## 2. Mandatory Gates Remaining Before Public Commercial Launch (Phase 5)
+
+1. **Hosted Infrastructure & PostgreSQL 16 Staging Deployment:** Provision managed PostgreSQL 16 (with PgBouncer + automated daily encrypted backups + verified Linux `pg_dump`/`pg_restore` drills outside workstation Windows App Control restrictions), HTTPS/TLS termination, and real DNS.
+2. **External Provider Integration (When Authorized in Phase 5):** Meta Graph API Business Discovery OAuth/tokens, Gemini API keys, transactional email (SMTP/Resend) + external cron scheduler invoking `/api/jobs/run` (`CRON_SECRET`), and object storage (S3/R2/GCS) for high-volume media.
+3. **Hosted Performance & Manual Accessibility Sign-Off:** Run hosted Lighthouse + RUM Core Web Vitals on staging HTTPS URL, plus manual NVDA/VoiceOver/JAWS screen-reader pass.
+4. **Dev Toolchain Upgrade:** Plan controlled `vitest` v3 → v5 upgrade to clear the 3 dev-only test-runner advisories.
+5. **Payment Activation (Only Upon Explicit Owner Authorization):** Stripe webhook/checkout activation remains intentionally disabled until formally approved.

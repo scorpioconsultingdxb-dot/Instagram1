@@ -5,6 +5,7 @@ import { hasAdminCapability, requireAdminApi } from '@/lib/admin/rbac';
 import { isDatabaseConfigured } from '@/lib/env';
 import {
   countActiveSuperAdmins,
+  LastSuperAdminError,
   reactivateDbUserAccount,
   revokeAllDbUserSessions,
   suspendDbUserAccount,
@@ -213,12 +214,22 @@ async function handleAdminActionPost(request: NextRequest) {
         }
       }
     }
-    const updateRes = await persistAdminUserUpdate(action.userId, {
-      role: action.role,
-      planCode: action.planCode,
-    });
+    const updateRes = await persistAdminUserUpdate(
+      action.userId,
+      {
+        role: action.role,
+        planCode: action.planCode,
+      },
+      { enforceLastSuperAdminGuard: true }
+    );
     if (!updateRes.ok) {
-      return NextResponse.json({ ok: false, error: updateRes.error }, { status: 500 });
+      const status =
+        updateRes.code === 'LAST_SUPER_ADMIN'
+          ? 409
+          : updateRes.code === 'NOT_FOUND'
+            ? 404
+            : 500;
+      return NextResponse.json({ ok: false, error: updateRes.error }, { status });
     }
     const audit = await persistAuditLog({
       actorId: actor.id,
@@ -433,7 +444,14 @@ async function handleAdminActionPost(request: NextRequest) {
         );
       }
     }
-    await suspendDbUserAccount(action.userId);
+    try {
+      await suspendDbUserAccount(action.userId, undefined, { enforceLastSuperAdminGuard: true });
+    } catch (err) {
+      if (err instanceof LastSuperAdminError) {
+        return NextResponse.json({ ok: false, error: err.message }, { status: 409 });
+      }
+      throw err;
+    }
     const audit = await persistAuditLog({
       actorId: actor.id,
       actorEmail: actor.email,

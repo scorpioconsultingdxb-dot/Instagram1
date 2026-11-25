@@ -21,6 +21,8 @@ import { loadFunnelSummary } from '@/lib/analytics/funnel';
 import { DEFAULT_EXPERIMENTS } from '@/lib/experiments/ab';
 import { defaultJobQueue } from '@/lib/jobs/queue';
 import { loadReferralOverview } from '@/lib/referrals/service';
+import { checkDatabaseHealth } from '@/lib/db/prisma';
+import { getBackupDirectorySummary } from '@/lib/admin/backup-status';
 import { AdminConsole } from '@/components/admin/AdminConsole';
 
 export const dynamic = 'force-dynamic';
@@ -88,6 +90,7 @@ export default async function AdminPage({
     initialAuditLogs,
     initialFlags,
     referralOverview,
+    databaseHealth,
   ] = await Promise.all([
     loadAdminUsers(),
     defaultProviderRegistry.checkAllHealth(),
@@ -99,6 +102,7 @@ export default async function AdminPage({
     loadAuditLogs(),
     loadFeatureFlags(),
     loadReferralOverview(),
+    checkDatabaseHealth(),
   ]);
 
   return (
@@ -108,6 +112,8 @@ export default async function AdminPage({
       initialUsers={initialUsers}
       initialPlans={initialPlans}
       providerHealth={providerHealth}
+      databaseHealth={databaseHealth}
+      backupSummary={getBackupDirectorySummary()}
       apiUsage={getApiUsageMetrics()}
       searchAnalytics={getSearchAnalyticsMetrics()}
       conversionAnalytics={conversionAnalytics}

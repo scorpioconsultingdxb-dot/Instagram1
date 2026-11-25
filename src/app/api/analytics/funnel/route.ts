@@ -10,12 +10,16 @@ const funnelSchema = z.object({
     'premium_preview_viewed',
     'signup_started',
     'signup_completed',
+    'onboarding_completed',
+    'first_saved_profile',
+    'first_project_created',
+    'first_report_created',
     'pricing_viewed',
     'upgrade_intent',
   ]),
   locale: z.string().default('en'),
   sessionId: z.string().min(1).max(120).default('web-session'),
-  properties: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  properties: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
 
 export async function POST(request: NextRequest) {

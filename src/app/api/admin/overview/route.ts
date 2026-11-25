@@ -18,6 +18,7 @@ import { DEFAULT_EXPERIMENTS } from '@/lib/experiments/ab';
 import { defaultJobQueue } from '@/lib/jobs/queue';
 import { loadReferralOverview } from '@/lib/referrals/service';
 import { checkDatabaseHealth } from '@/lib/db/prisma';
+import { getBackupDirectorySummary } from '@/lib/admin/backup-status';
 
 export async function GET() {
   try {
@@ -68,6 +69,7 @@ export async function GET() {
       featureFlags,
       jobQueueSummary: defaultJobQueue.getSummary(),
       storageUsage: getLocalStorageUsageSummary(),
+      backupSummary: getBackupDirectorySummary(),
       referralOverview,
     });
   } catch {

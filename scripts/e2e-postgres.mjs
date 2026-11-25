@@ -414,7 +414,7 @@ async function main() {
     assert(hqBody.includes('PG Persistence Lead') && hqBody.includes('Independent PostgreSQL'), 'Profile HQ changes did not persist');
     report.screenshots.push(await cdp.screenshot('pg_e2e_profile_hq_1440px.png'));
 
-    // Create custom report & support ticket in PostgreSQL
+    // Create custom report, research project, feedback & support ticket in PostgreSQL + test authorized global search + PDF entitlement enforcement
     const reportAndSupport = await cdp.eval(`(async () => {
       const rRes = await fetch('/api/reports/builder', {
         method: 'POST',
@@ -427,6 +427,30 @@ async function main() {
           usernames: ['viewora.studio']
         })
       });
+      const rJson = await rRes.json();
+      // Free-tier customer MUST be blocked (403) from PDF export server-side
+      const freePdfRes = await fetch('/api/reports/builder?download=' + encodeURIComponent(rJson.report?.id || '') + '&format=pdf');
+      const pRes = await fetch('/api/dashboard/research', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'create_project',
+          title: 'PG E2E Benchmark Project',
+          objective: 'Verify research template & search persistence',
+          tags: ['benchmark']
+        })
+      });
+      const searchRes = await fetch('/api/dashboard/search?q=PG');
+      const searchJson = await searchRes.json();
+      const fbRes = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: 'feature_request',
+          title: 'PG E2E Feedback Probe',
+          details: 'Automated verification of structured PostgreSQL feedback persistence.'
+        })
+      });
       const sRes = await fetch('/api/support', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -436,17 +460,35 @@ async function main() {
           priority: 'normal'
         })
       });
-      return { rStatus: rRes.status, sStatus: sRes.status };
+      return {
+        rStatus: rRes.status,
+        reportId: rJson.report?.id || null,
+        freePdfStatus: freePdfRes.status,
+        pStatus: pRes.status,
+        searchStatus: searchRes.status,
+        searchCount: (searchJson.results || []).length,
+        fbStatus: fbRes.status,
+        sStatus: sRes.status
+      };
     })()`);
     assert(
-      reportAndSupport.rStatus === 201 && reportAndSupport.sStatus === 201,
-      `Report Builder or Support persistence failed: ${JSON.stringify(reportAndSupport)}`
+      reportAndSupport.rStatus === 201 &&
+        reportAndSupport.freePdfStatus === 403 &&
+        reportAndSupport.pStatus === 201 &&
+        reportAndSupport.searchStatus === 200 &&
+        reportAndSupport.searchCount >= 2 &&
+        reportAndSupport.fbStatus === 201 &&
+        reportAndSupport.sStatus === 201,
+      `Phase 4.1 Report/Research/Search/Feedback persistence failed: ${JSON.stringify(reportAndSupport)}`
     );
     await cdp.goto(`${BASE_URL}/en/dashboard/report-builder`, 1200);
     report.screenshots.push(await cdp.screenshot('pg_e2e_report_builder_1440px.png'));
+    await cdp.goto(`${BASE_URL}/en/dashboard/projects`, 1200);
+    report.screenshots.push(await cdp.screenshot('phase41_research_pro_1440px.png'));
 
     // 6. Notifications & Membership/Pricing pages
     await cdp.goto(`${BASE_URL}/en/dashboard/notifications`, 1100);
+    report.screenshots.push(await cdp.screenshot('phase41_notifications_1440px.png'));
     await cdp.goto(`${BASE_URL}/en/pricing`, 1100);
     const pricingText = await cdp.eval(`document.body.innerText`);
     assert(pricingText.includes('Agency') && pricingText.includes('Starter'), 'Pricing page missing tiers');
@@ -555,21 +597,57 @@ async function main() {
     await cdp.goto(`${BASE_URL}/en/admin`, 1400);
     const adminCheck = await cdp.eval(`(async () => {
       const ov = await fetch('/api/admin/overview');
+      const ovJson = await ov.json();
       const lockPay = await fetch('/api/admin/actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'toggle_flag', key: 'payments_enabled', enabled: true })
       });
+      // Agency-tier admin can create & download a real binary %PDF-1.4 report
+      const rCreate = await fetch('/api/reports/builder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'create',
+          reportType: 'client_performance',
+          title: 'Agency Binary PDF Verification',
+          description: 'Verifies live %PDF-1.4 download over HTTP',
+          usernames: []
+        })
+      });
+      const rCreateJson = await rCreate.json();
+      const pdfRes = await fetch('/api/reports/builder?download=' + encodeURIComponent(rCreateJson.report?.id || '') + '&format=pdf');
+      const pdfBytes = new Uint8Array(await pdfRes.arrayBuffer());
+      const pdfHeader = String.fromCharCode(...pdfBytes.slice(0, 8));
       return {
         overviewStatus: ov.status,
+        hasDbHealth: ovJson?.databaseHealth?.status === 'healthy',
+        hasBackupSummary: Boolean(ovJson?.backupSummary),
         lockPayStatus: lockPay.status,
+        pdfStatus: pdfRes.status,
+        pdfContentType: pdfRes.headers.get('content-type') || '',
+        pdfHeader,
+        pdfByteLength: pdfBytes.byteLength,
         bodyLen: document.body.innerText.length
       };
     })()`);
-    assert(adminCheck.overviewStatus === 200, `Admin overview failed: ${adminCheck.overviewStatus}`);
+    assert(adminCheck.overviewStatus === 200 && adminCheck.hasDbHealth && adminCheck.hasBackupSummary, `Admin overview failed: ${JSON.stringify(adminCheck)}`);
     assert(adminCheck.lockPayStatus === 403, `Expected 403 on locked payments_enabled, got ${adminCheck.lockPayStatus}`);
+    assert(
+      adminCheck.pdfStatus === 200 &&
+        adminCheck.pdfContentType.includes('application/pdf') &&
+        adminCheck.pdfHeader === '%PDF-1.4' &&
+        adminCheck.pdfByteLength > 800,
+      `Live binary PDF export verification failed: ${JSON.stringify(adminCheck)}`
+    );
     report.screenshots.push(await cdp.screenshot('pg_e2e_admin_1440px.png'));
-    report.passed.push('Administrator dashboard & locked payments_enabled guard verified against PostgreSQL');
+    await cdp.setViewport(390, 844);
+    await cdp.goto(`${BASE_URL}/en/admin`, 1100);
+    const adminMobOverflow = await cdp.eval(`document.documentElement.scrollWidth > window.innerWidth`);
+    assert(!adminMobOverflow, 'Mobile 390px Admin Console horizontal overflow detected');
+    report.screenshots.push(await cdp.screenshot('phase41_admin_390px.png'));
+    await cdp.setViewport(1440, 900);
+    report.passed.push('Administrator 3.0 dashboard, PG health, backup summary, locked payments_enabled guard, and real %PDF-1.4 export verified');
 
     // 9. Confirmed Account Deletion of synthetic test customer
     await cdp.eval(`fetch('/api/auth/logout', { method: 'POST' })`);

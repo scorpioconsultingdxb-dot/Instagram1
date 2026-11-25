@@ -145,6 +145,7 @@ export function CustomerDashboard({
       ? profilePrefs.widgetOrder
       : ['checklist', 'kpis', 'quickActions', 'shortcuts', 'analyticsPreview']
   );
+  const [draggedWidget, setDraggedWidget] = useState<DashboardWidgetKey | null>(null);
   const [widgetVisibility, setWidgetVisibility] = useState({
     checklist: profilePrefs.widgetVisibility?.checklist ?? true,
     kpis: profilePrefs.widgetVisibility?.kpis ?? true,
@@ -152,6 +153,28 @@ export function CustomerDashboard({
     shortcuts: profilePrefs.widgetVisibility?.shortcuts ?? true,
     analyticsPreview: profilePrefs.widgetVisibility?.analyticsPreview ?? true,
   });
+
+  const persistWidgetOrder = (next: DashboardWidgetKey[]) => {
+    void fetch('/api/auth/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ widgetOrder: next }),
+    }).catch(() => undefined);
+  };
+
+  const reorderWidgetToTarget = (source: DashboardWidgetKey, target: DashboardWidgetKey) => {
+    if (source === target) return;
+    setWidgetOrder((prev) => {
+      const fromIdx = prev.indexOf(source);
+      const toIdx = prev.indexOf(target);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+      const next = [...prev];
+      const [item] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, item!);
+      persistWidgetOrder(next);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const root = document.documentElement;
@@ -717,38 +740,14 @@ export function CustomerDashboard({
           {/* TAB VIEWS */}
           {activeTab === 'overview' ? (
             <div className="space-y-5">
-              {/* Configurable Widget Layout & Quick Actions Bar */}
+              {/* Configurable Widget Layout Header Bar */}
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  {widgetVisibility.quickActions ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('profiles')}
-                        className="viewora-btn-primary inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-semibold"
-                      >
-                        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                        Save Profile
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('competitors')}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200"
-                      >
-                        <GitCompare className="h-3.5 w-3.5 text-[#6941EF] dark:text-[#A99AFF]" aria-hidden="true" />
-                        Compare Peers
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('ai')}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200"
-                      >
-                        <Sparkles className="h-3.5 w-3.5 text-[#22D3EE]" aria-hidden="true" />
-                        AI Studio
-                      </button>
-                    </>
-                  ) : null}
-                </div>
+                <p className="text-xs font-semibold text-[#64748B] dark:text-[#94A3B8]">
+                  Active Layout Preset:{' '}
+                  <span className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                    {DASHBOARD_PRESET_CONFIGS[dashboardPreset]?.label ?? 'Personal'}
+                  </span>
+                </p>
                 <button
                   type="button"
                   aria-expanded={showWidgetConfig}
@@ -791,7 +790,7 @@ export function CustomerDashboard({
                   </div>
                   <div>
                     <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                      Overview Widgets &amp; Keyboard-Accessible Order
+                      Overview Widgets (Drag &amp; Drop or Keyboard Arrows)
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2.5">
                       {widgetOrder.map((key, idx) => {
@@ -805,7 +804,19 @@ export function CustomerDashboard({
                         return (
                           <div
                             key={key}
-                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-[#263047] dark:bg-[#0F172A]"
+                            draggable
+                            onDragStart={() => setDraggedWidget(key)}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={() => {
+                              if (draggedWidget) reorderWidgetToTarget(draggedWidget, key);
+                              setDraggedWidget(null);
+                            }}
+                            onDragEnd={() => setDraggedWidget(null)}
+                            className={`inline-flex cursor-grab items-center gap-2 rounded-xl border px-2.5 py-1.5 transition active:cursor-grabbing ${
+                              draggedWidget === key
+                                ? 'border-[#7957FF] bg-violet-50/70 opacity-75 dark:bg-[#192337]'
+                                : 'border-slate-200 bg-slate-50 dark:border-[#263047] dark:bg-[#0F172A]'
+                            }`}
                           >
                             <label className="inline-flex items-center gap-1.5 text-[#0F172A] dark:text-slate-200">
                               <input
@@ -843,212 +854,266 @@ export function CustomerDashboard({
                 </div>
               ) : null}
 
-              {widgetVisibility.shortcuts && profilePrefs.personalShortcuts.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-semibold text-[#64748B] dark:text-[#94A3B8]">
-                    Shortcuts:
-                  </span>
-                  {profilePrefs.personalShortcuts.map((sc) => (
-                    <Link
-                      key={sc.id}
-                      href={`/${locale}${sc.href}`}
-                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0F172A] transition hover:border-[#7957FF] hover:text-[#6941EF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200 dark:hover:text-[#A99AFF]"
-                    >
-                      {sc.label} →
-                    </Link>
-                  ))}
-                </div>
-              ) : null}
-
-              {/* Stage 21 Personalized Getting-Started Checklist (computed from genuine account state) */}
-              {widgetVisibility.checklist && !walkthroughDismissed ? (() => {
-                const steps = [
-                  {
-                    id: 'onboarding',
-                    label: 'Complete personalized role & goal onboarding',
-                    done: Boolean(profilePrefs.onboardingCompleted || user.onboardingCompleted),
-                    href: `/${locale}/onboarding`,
-                  },
-                  {
-                    id: 'profile',
-                    label: 'Save your first public profile or CSV dataset',
-                    done: workspace.savedProfiles.length > 0,
-                    onClick: () => setActiveTab('projects'),
-                  },
-                  {
-                    id: 'hq',
-                    label: 'Personalize your Digital HQ bio or avatar',
-                    done: Boolean(profilePrefs.biography || profilePrefs.customAvatarUrl),
-                    href: `/${locale}/dashboard/profile`,
-                  },
-                  {
-                    id: 'report',
-                    label: 'Draft a template-generated report or AI brief',
-                    done: workspace.reports.length > 0 || workspace.exports.length > 0,
-                    onClick: () => setActiveTab('report_builder'),
-                  },
-                ];
-                const completedCount = steps.filter((s) => s.done).length;
-                return (
-                  <section className="viewora-card rounded-2xl p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                          Getting-Started Checklist ({completedCount}/{steps.length} complete)
-                        </p>
-                        <p className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
-                          Tracked strictly from real actions in your account ·{' '}
-                          <Link
-                            href={`/${locale}/resources`}
-                            className="font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
-                          >
-                            Help Center &amp; Guides
-                          </Link>
-                        </p>
-                      </div>
+              {/* Dynamic Ordered Overview Widgets (Persisted Order + Drag & Drop + Keyboard Accessible) */}
+              {widgetOrder.map((widgetKey) => {
+                if (widgetKey === 'quickActions' && widgetVisibility.quickActions) {
+                  return (
+                    <div key="quickActions" className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          setWalkthroughDismissed(true);
-                          void fetch('/api/auth/profile', {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ walkthroughDismissed: true }),
-                          }).catch(() => undefined);
-                        }}
-                        className="text-[11px] font-semibold text-[#64748B] hover:text-[#0F172A] dark:text-[#94A3B8]"
+                        onClick={() => setActiveTab('profiles')}
+                        className="viewora-btn-primary inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-semibold"
                       >
-                        Dismiss
+                        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                        Save Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('competitors')}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200"
+                      >
+                        <GitCompare className="h-3.5 w-3.5 text-[#6941EF] dark:text-[#A99AFF]" aria-hidden="true" />
+                        Compare Peers
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('report_builder')}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200"
+                      >
+                        <FileText className="h-3.5 w-3.5 text-[#6941EF] dark:text-[#A99AFF]" aria-hidden="true" />
+                        Report Studio
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('ai')}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200"
+                      >
+                        <Sparkles className="h-3.5 w-3.5 text-[#22D3EE]" aria-hidden="true" />
+                        AI Studio
                       </button>
                     </div>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {steps.map((st) =>
-                        st.href ? (
-                          <Link
-                            key={st.id}
-                            href={st.href}
-                            className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A]"
-                          >
-                            <span
-                              className={
-                                st.done
-                                  ? 'text-[#64748B] line-through'
-                                  : 'font-semibold text-[#0F172A] dark:text-slate-100'
-                              }
-                            >
-                              {st.label}
-                            </span>
-                            <CheckCircle2
-                              className={`h-4 w-4 shrink-0 ${st.done ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'}`}
-                              aria-hidden="true"
-                            />
-                          </Link>
-                        ) : (
-                          <button
-                            key={st.id}
-                            type="button"
-                            onClick={st.onClick}
-                            className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-left text-xs hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A]"
-                          >
-                            <span
-                              className={
-                                st.done
-                                  ? 'text-[#64748B] line-through'
-                                  : 'font-semibold text-[#0F172A] dark:text-slate-100'
-                              }
-                            >
-                              {st.label}
-                            </span>
-                            <CheckCircle2
-                              className={`h-4 w-4 shrink-0 ${st.done ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'}`}
-                              aria-hidden="true"
-                            />
-                          </button>
-                        )
-                      )}
+                  );
+                }
+
+                if (
+                  widgetKey === 'shortcuts' &&
+                  widgetVisibility.shortcuts &&
+                  profilePrefs.personalShortcuts.length > 0
+                ) {
+                  return (
+                    <div key="shortcuts" className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-semibold text-[#64748B] dark:text-[#94A3B8]">
+                        Shortcuts:
+                      </span>
+                      {profilePrefs.personalShortcuts.map((sc) => (
+                        <Link
+                          key={sc.id}
+                          href={`/${locale}${sc.href}`}
+                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0F172A] transition hover:border-[#7957FF] hover:text-[#6941EF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200 dark:hover:text-[#A99AFF]"
+                        >
+                          {sc.label} →
+                        </Link>
+                      ))}
                     </div>
-                  </section>
-                );
-              })() : null}
+                  );
+                }
 
-              {widgetVisibility.kpis ? (
-              <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-                <MetricCard
-                  label="Saved Profiles"
-                  value={`${workspace.savedProfiles.length} / ${trackedLimitLabel}`}
-                  hint={`${workspace.folders.length} research folder${workspace.folders.length === 1 ? '' : 's'}`}
-                />
-                <MetricCard
-                  label="Saved AI Reports"
-                  value={`${workspace.reports.length}`}
-                  hint={
-                    canAi
-                      ? `Plan quota: ${aiLimitLabel}/mo`
-                      : 'Upgrade for AI Studio'
-                  }
-                />
-                <MetricCard
-                  label="Comparison Projects"
-                  value={`${workspace.comparisons.length}`}
-                  hint={
-                    canHistory
-                      ? `${historyDaysLabel === '∞' ? 'Unlimited' : `${historyDaysLabel}d`} history lookback`
-                      : 'Starter+ unlocks history'
-                  }
-                />
-                <MetricCard
-                  label="Recorded Exports"
-                  value={`${workspace.exports.length}`}
-                  hint={`${seatsLimitLabel} seat${seatsLimitLabel === '1' ? '' : 's'} · ${workspace.settings.activeWorkspace}`}
-                />
-              </div>
-              ) : null}
+                if (widgetKey === 'checklist' && widgetVisibility.checklist && !walkthroughDismissed) {
+                  const steps = [
+                    {
+                      id: 'onboarding',
+                      label: 'Complete personalized role & goal onboarding',
+                      done: Boolean(profilePrefs.onboardingCompleted || user.onboardingCompleted),
+                      href: `/${locale}/onboarding`,
+                    },
+                    {
+                      id: 'profile',
+                      label: 'Save your first public profile or CSV dataset',
+                      done: workspace.savedProfiles.length > 0,
+                      onClick: () => setActiveTab('projects'),
+                    },
+                    {
+                      id: 'hq',
+                      label: 'Personalize your Digital HQ bio or avatar',
+                      done: Boolean(profilePrefs.biography || profilePrefs.customAvatarUrl),
+                      href: `/${locale}/dashboard/profile`,
+                    },
+                    {
+                      id: 'report',
+                      label: 'Draft a template-generated report or AI brief',
+                      done: workspace.reports.length > 0 || workspace.exports.length > 0,
+                      onClick: () => setActiveTab('report_builder'),
+                    },
+                  ];
+                  const completedCount = steps.filter((s) => s.done).length;
+                  return (
+                    <section key="checklist" className="viewora-card rounded-2xl p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                            Getting-Started Checklist ({completedCount}/{steps.length} complete)
+                          </p>
+                          <p className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+                            Tracked strictly from real actions in your account ·{' '}
+                            <Link
+                              href={`/${locale}/resources`}
+                              className="font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+                            >
+                              Help Center &amp; Guides
+                            </Link>
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWalkthroughDismissed(true);
+                            void fetch('/api/auth/profile', {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ walkthroughDismissed: true }),
+                            }).catch(() => undefined);
+                          }}
+                          className="text-[11px] font-semibold text-[#64748B] hover:text-[#0F172A] dark:text-[#94A3B8]"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {steps.map((st) =>
+                          st.href ? (
+                            <Link
+                              key={st.id}
+                              href={st.href}
+                              className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A]"
+                            >
+                              <span
+                                className={
+                                  st.done
+                                    ? 'text-[#64748B] line-through'
+                                    : 'font-semibold text-[#0F172A] dark:text-slate-100'
+                                }
+                              >
+                                {st.label}
+                              </span>
+                              <CheckCircle2
+                                className={`h-4 w-4 shrink-0 ${st.done ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'}`}
+                                aria-hidden="true"
+                              />
+                            </Link>
+                          ) : (
+                            <button
+                              key={st.id}
+                              type="button"
+                              onClick={st.onClick}
+                              className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-left text-xs hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A]"
+                            >
+                              <span
+                                className={
+                                  st.done
+                                    ? 'text-[#64748B] line-through'
+                                    : 'font-semibold text-[#0F172A] dark:text-slate-100'
+                                }
+                              >
+                                {st.label}
+                              </span>
+                              <CheckCircle2
+                                className={`h-4 w-4 shrink-0 ${st.done ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'}`}
+                                aria-hidden="true"
+                              />
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </section>
+                  );
+                }
 
-              {selectedEntry ? (
-                <div className="viewora-card rounded-2xl p-6">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                        Active Profile Intelligence — @{selectedEntry.username}
-                      </h2>
-                      <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
-                        {selectedEntry.profile.displayName} · {selectedEntry.providerLabel}
-                      </p>
+                if (widgetKey === 'kpis' && widgetVisibility.kpis) {
+                  return (
+                    <div key="kpis" className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+                      <MetricCard
+                        label="Saved Profiles"
+                        value={`${workspace.savedProfiles.length} / ${trackedLimitLabel}`}
+                        hint={`${workspace.folders.length} research folder${workspace.folders.length === 1 ? '' : 's'}`}
+                      />
+                      <MetricCard
+                        label="Saved AI Reports"
+                        value={`${workspace.reports.length}`}
+                        hint={
+                          canAi
+                            ? `Plan quota: ${aiLimitLabel}/mo`
+                            : 'Upgrade for AI Studio'
+                        }
+                      />
+                      <MetricCard
+                        label="Comparison Projects"
+                        value={`${workspace.comparisons.length}`}
+                        hint={
+                          canHistory
+                            ? `${historyDaysLabel === '∞' ? 'Unlimited' : `${historyDaysLabel}d`} history lookback`
+                            : 'Starter+ unlocks history'
+                        }
+                      />
+                      <MetricCard
+                        label="Recorded Exports"
+                        value={`${workspace.exports.length}`}
+                        hint={`${seatsLimitLabel} seat${seatsLimitLabel === '1' ? '' : 's'} · ${workspace.settings.activeWorkspace}`}
+                      />
                     </div>
-                    <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
-                  </div>
+                  );
+                }
 
-                  <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <MetricCard
-                      label="Followers"
-                      value={(selectedEntry.profile.followersCount ?? 0).toLocaleString()}
-                      hint={selectedEntry.dataClass}
+                if (widgetKey === 'analyticsPreview' && widgetVisibility.analyticsPreview) {
+                  return selectedEntry ? (
+                    <div key="analyticsPreview" className="viewora-card rounded-2xl p-6">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                            Active Profile Intelligence — @{selectedEntry.username}
+                          </h2>
+                          <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+                            {selectedEntry.profile.displayName} · {selectedEntry.providerLabel}
+                          </p>
+                        </div>
+                        <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
+                      </div>
+
+                      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <MetricCard
+                          label="Followers"
+                          value={(selectedEntry.profile.followersCount ?? 0).toLocaleString()}
+                          hint={selectedEntry.dataClass}
+                        />
+                        <MetricCard
+                          label="Following"
+                          value={(selectedEntry.profile.followingCount ?? 0).toLocaleString()}
+                          hint={selectedEntry.dataClass}
+                        />
+                        <MetricCard
+                          label="Public Posts"
+                          value={(selectedEntry.profile.postsCount ?? 0).toLocaleString()}
+                          hint={selectedEntry.dataClass}
+                        />
+                        <MetricCard
+                          label="Est. Engagement"
+                          value={`${selectedEntry.profile.estimatedEngagementRate ?? '—'}%`}
+                          hint="Transparent formula"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <EmptyState
+                      key="analyticsPreview"
+                      title={td.cleanWorkspaceTitle}
+                      description={td.cleanWorkspaceDesc}
+                      actionLabel={td.tabProfiles}
+                      onAction={() => setActiveTab('profiles')}
                     />
-                    <MetricCard
-                      label="Following"
-                      value={(selectedEntry.profile.followingCount ?? 0).toLocaleString()}
-                      hint={selectedEntry.dataClass}
-                    />
-                    <MetricCard
-                      label="Public Posts"
-                      value={(selectedEntry.profile.postsCount ?? 0).toLocaleString()}
-                      hint={selectedEntry.dataClass}
-                    />
-                    <MetricCard
-                      label="Est. Engagement"
-                      value={`${selectedEntry.profile.estimatedEngagementRate ?? '—'}%`}
-                      hint="Transparent formula"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <EmptyState
-                  title={td.cleanWorkspaceTitle}
-                  description={td.cleanWorkspaceDesc}
-                  actionLabel={td.tabProfiles}
-                  onAction={() => setActiveTab('profiles')}
-                />
-              )}
+                  );
+                }
+
+                return null;
+              })}
             </div>
           ) : null}
 

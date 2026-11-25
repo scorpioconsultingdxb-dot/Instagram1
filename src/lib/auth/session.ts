@@ -360,11 +360,12 @@ export async function loadAdminUserById(userId: string): Promise<SessionUser | n
 
 export async function persistAdminUserUpdate(
   userId: string,
-  patch: { role?: UserRole; planCode?: PlanCode }
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  patch: { role?: UserRole; planCode?: PlanCode },
+  options?: { enforceLastSuperAdminGuard?: boolean }
+): Promise<{ ok: true } | { ok: false; code?: 'LAST_SUPER_ADMIN' | 'NOT_FOUND'; error: string }> {
   if (isDatabaseConfigured()) {
     try {
-      return await persistDbAdminUserUpdate(userId, patch);
+      return await persistDbAdminUserUpdate(userId, patch, undefined, options);
     } catch (err) {
       return {
         ok: false,

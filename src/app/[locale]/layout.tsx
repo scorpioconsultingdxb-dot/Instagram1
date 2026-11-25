@@ -27,8 +27,16 @@ export default async function LocaleLayout({
 
   return (
     <div className="flex min-h-screen flex-col">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-xl focus:bg-[#7957FF] focus:px-4 focus:py-2 focus:text-xs focus:font-bold focus:text-white focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
       <SiteHeader locale={typedLocale} dict={dict} />
-      <main className="flex-1">{children}</main>
+      <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
+        {children}
+      </main>
       <SiteFooter locale={typedLocale} dict={dict} />
       <CommandPalette locale={typedLocale} />
     </div>

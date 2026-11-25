@@ -27,6 +27,10 @@ yarn-debug.log*
 pnpm-debug.log*
 *.log
 
+# Local durable runtime data & headless browser temp dirs
+/.viewora-data/
+/.tmp-chrome-profile/
+
 # OS & editor files
 .DS_Store
 Thumbs.db

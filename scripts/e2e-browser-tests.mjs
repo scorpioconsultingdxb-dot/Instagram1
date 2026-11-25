@@ -154,6 +154,7 @@ async function runTests() {
       env: {
         ...process.env,
         DEMO_MODE_ENABLED: 'true',
+        VIEWORA_ALLOW_LOCAL_DEV_STORAGE: 'true',
         PAYMENTS_ENABLED: 'false',
         VIEWORA_DATA_DIR: dataDir,
       },
@@ -175,6 +176,24 @@ async function runTests() {
 
   try {
     await waitForServer(BASE_URL);
+
+    // 0. Stage 1 Independent Database & Zero-Supabase Health Check
+    const healthRes = await fetch(`${BASE_URL}/api/health`);
+    const healthJson = await healthRes.json();
+    assert(healthRes.ok && healthJson.ok === true, 'Expected /api/health to return ok: true');
+    assert(
+      healthJson.services?.database?.engine === 'postgresql',
+      `Expected database engine postgresql, got ${healthJson.services?.database?.engine}`
+    );
+    assert(
+      healthJson.services?.payments?.enabled === false,
+      'Expected payments.enabled to remain false'
+    );
+    assert(
+      !JSON.stringify(healthJson).toLowerCase().includes('supabase'),
+      'Unexpected supabase reference in /api/health'
+    );
+    report.passed.push('Health endpoint reports independent PostgreSQL engine with zero Supabase references and payments disabled');
 
     chrome = spawn(
       CHROME_PATH,
@@ -626,6 +645,24 @@ async function runTests() {
 
     report.screenshots.push(await cdp.screenshot('final_admin_1440px.png'));
     report.passed.push('Admin Console rendering, RBAC, inline entitlement limit editing, locked payments_enabled guard, and runtime feature-flag enforcement verified');
+
+    // 8. Stage 1 Independent Auth UI Checks (Login, Forgot, Reset, Verify) — Zero Supabase copy
+    await cdp.setViewport(1440, 900);
+    for (const authRoute of ['/en/login', '/en/forgot-password', '/en/reset-password', '/en/verify-email']) {
+      await cdp.goto(`${BASE_URL}${authRoute}`, 900);
+      const bodyText = await cdp.eval(`document.body.innerText`);
+      assert(
+        !bodyText.toLowerCase().includes('supabase'),
+        `Found obsolete Supabase copy on ${authRoute}`
+      );
+      if (authRoute === '/en/login') {
+        report.screenshots.push(await cdp.screenshot('stage1_login_1440px.png'));
+      }
+      if (authRoute === '/en/reset-password') {
+        report.screenshots.push(await cdp.screenshot('stage1_reset_password_1440px.png'));
+      }
+    }
+    report.passed.push('Independent Auth UI pages (/login, /forgot-password, /reset-password, /verify-email) render cleanly with zero Supabase references');
 
     report.consoleErrors = cdp.consoleErrors;
     report.pageErrors = cdp.pageErrors;

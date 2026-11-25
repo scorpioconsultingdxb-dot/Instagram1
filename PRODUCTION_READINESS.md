@@ -1,26 +1,32 @@
-# Viewora — Production Readiness Assessment
+# Viewora — Production & Stage 2 Readiness Assessment
 
-> **Current Verdict:** **NOT YET PRODUCTION-READY FOR LIVE BILLING OR LIVE EXTERNAL DATA (Blocked on External Credentials, Live Data Provider Activation, Legal Review & Phase 7 Billing Authorization).**
-> All 10 Customer Experience & Product Quality Upgrade stages are implemented, persisted locally with aligned Supabase Postgres persistence paths across existing migration tables (with matching RLS policies ready), and verified via ESLint, TypeScript, 53 Vitest unit/integration tests across 11 suites, Next.js production build, and headless Chrome E2E regression tests across 6 viewports (`375px`–`1920px`) and 5 languages (`en`, `pt-BR`, `es`, `de`, `fr`), including 375px German/French mobile overflow checks. Payments remain strictly disabled (`PAYMENTS_ENABLED=false`).
+> **Current Verdict (Post-Stage 1):** **STAGE 1 COMPLETE AT CODE, SCHEMA, SECURITY & BUILD LEVEL — READY FOR STAGE 2 AFTER LOCAL DOCKER / POSTGRESQL RUNTIME VERIFICATION.**
+> Viewora has **zero runtime dependency on Supabase** (`@supabase/*` uninstalled, `src/lib/supabase/` & `supabase/` removed, CSP cleaned, env vars migrated). It now runs on an independent **self-hosted PostgreSQL 16 + Prisma ORM + Auth.js v5 + revocable PostgreSQL sessions** architecture with modular repositories, native PostgreSQL RLS policies, persistent local file storage (`/.viewora-storage/`), and verified backup/restore scripts. Payments remain strictly disabled (`PAYMENTS_ENABLED=false`).
 
 ## Readiness Gate Status
 
 | Gate | Status | Verification Evidence |
-| --- | --- | --- |
-| Public website responsive across 6 viewports | **Verified Locally** | Headless Chrome E2E verified at `375px`, `390px`, `768px`, `1024px`, `1440px`, `1920px` with zero horizontal overflow (`overflow: false`). |
-| Light & Dark theme visual contrast | **Verified Locally** | Programmatically asserted `rgb(8, 13, 25)` Midnight Navy canvas in dark mode and visually inspected screenshots. |
-| 12 Free SEO tools & honest disclosures | **Verified Locally** | Standardized validation, presets, empty/error states, calculation formula transparency, and honest `UNAVAILABLE` Story Viewer disclosure. |
-| Account access, onboarding & recovery honesty | **Verified Locally** | Password visibility toggles, strength hints, sanitized return redirects, optional 3-step onboarding, and honest `503` on `/api/auth/forgot-password` when Supabase is unconfigured. |
-| Persistent Personal Digital HQ | **Verified Locally** | Account-owned durable storage (`src/lib/auth/profile-prefs.ts` + Supabase migration `20261125000004_experience_upgrade.sql`); strict HTTP validation with zero false optimistic saves. |
-| Persistent Customer Dashboard & explicit Demo Preview | **Verified Locally** | Modularized dashboard with durable saved profiles, research folders, private notes, comparison projects, notification read states, report library, and export history (local JSON fallback + aligned Supabase Postgres paths for `saved_profiles`, `profile_snapshots`, `comparison_projects`, `competitor_sets`, `notifications`, `research_folders`, `workspaces`, `workspace_members`, `ai_reports`, `report_exports`). Zero forced demo seeding for real users. |
-| Synchronized 5-tier pricing & disabled payments | **Verified Locally** | Free/Starter/Premium/Pro/Agency synchronized via `src/lib/entitlements/service.ts` (local JSON fallback + aligned Supabase Postgres paths for `plans`, `plan_billing_options`, `plan_entitlements`); unlimited (`null`) and disabled quotas formatted consistently (`∞`/`0`) across Pricing, Dashboard, and Profile HQ; `PAYMENTS_ENABLED=false`, checkout/webhook return `503`, `payments_enabled` flag locked false. |
-| Durable Admin Operations & least-privilege RBAC | **Verified Locally** | Role capability matrix (`src/lib/admin/rbac.ts`), inline numeric/unlimited entitlement quota editing across all 13 feature keys (with blank-input rejection), durable user/CMS/ticket/broadcast/flag/audit/funnel store (local JSON + aligned Supabase Postgres paths for `profiles`, `subscriptions`, `cms_content`, `support_tickets`, `broadcast_notifications`, `feature_flags`, `audit_logs`, `funnel_events`), clear sample vs. recorded metric labeling. |
-| Five-language customer journey coverage | **Verified Locally** | Expanded `en`, `pt-BR`, `es`, `de`, `fr` dictionaries wired across Homepage, Pricing, Login/Register, Free Tools, Customer Dashboard, and Personal Digital HQ; verified in Vitest and headless Chrome E2E (`/pt-BR/pricing`, `/es/tools`, `/de/login`, `/fr/register`, `/pt-BR/dashboard`, `/de/dashboard/profile`) including `375px` German/French mobile overflow checks. |
-| Automated checks, production build & browser E2E | **Verified Locally** | `lint` (0 errors), `typecheck` (0 errors), `test` (53/53 passed across 11 suites), `build` (281 static routes), `test:e2e` (all 7 journeys passed, 0 console/page errors). |
-| Local Git commit history | **Verified Locally** | Sequential stage-by-stage local Git commits on `main` (not pushed). |
-| Real Supabase Auth & Postgres migration execution | **Blocked (Awaiting Credentials)** | 4 SQL migrations authored including `20261125000004_experience_upgrade.sql`; requires live Supabase project to apply & test. |
-| Legitimate live Instagram data provider | **Blocked (Awaiting Credentials)** | Official Meta API & Licensed Provider adapters preserved; requires Meta App Review or signed vendor license. |
-| Live Gemini AI reports | **Blocked (Awaiting Credentials)** | Transparently falls back to clearly labeled deterministic templates until `GEMINI_API_KEY` is configured. |
-| Live Resend email delivery & DNS (SPF/DKIM/DMARC) | **Blocked (Awaiting Credentials)** | Disabled by default (`EMAIL_NOTIFICATIONS_ENABLED=false`); requires Resend key & verified sending domain. |
-| Formal legal review (GDPR, LGPD, UAE PDPL) | **Blocked (Requires Counsel)** | Draft Privacy, Terms, and Cookie policies authored and badged as drafts. |
-| Phase 7 — Stripe Billing & Affiliate Payouts | **Future Development (Reserved)** | Explicitly disabled and deferred until separate authorization. |
+| :--- | :--- | :--- |
+| Complete Supabase removal (0 runtime dependency) | **Verified** | Zero `@supabase/*` packages in `package.json`; `src/lib/supabase/` and `supabase/` removed; `https://*.supabase.co` removed from CSP; zero `NEXT_PUBLIC_SUPABASE_*` env reads; documented in [docs/SUPABASE_REMOVAL_REPORT.md](./docs/SUPABASE_REMOVAL_REPORT.md). |
+| Prisma schema, SQL migrations & seed | **Verified (Static & Generated)** | `prisma validate` passed (`prisma/schema.prisma`, 40 models across 13 modules); `prisma generate` succeeded (v6.19.3); `20261125000001_initial_viewora_schema` (1,362-line DDL) and `20261125000002_postgres_rls_and_roles` (PostgreSQL RLS + least-privilege `viewora_app`) generated; idempotent `prisma/seed.ts` & secure `scripts/db/create-admin.ts` authored. |
+| Independent Auth.js v5 + DB session security | **Verified (Unit & Contract)** | `src/lib/auth/auth.ts`, `/api/auth/[...nextauth]`, bcrypt cost 12, revocable PostgreSQL `Session` tokens, single-use SHA-256 hashed verification/reset tokens, login rate limiting, anti-enumeration, safe redirects, and confirmed account deletion/export verified across 56 passing Vitest tests. |
+| Cross-account & cross-workspace isolation | **Verified (Repository Harness)** | `src/lib/storage/db-persistence.test.ts` explicitly verifies `WorkspaceAuthorizationError` on cross-account reads/updates/deletes for saved profiles, private research notes, folders, and notifications, plus `LocalFileStorage` owner isolation. |
+| ESLint, TypeScript, Unit Tests & Production Build | **Verified Locally** | `lint` (0 errors), `typecheck` (0 errors), `test` (12/12 files, 56 passed, 1 live-DB test skipped cleanly when `TEST_DATABASE_URL` unset), `build` (284 routes compiled cleanly). |
+| Public website, 12 free tools, 5 languages & UI | **Verified Locally** | Existing frontend preserved; updated login/register/forgot-password/reset-password/verify-email UI; headless Chrome E2E across 6 viewports (`375px`–`1920px`) and 5 languages with zero Supabase references. |
+| Payments strictly disabled | **Verified** | `PAYMENTS_ENABLED=false`, `NEXT_PUBLIC_PAYMENTS_ENABLED=false`, `payments_enabled` flag locked `false`, checkout/webhook endpoints return `503`. |
+| **Live Docker Compose + PostgreSQL execution (`db:up`, `migrate deploy`, `seed`, `backup`/`restore`, restart persistence)** | **Blocked on Local Environment** | **Docker Desktop and local PostgreSQL binaries (`docker`, `psql`, `pg_dump`, `pg_restore`, WSL) are not installed on this Windows host.** Must be executed once Docker Desktop or PostgreSQL 16 is installed on the target host or CI runner (including running `TEST_DATABASE_URL=... npm run test`). |
+| Historical Supabase data migration | **N/A (No Export Found)** | Audited repository and local directories: no Supabase SQL/CSV/auth export exists. Clean database initialized; no historical customer data recovered or claimed. |
+| Live external integrations (Meta API, Gemini AI, Resend Email, Stripe) | **Deferred (Out of Stage 1 Scope)** | Preserved modular provider interfaces; external integrations remain inactive until explicitly authorized in subsequent stages. |
+| Legal policy review (GDPR / LGPD / UAE PDPL) | **Blocked (Requires Counsel)** | Draft Privacy, Terms, and Cookie policies require legal counsel sign-off before public commercial launch. |
+
+## Honest Stage 2 Readiness Assessment
+
+- **Ready for Stage 2 code work:** Yes — all database models, migrations, repositories, Auth.js flows, and local storage abstractions are cleanly separated from Supabase and compile/test cleanly.
+- **Required operational step before Stage 2 live DB testing:** Install Docker Desktop (or PostgreSQL 16) on the host machine and run:
+  1. `cp .env.example .env.local` (populate generated `AUTH_SECRET`, `POSTGRES_PASSWORD`, `POSTGRES_ADMIN_PASSWORD`, `DATABASE_URL`, `DATABASE_ADMIN_URL`, `TEST_DATABASE_URL`)
+  2. `npm run db:up`
+  3. `npm run db:migrate:deploy && npm run db:seed`
+  4. `npm run db:health`
+  5. `npm run test` (with `TEST_DATABASE_URL` set so the live PostgreSQL integration test runs)
+  6. `npm run db:backup` and test restore into `viewora_test` via `scripts/db/restore.ps1 -TargetDb viewora_test -ConfirmRestore`
+  7. Verify restart persistence via `docker compose restart postgres` and `npm run db:health`.

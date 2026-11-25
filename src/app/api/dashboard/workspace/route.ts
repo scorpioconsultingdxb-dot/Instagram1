@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getCurrentSessionUser } from '@/lib/auth/session';
+import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import {
   hasEntitlement,
   loadConfiguredPlans,
@@ -114,6 +115,21 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isAllowedCsrfOrigin(request)) {
+    return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
+  try {
+    return await handleWorkspacePost(request);
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: 'Database service is temporarily unavailable.' },
+      { status: 503 }
+    );
+  }
+}
+
+async function handleWorkspacePost(request: NextRequest) {
   const user = await getCurrentSessionUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });

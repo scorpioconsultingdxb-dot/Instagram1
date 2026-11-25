@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
+import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import { getCurrentSessionUser } from '@/lib/auth/session';
 import { createStripeCheckoutSession } from '@/lib/billing/stripe';
 import { persistFunnelEvent } from '@/lib/analytics/funnel';
@@ -11,6 +12,10 @@ const checkoutSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAllowedCsrfOrigin(request)) {
+    return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = checkoutSchema.safeParse(body);
   if (!parsed.success) {

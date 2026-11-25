@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown, ChevronUp, FileDown, FileText, Lock, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Copy, FileDown, FileText, Lock, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import type { Dictionary } from '@/i18n/types';
 import type {
@@ -32,11 +32,46 @@ export function ReportsLibraryModule({
 }) {
   const [expandedReportId, setExpandedReportId] = useState<string | null>(reports[0]?.id ?? null);
   const [filterType, setFilterType] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const filteredReports =
-    filterType === 'all'
-      ? reports
-      : reports.filter((r) => r.report.reportType === filterType);
+  const filteredReports = reports.filter((r) => {
+    if (filterType !== 'all' && r.report.reportType !== filterType) return false;
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      r.report.username.toLowerCase().includes(q) ||
+      r.report.executiveSummary.toLowerCase().includes(q) ||
+      r.report.reportType.toLowerCase().includes(q)
+    );
+  });
+
+  const copyReportMarkdown = async (entry: SavedAiReportRecord) => {
+    const r = entry.report;
+    const md = [
+      `# Viewora Intelligence Brief — @${r.username}`,
+      `- **Report Type:** ${r.reportType.replace(/_/g, ' ')}`,
+      `- **Data Provenance:** ${r.dataClass} (${r.sourceLabel})`,
+      `- **Execution Mode:** ${r.executionMode} (${r.modelName})`,
+      `- **Saved:** ${entry.savedAt}`,
+      '',
+      '## Executive Summary',
+      r.executiveSummary,
+      '',
+      '## Key Findings',
+      ...r.keyFindings.map((k) => `- ${k}`),
+      '',
+      '## Recommendations',
+      ...r.recommendations.map((rec) => `- ${rec}`),
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(md);
+      setCopiedId(entry.id);
+      window.setTimeout(() => setCopiedId((prev) => (prev === entry.id ? null : prev)), 2200);
+    } catch {
+      // clipboard unavailable
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -133,21 +168,31 @@ export function ReportsLibraryModule({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {reports.length > 0 ? (
-              <select
-                aria-label="Filter saved reports by type"
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
-              >
-                <option value="all">All report types</option>
-                <option value="profile_performance">Profile Performance</option>
-                <option value="growth_opportunity">Growth Opportunity</option>
-                <option value="competitor_comparison">Competitor Comparison</option>
-                <option value="influencer_evaluation">Influencer Evaluation</option>
-                <option value="content_strategy">Content Strategy</option>
-                <option value="social_media_audit">Social Media Audit</option>
-                <option value="weekly_executive_summary">Weekly Executive Summary</option>
-              </select>
+              <>
+                <input
+                  type="search"
+                  aria-label="Search saved reports"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Filter by @username or keyword…"
+                  className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                />
+                <select
+                  aria-label="Filter saved reports by type"
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value)}
+                  className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                >
+                  <option value="all">All report types</option>
+                  <option value="profile_performance">Profile Performance</option>
+                  <option value="growth_opportunity">Growth Opportunity</option>
+                  <option value="competitor_comparison">Competitor Comparison</option>
+                  <option value="influencer_evaluation">Influencer Evaluation</option>
+                  <option value="content_strategy">Content Strategy</option>
+                  <option value="social_media_audit">Social Media Audit</option>
+                  <option value="weekly_executive_summary">Weekly Executive Summary</option>
+                </select>
+              </>
             ) : null}
             <button
               type="button"
@@ -211,9 +256,28 @@ export function ReportsLibraryModule({
 
                   {open ? (
                     <div className="space-y-3 border-t border-slate-200 p-4 text-xs dark:border-[#263047]">
-                      <p className="leading-relaxed text-[#0F172A] dark:text-slate-200">
-                        {r.executiveSummary}
-                      </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="leading-relaxed text-[#0F172A] dark:text-slate-200">
+                          {r.executiveSummary}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void copyReportMarkdown(entry)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200"
+                        >
+                          {copiedId === entry.id ? (
+                            <>
+                              <Check className="h-3 w-3 text-emerald-500" aria-hidden="true" />
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3 w-3" aria-hidden="true" />
+                              Copy Brief
+                            </>
+                          )}
+                        </button>
+                      </div>
                       <div className="grid gap-3 md:grid-cols-2">
                         <div>
                           <p className="font-bold text-emerald-700 dark:text-[#34D399]">

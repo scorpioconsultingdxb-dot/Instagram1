@@ -1,7 +1,7 @@
 'use client';
 
-import { GitCompare, Loader2, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowUpDown, Download, GitCompare, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/types';
 import type {
@@ -12,6 +12,16 @@ import type {
 import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';
 import { EmptyState, UpgradePreviewCard } from '@/components/ui/Primitives';
 import { ConfirmDialog, StatusBanner } from '@/components/layout/PageShell';
+
+type SortField = 'followers' | 'er' | 'delta' | 'cadence';
+
+function escapeCsvCell(value: string | number | null | undefined): string {
+  const str = String(value ?? '');
+  if (/[",\n\r]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
 
 export function CompetitorStudio({
   locale,
@@ -38,11 +48,59 @@ export function CompetitorStudio({
   const [activeProjectId, setActiveProjectId] = useState<string | null>(
     workspace.comparisons[0]?.id ?? null
   );
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editHandles, setEditHandles] = useState<string[]>([]);
+
+  const [sortField, setSortField] = useState<SortField>('er');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<{ tone: 'success' | 'error'; message: string } | null>(
     null
   );
   const [deleteTarget, setDeleteTarget] = useState<ComparisonProjectRecord | null>(null);
+
+  const activeProject = workspace.comparisons.find((c) => c.id === activeProjectId) ?? null;
+
+  const baseRows = useMemo(
+    () =>
+      activeProject
+        ? activeProfiles.filter((p) =>
+            activeProject.usernames.includes(p.username.toLowerCase())
+          )
+        : activeProfiles,
+    [activeProject, activeProfiles]
+  );
+
+  const avgEr = useMemo(
+    () =>
+      baseRows.length > 0
+        ? Number(
+            (
+              baseRows.reduce((sum, p) => sum + (p.profile.estimatedEngagementRate ?? 0), 0) /
+              baseRows.length
+            ).toFixed(2)
+          )
+        : 0,
+    [baseRows]
+  );
+
+  const rowsToCompare = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...baseRows].sort((a, b) => {
+      if (sortField === 'followers') {
+        return ((a.profile.followersCount ?? 0) - (b.profile.followersCount ?? 0)) * dir;
+      }
+      if (sortField === 'cadence') {
+        return ((a.profile.postingCadencePerWeek ?? 0) - (b.profile.postingCadencePerWeek ?? 0)) * dir;
+      }
+      const erA = a.profile.estimatedEngagementRate ?? 0;
+      const erB = b.profile.estimatedEngagementRate ?? 0;
+      return (erA - erB) * dir;
+    });
+  }, [baseRows, sortField, sortDir]);
 
   if (!canCompetitors) {
     return (
@@ -55,10 +113,32 @@ export function CompetitorStudio({
     );
   }
 
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortField(field);
+      setSortDir('desc');
+    }
+  };
+
   const toggleHandle = (username: string) => {
     setSelectedHandles((prev) =>
       prev.includes(username) ? prev.filter((u) => u !== username) : [...prev, username]
     );
+  };
+
+  const toggleEditHandle = (username: string) => {
+    setEditHandles((prev) =>
+      prev.includes(username) ? prev.filter((u) => u !== username) : [...prev, username]
+    );
+  };
+
+  const startEditingProject = (proj: ComparisonProjectRecord) => {
+    setEditingProjectId(proj.id);
+    setEditName(proj.name);
+    setEditNotes(proj.notes);
+    setEditHandles([...proj.usernames]);
   };
 
   const createProject = async () => {
@@ -105,6 +185,49 @@ export function CompetitorStudio({
     }
   };
 
+  const saveEditedProject = async () => {
+    if (!editingProjectId) return;
+    setBanner(null);
+    if (editName.trim().length < 2) {
+      setBanner({ tone: 'error', message: 'Project name must be at least 2 characters.' });
+      return;
+    }
+    if (editHandles.length < 2) {
+      setBanner({ tone: 'error', message: 'Select at least 2 profiles for the comparison project.' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch('/api/dashboard/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'update_comparison',
+          id: editingProjectId,
+          name: editName.trim(),
+          notes: editNotes.trim(),
+          usernames: editHandles,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        workspace?: UserWorkspaceState;
+      } | null;
+      if (!res.ok || !json?.ok || !json.workspace) {
+        setBanner({ tone: 'error', message: json?.error ?? 'Could not update comparison project.' });
+        return;
+      }
+      onWorkspaceChange(json.workspace);
+      setEditingProjectId(null);
+      setBanner({ tone: 'success', message: 'Comparison project updated.' });
+    } catch {
+      setBanner({ tone: 'error', message: 'Network error while updating comparison project.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     setBusy(true);
@@ -127,6 +250,9 @@ export function CompetitorStudio({
       if (activeProjectId === deleteTarget.id) {
         setActiveProjectId(json.workspace.comparisons[0]?.id ?? null);
       }
+      if (editingProjectId === deleteTarget.id) {
+        setEditingProjectId(null);
+      }
       setBanner({ tone: 'success', message: `Deleted comparison project "${deleteTarget.name}".` });
     } finally {
       setBusy(false);
@@ -134,22 +260,48 @@ export function CompetitorStudio({
     }
   };
 
-  const activeProject = workspace.comparisons.find((c) => c.id === activeProjectId) ?? null;
-  const rowsToCompare = activeProject
-    ? activeProfiles.filter((p) =>
-        activeProject.usernames.includes(p.username.toLowerCase())
-      )
-    : activeProfiles;
-
-  const avgEr =
-    rowsToCompare.length > 0
-      ? Number(
-          (
-            rowsToCompare.reduce((sum, p) => sum + (p.profile.estimatedEngagementRate ?? 0), 0) /
-            rowsToCompare.length
-          ).toFixed(2)
-        )
-      : 0;
+  const downloadComparisonCsv = () => {
+    const header = [
+      'Project',
+      'Username',
+      'Display Name',
+      'Followers',
+      'Estimated ER (%)',
+      'Delta vs Group Avg (pts)',
+      'Posts per Week',
+      'Data Provenance',
+      'Exported At',
+    ];
+    const exportedAt = new Date().toISOString();
+    const projectLabel = activeProject?.name ?? 'All Active Profiles';
+    const lines = [
+      header.map(escapeCsvCell).join(','),
+      ...rowsToCompare.map((item) => {
+        const er = item.profile.estimatedEngagementRate ?? 0;
+        const delta = Number((er - avgEr).toFixed(2));
+        return [
+          projectLabel,
+          `@${item.username}`,
+          item.profile.displayName,
+          item.profile.followersCount ?? 0,
+          item.profile.estimatedEngagementRate ?? '',
+          delta,
+          item.profile.postingCadencePerWeek ?? '',
+          item.dataClass,
+          exportedAt,
+        ]
+          .map(escapeCsvCell)
+          .join(',');
+      }),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `viewora-comparison-${projectLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-5">
@@ -160,14 +312,25 @@ export function CompetitorStudio({
               Competitor Comparison Projects ({workspace.comparisons.length})
             </h2>
             <p className="mt-0.5 text-xs text-[#64748B] dark:text-[#94A3B8]">
-              Create persistent comparison sets across saved profiles and benchmark engagement
-              deltas against the group average.
+              Create, edit, sort, and export side-by-side comparison sets across saved profiles.
             </p>
           </div>
-          <ProvenanceBadge
-            dataClass={isDemoPreview ? 'demo' : rowsToCompare[0]?.dataClass ?? 'unavailable'}
-            labels={dict.provenance}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            {rowsToCompare.length >= 2 ? (
+              <button
+                type="button"
+                onClick={downloadComparisonCsv}
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-slate-200"
+              >
+                <Download className="h-3.5 w-3.5 text-[#6941EF] dark:text-[#A99AFF]" aria-hidden="true" />
+                Export Matrix CSV
+              </button>
+            ) : null}
+            <ProvenanceBadge
+              dataClass={isDemoPreview ? 'demo' : rowsToCompare[0]?.dataClass ?? 'unavailable'}
+              labels={dict.provenance}
+            />
+          </div>
         </div>
 
         {banner ? (
@@ -190,7 +353,10 @@ export function CompetitorStudio({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setActiveProjectId(null)}
+                  onClick={() => {
+                    setActiveProjectId(null);
+                    setEditingProjectId(null);
+                  }}
                   className={`rounded-xl px-3 py-1.5 text-xs font-semibold ${
                     activeProjectId === null
                       ? 'bg-[#7957FF] text-white'
@@ -203,7 +369,10 @@ export function CompetitorStudio({
                   <span key={proj.id} className="inline-flex items-center">
                     <button
                       type="button"
-                      onClick={() => setActiveProjectId(proj.id)}
+                      onClick={() => {
+                        setActiveProjectId(proj.id);
+                        setEditingProjectId(null);
+                      }}
                       className={`rounded-l-xl px-3 py-1.5 text-xs font-semibold ${
                         activeProjectId === proj.id
                           ? 'bg-[#7957FF] text-white'
@@ -211,6 +380,17 @@ export function CompetitorStudio({
                       }`}
                     >
                       {proj.name} ({proj.usernames.length})
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Edit project ${proj.name}`}
+                      onClick={() => {
+                        setActiveProjectId(proj.id);
+                        startEditingProject(proj);
+                      }}
+                      className="bg-slate-100 px-1.5 py-1.5 text-xs text-slate-400 hover:text-[#6941EF] dark:bg-[#0F172A]"
+                    >
+                      <Pencil className="h-3 w-3" aria-hidden="true" />
                     </button>
                     <button
                       type="button"
@@ -225,16 +405,115 @@ export function CompetitorStudio({
               </div>
             ) : null}
 
-            {/* Comparison Matrix Table */}
+            {/* Inline Edit Active Comparison Project */}
+            {editingProjectId ? (
+              <div className="rounded-2xl border border-violet-200 bg-violet-50/40 p-4 dark:border-[#263047] dark:bg-[#192337]/60">
+                <p className="text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                  Edit Comparison Project
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    aria-label="Edit project name"
+                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                  />
+                  <input
+                    type="text"
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    aria-label="Edit project notes"
+                    placeholder="Benchmarking goal or notes"
+                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {activeProfiles.map((p) => {
+                    const picked = editHandles.includes(p.username.toLowerCase());
+                    return (
+                      <button
+                        key={p.username}
+                        type="button"
+                        aria-pressed={picked}
+                        onClick={() => toggleEditHandle(p.username.toLowerCase())}
+                        className={`rounded-lg px-2.5 py-1 font-mono text-xs font-semibold transition ${
+                          picked
+                            ? 'bg-[#7957FF] text-white'
+                            : 'border border-slate-200 bg-white text-[#64748B] dark:border-[#263047] dark:bg-[#0F172A] dark:text-slate-300'
+                        }`}
+                      >
+                        {picked ? '✓ ' : '+ '}@{p.username}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void saveEditedProject()}
+                    className="viewora-btn-primary rounded-xl px-4 py-1.5 text-xs font-semibold disabled:opacity-60"
+                  >
+                    {busy ? 'Saving…' : 'Save Changes'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingProjectId(null)}
+                    className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-[#64748B] dark:border-[#263047]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Sortable Comparison Matrix Table */}
             <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-[#263047]">
-              <table className="w-full min-w-[600px] text-left text-xs tabular-nums">
+              <table className="w-full min-w-[620px] text-left text-xs tabular-nums">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-[#64748B] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#94A3B8]">
                     <th className="px-4 py-3 font-semibold">Profile</th>
-                    <th className="px-4 py-3 font-semibold">Followers</th>
-                    <th className="px-4 py-3 font-semibold">Est. ER</th>
-                    <th className="px-4 py-3 font-semibold">Delta vs Group ({avgEr}%)</th>
-                    <th className="px-4 py-3 font-semibold">Posts / wk</th>
+                    <th className="px-4 py-3 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('followers')}
+                        className="inline-flex items-center gap-1 hover:text-[#6941EF] dark:hover:text-[#A99AFF]"
+                      >
+                        Followers
+                        <ArrowUpDown className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    </th>
+                    <th className="px-4 py-3 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('er')}
+                        className="inline-flex items-center gap-1 hover:text-[#6941EF] dark:hover:text-[#A99AFF]"
+                      >
+                        Est. ER
+                        <ArrowUpDown className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    </th>
+                    <th className="px-4 py-3 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('delta')}
+                        className="inline-flex items-center gap-1 hover:text-[#6941EF] dark:hover:text-[#A99AFF]"
+                      >
+                        Delta vs Group ({avgEr}%)
+                        <ArrowUpDown className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    </th>
+                    <th className="px-4 py-3 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('cadence')}
+                        className="inline-flex items-center gap-1 hover:text-[#6941EF] dark:hover:text-[#A99AFF]"
+                      >
+                        Posts / wk
+                        <ArrowUpDown className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    </th>
                     <th className="px-4 py-3 font-semibold">Source</th>
                   </tr>
                 </thead>
@@ -281,7 +560,7 @@ export function CompetitorStudio({
               </table>
             </div>
 
-            {activeProject?.notes ? (
+            {activeProject?.notes && editingProjectId !== activeProject.id ? (
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-[#64748B] dark:border-[#263047] dark:bg-[#0F172A] dark:text-slate-300">
                 <strong className="text-[#0F172A] dark:text-white">Project Notes:</strong>{' '}
                 {activeProject.notes}

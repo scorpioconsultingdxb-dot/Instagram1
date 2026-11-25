@@ -80,7 +80,7 @@ export function SiteHeader({
   };
 
   const navLinkClass = (active: boolean) =>
-    `whitespace-nowrap rounded-lg px-2 py-2 text-[13px] xl:px-2.5 xl:text-sm font-medium transition ${
+    `whitespace-nowrap rounded-lg px-2 py-2 text-[13px] font-medium transition ${
       active
         ? 'bg-violet-50 font-semibold text-[#6941EF] dark:bg-[#192337] dark:text-[#A99AFF]'
         : 'text-[#64748B] hover:bg-slate-100 hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:bg-[#131C2E] dark:hover:text-[#F8FAFC]'
@@ -244,7 +244,7 @@ export function SiteHeader({
           <Link
             href={`/${locale}/data-transparency`}
             aria-current={isActive(`/${locale}/data-transparency`) ? 'page' : undefined}
-            className={`hidden xl:inline-flex ${navLinkClass(isActive(`/${locale}/data-transparency`))}`}
+            className={`hidden 2xl:inline-flex ${navLinkClass(isActive(`/${locale}/data-transparency`))}`}
           >
             {dict.footer.dataTransparency}
           </Link>

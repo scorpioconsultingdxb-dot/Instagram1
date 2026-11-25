@@ -22,7 +22,8 @@ export function checkAuthRateLimit(params: {
     | 'forgot_password'
     | 'reset_password'
     | 'verify_email'
-    | 'resend_verification';
+    | 'resend_verification'
+    | 'contact';
   identifier: string;
   maxAttempts?: number;
   windowMs?: number;

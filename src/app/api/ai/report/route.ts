@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
+import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import { getCurrentSessionUser } from '@/lib/auth/session';
 import {
   assertEntitlement,
@@ -30,6 +31,21 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAllowedCsrfOrigin(request)) {
+    return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
+  try {
+    return await handleAiReportPost(request);
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: 'AI report service is temporarily unavailable.' },
+      { status: 503 }
+    );
+  }
+}
+
+async function handleAiReportPost(request: NextRequest) {
   const user = await getCurrentSessionUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });

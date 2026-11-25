@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
+import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import { hasAdminCapability, requireAdminApi } from '@/lib/admin/rbac';
+import { isDatabaseConfigured } from '@/lib/env';
+import { reactivateDbUserAccount, suspendDbUserAccount } from '@/lib/db/repositories/users.repo';
+import { upsertDbUserOverride } from '@/lib/db/repositories/entitlements.repo';
 import {
   persistAuditLog,
   persistBroadcastCreate,
@@ -97,9 +101,41 @@ const adminActionSchema = z.discriminatedUnion('type', [
     id: z.string().min(1),
     isActive: z.boolean(),
   }),
+  z.object({
+    type: z.literal('suspend_user'),
+    userId: z.string().min(1),
+    reason: z.string().trim().max(300).optional(),
+  }),
+  z.object({
+    type: z.literal('reactivate_user'),
+    userId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('grant_user_override'),
+    userId: z.string().min(1),
+    featureKey: featureKeySchema,
+    enabled: z.boolean(),
+    numericLimit: z.number().int().min(0).max(100_000).nullable(),
+    reason: z.string().trim().max(300).optional(),
+  }),
 ]);
 
 export async function POST(request: NextRequest) {
+  if (!isAllowedCsrfOrigin(request)) {
+    return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
+  try {
+    return await handleAdminActionPost(request);
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: 'Administration service is temporarily unavailable.' },
+      { status: 503 }
+    );
+  }
+}
+
+async function handleAdminActionPost(request: NextRequest) {
   const guard = await requireAdminApi();
   if (!guard.ok) return guard.response;
 
@@ -326,6 +362,101 @@ export async function POST(request: NextRequest) {
       diff: { isActive: broadcast.isActive },
     });
     return NextResponse.json({ ok: true, broadcast, audit });
+  }
+
+  if (action.type === 'suspend_user') {
+    if (!hasAdminCapability(actor.role, 'manage_users')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot suspend customer accounts.` },
+        { status: 403 }
+      );
+    }
+    if (action.userId === actor.id) {
+      return NextResponse.json(
+        { ok: false, error: 'Administrators cannot suspend their own active account.' },
+        { status: 400 }
+      );
+    }
+    if (!isDatabaseConfigured()) {
+      return NextResponse.json(
+        { ok: false, error: 'Account suspension requires a configured PostgreSQL database.' },
+        { status: 503 }
+      );
+    }
+    await suspendDbUserAccount(action.userId);
+    const audit = await persistAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'admin.user.suspended',
+      targetType: 'user',
+      targetId: action.userId,
+      diff: { accountStatus: 'suspended', reason: action.reason ?? null },
+    });
+    return NextResponse.json({ ok: true, userId: action.userId, accountStatus: 'suspended', audit });
+  }
+
+  if (action.type === 'reactivate_user') {
+    if (!hasAdminCapability(actor.role, 'manage_users')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot reactivate customer accounts.` },
+        { status: 403 }
+      );
+    }
+    if (!isDatabaseConfigured()) {
+      return NextResponse.json(
+        { ok: false, error: 'Account reactivation requires a configured PostgreSQL database.' },
+        { status: 503 }
+      );
+    }
+    await reactivateDbUserAccount(action.userId);
+    const audit = await persistAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'admin.user.reactivated',
+      targetType: 'user',
+      targetId: action.userId,
+      diff: { accountStatus: 'active' },
+    });
+    return NextResponse.json({ ok: true, userId: action.userId, accountStatus: 'active', audit });
+  }
+
+  if (action.type === 'grant_user_override') {
+    if (!hasAdminCapability(actor.role, 'manage_entitlements')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot grant per-user entitlement overrides.` },
+        { status: 403 }
+      );
+    }
+    if (!isDatabaseConfigured()) {
+      return NextResponse.json(
+        { ok: false, error: 'Per-user entitlement overrides require a configured PostgreSQL database.' },
+        { status: 503 }
+      );
+    }
+    await upsertDbUserOverride(
+      action.userId,
+      {
+        featureKey: action.featureKey as FeatureKey,
+        enabled: action.enabled,
+        numericLimit: action.numericLimit,
+        reason: action.reason,
+      },
+      actor.id
+    );
+    const audit = await persistAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'admin.entitlement_override.updated',
+      targetType: 'user',
+      targetId: action.userId,
+      diff: {
+        featureKey: action.featureKey,
+        enabled: action.enabled,
+        numericLimit: action.numericLimit,
+        reason: action.reason ?? null,
+      },
+    });
+    return NextResponse.json({ ok: true, userId: action.userId, featureKey: action.featureKey, audit });
   }
 
   // update_cms

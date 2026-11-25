@@ -22,6 +22,7 @@ export function NotificationsSupportModule({
   onWorkspaceChange: (next: UserWorkspaceState) => void;
 }) {
   const [emailPrefs, setEmailPrefs] = useState(initialEmailPrefs);
+  const [notifFilter, setNotifFilter] = useState<'all' | 'unread'>('all');
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<{ tone: 'success' | 'error'; message: string } | null>(
     null
@@ -52,14 +53,14 @@ export function NotificationsSupportModule({
     };
   }, [mode]);
 
-  const markRead = async (id: string) => {
+  const setNotificationRead = async (id: string, read: boolean) => {
     setBusy(true);
     setBanner(null);
     try {
       const res = await fetch('/api/dashboard/workspace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'mark_notification_read', id, read: true }),
+        body: JSON.stringify({ type: 'mark_notification_read', id, read }),
       });
       const json = (await res.json().catch(() => null)) as {
         ok?: boolean;
@@ -334,8 +335,33 @@ export function NotificationsSupportModule({
             </div>
           ) : null}
 
+          <div className="flex flex-wrap items-center gap-2">
+            {(['all', 'unread'] as const).map((tab) => {
+              const unreadCount = workspace.notifications.filter((n) => !n.read).length;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  aria-pressed={notifFilter === tab}
+                  onClick={() => setNotifFilter(tab)}
+                  className={`rounded-full px-3 py-1 text-[11px] font-semibold capitalize transition ${
+                    notifFilter === tab
+                      ? 'bg-[#7957FF] text-white'
+                      : 'bg-slate-100 text-[#64748B] hover:text-[#0F172A] dark:bg-[#0F172A] dark:text-[#94A3B8]'
+                  }`}
+                >
+                  {tab === 'all'
+                    ? `All (${workspace.notifications.length})`
+                    : `Unread (${unreadCount})`}
+                </button>
+              );
+            })}
+          </div>
+
           <div className="space-y-3">
-            {workspace.notifications.map((n) => (
+            {workspace.notifications
+              .filter((n) => (notifFilter === 'unread' ? !n.read : true))
+              .map((n) => (
               <div
                 key={n.id}
                 className={`rounded-xl border p-3.5 text-xs ${
@@ -355,16 +381,14 @@ export function NotificationsSupportModule({
                   <span className="text-[10px] font-semibold uppercase text-[#64748B]">
                     {n.read ? 'Read' : 'Unread'}
                   </span>
-                  {!n.read ? (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void markRead(n.id)}
-                      className="text-[11px] font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
-                    >
-                      Mark as read
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void setNotificationRead(n.id, !n.read)}
+                    className="text-[11px] font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+                  >
+                    {n.read ? 'Mark as unread' : 'Mark as read'}
+                  </button>
                 </div>
               </div>
             ))}

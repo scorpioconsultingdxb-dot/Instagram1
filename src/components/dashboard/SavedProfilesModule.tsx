@@ -56,6 +56,7 @@ export function SavedProfilesModule({
     workspace.folders[0]?.id ?? ''
   );
   const [filterFolder, setFilterFolder] = useState<string>('all');
+  const [filterTag, setFilterTag] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'followers_desc' | 'er_desc' | 'alpha'>(
     workspace.settings.defaultSort
@@ -205,6 +206,14 @@ export function SavedProfilesModule({
     setConfirmDelete(null);
   };
 
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    for (const p of workspace.savedProfiles) {
+      for (const t of p.tags) tagSet.add(t);
+    }
+    return Array.from(tagSet).sort();
+  }, [workspace.savedProfiles]);
+
   const filteredProfiles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const list = workspace.savedProfiles.filter((item) => {
@@ -213,6 +222,9 @@ export function SavedProfilesModule({
       }
       if (filterFolder === 'unassigned' && item.folderId !== null) return false;
       if (filterFolder !== 'all' && filterFolder !== 'unassigned' && item.folderId !== filterFolder) {
+        return false;
+      }
+      if (filterTag !== 'all' && !item.tags.includes(filterTag)) {
         return false;
       }
       if (!q) return true;
@@ -241,6 +253,7 @@ export function SavedProfilesModule({
     workspace.settings.activeWorkspace,
     scopeToActiveWorkspace,
     filterFolder,
+    filterTag,
     searchQuery,
     sortBy,
   ]);
@@ -482,10 +495,43 @@ export function SavedProfilesModule({
             actionLabel="Show all saved profiles"
             onAction={() => {
               setFilterFolder('all');
+              setFilterTag('all');
               setSearchQuery('');
             }}
           />
         ) : (
+          <div className="space-y-3">
+            {allTags.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                <span className="font-semibold text-[#64748B] dark:text-[#94A3B8]">Filter by tag:</span>
+                <button
+                  type="button"
+                  onClick={() => setFilterTag('all')}
+                  className={`rounded-full px-2.5 py-0.5 font-semibold transition ${
+                    filterTag === 'all'
+                      ? 'bg-[#7957FF] text-white'
+                      : 'bg-slate-100 text-[#64748B] hover:text-[#0F172A] dark:bg-[#0F172A] dark:text-[#94A3B8]'
+                  }`}
+                >
+                  All tags
+                </button>
+                {allTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setFilterTag(filterTag === tag ? 'all' : tag)}
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-semibold transition ${
+                      filterTag === tag
+                        ? 'bg-[#7957FF] text-white'
+                        : 'bg-violet-50 text-[#6941EF] hover:bg-violet-100 dark:bg-violet-950/60 dark:text-[#A99AFF]'
+                    }`}
+                  >
+                    <Tag className="h-2.5 w-2.5" aria-hidden="true" />
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredProfiles.map((item) => {
               const folder = workspace.folders.find((f) => f.id === item.folderId);
@@ -578,9 +624,15 @@ export function SavedProfilesModule({
                           />
                         </label>
                         <label className="block text-[11px] font-semibold text-[#0F172A] dark:text-slate-200">
-                          Private Note (account-only)
+                          <span className="flex items-center justify-between">
+                            <span>Private Note (account-only)</span>
+                            <span className="font-mono text-[10px] font-normal text-[#64748B]">
+                              {draftNote.length} / 2000
+                            </span>
+                          </span>
                           <textarea
                             rows={2}
+                            maxLength={2000}
                             value={draftNote}
                             onChange={(e) => setDraftNote(e.target.value)}
                             placeholder="Add private research takeaways…"
@@ -641,6 +693,7 @@ export function SavedProfilesModule({
                 </article>
               );
             })}
+          </div>
           </div>
         )}
       </div>

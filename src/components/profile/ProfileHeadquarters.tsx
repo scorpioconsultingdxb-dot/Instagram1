@@ -19,7 +19,6 @@ import {
   Plus,
   Shield,
   Sparkles,
-  Trash2,
   User,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -33,6 +32,7 @@ import type { PersonalProfilePrefs, PersonalShortcut } from '@/lib/auth/profile-
 import type { WorkspaceUsageStats } from '@/lib/dashboard/store';
 import { useTheme, type AccentPreset, type ThemePreference } from '@/components/theme/ThemeProvider';
 import { Breadcrumbs, MembershipBadge, MetricCard } from '@/components/ui/Primitives';
+import { AccountSecurityPanel, InlineAccountDeletionCard } from './AccountSecurityPanel';
 
 type ProfileTab =
   | 'overview'
@@ -473,9 +473,30 @@ export function ProfileHeadquarters({
                     • Authentication:{' '}
                     <strong className="text-[#0F172A] dark:text-white">
                       {user.authMode === 'database'
-                        ? 'Independent PostgreSQL + Auth.js'
+                        ? 'Independent PostgreSQL Sessions'
                         : 'Isolated Local Demo'}
                     </strong>
+                  </li>
+                  <li>
+                    • Email Verification:{' '}
+                    <strong
+                      className={
+                        user.emailVerified
+                          ? 'text-emerald-700 dark:text-[#34D399]'
+                          : 'text-amber-700 dark:text-amber-300'
+                      }
+                    >
+                      {user.emailVerified ? 'Verified' : 'Verification Pending'}
+                    </strong>
+                    {!user.emailVerified ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('security')}
+                        className="ml-2 font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+                      >
+                        Manage
+                      </button>
+                    ) : null}
                   </li>
                   <li>
                     • {tp.memberSince}:{' '}
@@ -982,37 +1003,7 @@ export function ProfileHeadquarters({
         ) : null}
 
         {activeTab === 'security' ? (
-          <div className="space-y-4 text-xs text-[#64748B] dark:text-[#94A3B8]">
-            <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-              Session &amp; Connected Account Security
-            </h2>
-            <p>
-              Authentication Mode:{' '}
-              <strong className="font-mono text-[#0F172A] dark:text-white">{user.authMode}</strong>{' '}
-              · Sessions use HttpOnly signed cookies with server-side verification.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href={`/${locale}/forgot-password`}
-                className="rounded-xl border border-slate-200 px-4 py-2 font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
-              >
-                Password Recovery Flow
-              </Link>
-              <Link
-                href={`/${locale}/dashboard/settings`}
-                className="rounded-xl border border-slate-200 px-4 py-2 font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
-              >
-                Account &amp; Privacy Settings
-              </Link>
-              <Link
-                href="/api/meta/oauth/start"
-                prefetch={false}
-                className="rounded-xl border border-slate-200 px-4 py-2 font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
-              >
-                Check Meta OAuth Connection Status
-              </Link>
-            </div>
-          </div>
+          <AccountSecurityPanel locale={locale} user={user} />
         ) : null}
 
         {activeTab === 'privacy' ? (
@@ -1033,21 +1024,7 @@ export function ProfileHeadquarters({
                 Download My Data
               </Link>
             </div>
-            <div className="rounded-2xl border border-rose-200 p-5 dark:border-rose-900/50">
-              <h3 className="flex items-center gap-1.5 text-sm font-bold text-rose-600 dark:text-[#F87171]">
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-                Delete Account
-              </h3>
-              <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                Permanently remove your profile and revoke active sessions via confirmed deletion.
-              </p>
-              <Link
-                href={`/${locale}/dashboard/settings`}
-                className="mt-4 inline-block rounded-xl border border-rose-300 px-4 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300"
-              >
-                Open Deletion Controls
-              </Link>
-            </div>
+            <InlineAccountDeletionCard locale={locale} userEmail={user.email} />
           </div>
         ) : null}
       </div>

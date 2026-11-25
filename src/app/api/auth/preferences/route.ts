@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getCurrentSessionUser, upsertLocalUser } from '@/lib/auth/session';
+import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
 import { updateDbAccountPreferences } from '@/lib/db/repositories/users.repo';
 
@@ -17,6 +18,10 @@ const prefsSchema = z.object({
 });
 
 export async function PATCH(request: NextRequest) {
+  if (!isAllowedCsrfOrigin(request)) {
+    return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
   const user = await getCurrentSessionUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });

@@ -400,6 +400,67 @@ export async function revokeAllDbUserSessions(
   return res.count;
 }
 
+export interface ActiveSessionSummary {
+  id: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  expires: string;
+  isCurrent: boolean;
+}
+
+export async function listDbUserActiveSessions(
+  userId: string,
+  currentRawToken?: string,
+  client: PrismaClient = getPrismaClient()
+): Promise<ActiveSessionSummary[]> {
+  const currentHash = currentRawToken ? hashOpaqueToken(currentRawToken) : null;
+  const now = new Date();
+  const rows = await client.session.findMany({
+    where: {
+      userId,
+      revokedAt: null,
+      expires: { gt: now },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 25,
+    select: {
+      id: true,
+      sessionToken: true,
+      ipAddress: true,
+      userAgent: true,
+      createdAt: true,
+      expires: true,
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    ipAddress: row.ipAddress ?? null,
+    userAgent: row.userAgent ?? null,
+    createdAt: row.createdAt.toISOString(),
+    expires: row.expires.toISOString(),
+    isCurrent: Boolean(currentHash && row.sessionToken === currentHash),
+  }));
+}
+
+export async function revokeDbSessionById(
+  userId: string,
+  sessionId: string,
+  client: PrismaClient = getPrismaClient()
+): Promise<boolean> {
+  if (!userId || !sessionId) return false;
+  const res = await client.session.updateMany({
+    where: {
+      id: sessionId,
+      userId,
+      revokedAt: null,
+    },
+    data: { revokedAt: new Date() },
+  });
+  return res.count > 0;
+}
+
 export async function suspendDbUserAccount(
   userId: string,
   client: PrismaClient = getPrismaClient()

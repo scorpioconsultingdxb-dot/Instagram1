@@ -10,9 +10,12 @@ import {
   deleteDbUserAccount,
   getDbSessionUserById,
   listDbAdminUsers,
+  listDbUserActiveSessions,
   persistDbAdminUserUpdate,
   registerUserWithWorkspace,
   resolveDbSessionByRawToken,
+  revokeAllDbUserSessions,
+  revokeDbSessionById,
   revokeDbSessionByRawToken,
   suspendDbUserAccount,
   verifyDbUserCredentials,
@@ -311,15 +314,29 @@ function createRelationalPrismaHarness() {
           user: user ? attachUserIncludes(user, include?.user?.include) : null,
         };
       },
+      findMany: async ({
+        where,
+      }: {
+        where: { userId?: string; revokedAt?: null; expires?: { gt: Date } };
+      }) =>
+        Array.from(db.sessions.values()).filter((row) => {
+          if (where.userId && row.userId !== where.userId) return false;
+          if (where.revokedAt === null && row.revokedAt !== null) return false;
+          if (where.expires?.gt && (row.expires as Date).getTime() <= where.expires.gt.getTime()) {
+            return false;
+          }
+          return true;
+        }),
       updateMany: async ({
         where,
         data,
       }: {
-        where: { sessionToken?: string | { not?: string }; userId?: string; revokedAt?: null };
+        where: { id?: string; sessionToken?: string | { not?: string }; userId?: string; revokedAt?: null };
         data: Record<string, unknown>;
       }) => {
         let count = 0;
         for (const [key, row] of db.sessions.entries()) {
+          if (where.id && row.id !== where.id) continue;
           if (where.userId && row.userId !== where.userId) continue;
           if (where.revokedAt === null && row.revokedAt !== null) continue;
           if (typeof where.sessionToken === 'string' && row.sessionToken !== where.sessionToken) continue;
@@ -1201,5 +1218,67 @@ describe('Independent PostgreSQL Prisma Repositories & Cross-Account Isolation',
     expect(
       await verifyDbUserCredentials('security-check@example.com', 'SecurityCheckPass!1', harness.client)
     ).toBeNull();
+  });
+
+  it('lists active sessions safely without token exposure and enforces cross-user session revocation isolation', async () => {
+    const regA = await registerUserWithWorkspace(
+      {
+        email: 'sessions-a@example.com',
+        password: 'StrongPassword123!',
+        fullName: 'Session Owner A',
+        segment: 'personal',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      harness.client
+    );
+    const regB = await registerUserWithWorkspace(
+      {
+        email: 'sessions-b@example.com',
+        password: 'StrongPassword123!',
+        fullName: 'Session Owner B',
+        segment: 'personal',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      harness.client
+    );
+    expect(regA.ok && regB.ok).toBe(true);
+    if (!regA.ok || !regB.ok) return;
+
+    const s1 = await createDbSession(
+      { userId: regA.user.id, ipAddress: '203.0.113.10', userAgent: 'Chrome/130' },
+      harness.client
+    );
+    const s2 = await createDbSession(
+      { userId: regA.user.id, ipAddress: '203.0.113.20', userAgent: 'Firefox/131' },
+      harness.client
+    );
+    const s3 = await createDbSession(
+      { userId: regA.user.id, ipAddress: '203.0.113.30', userAgent: 'Safari/18' },
+      harness.client
+    );
+
+    const activeList = await listDbUserActiveSessions(regA.user.id, s1.rawToken, harness.client);
+    expect(activeList).toHaveLength(3);
+    expect(activeList.filter((s) => s.isCurrent)).toHaveLength(1);
+    expect(JSON.stringify(activeList)).not.toContain(s1.rawToken);
+
+    // Cross-user revocation MUST fail: User B cannot revoke User A's session
+    const secondSession = activeList.find((s) => !s.isCurrent)!;
+    const crossRevoke = await revokeDbSessionById(regB.user.id, secondSession.id, harness.client);
+    expect(crossRevoke).toBe(false);
+
+    // Owner revokes specific session cleanly
+    const ownRevoke = await revokeDbSessionById(regA.user.id, secondSession.id, harness.client);
+    expect(ownRevoke).toBe(true);
+    expect(await listDbUserActiveSessions(regA.user.id, s1.rawToken, harness.client)).toHaveLength(2);
+
+    // Revoke all other sessions keeps current s1 alive and invalidates s2 & s3
+    const othersRevoked = await revokeAllDbUserSessions(regA.user.id, s1.rawToken, harness.client);
+    expect(othersRevoked).toBe(1);
+    expect(await resolveDbSessionByRawToken(s1.rawToken, harness.client)).not.toBeNull();
+    expect(await resolveDbSessionByRawToken(s2.rawToken, harness.client)).toBeNull();
+    expect(await resolveDbSessionByRawToken(s3.rawToken, harness.client)).toBeNull();
   });
 });

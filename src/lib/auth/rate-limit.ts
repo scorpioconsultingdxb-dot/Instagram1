@@ -16,7 +16,13 @@ export interface RateLimitResult {
  * Protects against credential stuffing and brute-force attacks.
  */
 export function checkAuthRateLimit(params: {
-  scope: 'login' | 'signup' | 'forgot_password' | 'reset_password' | 'verify_email';
+  scope:
+    | 'login'
+    | 'signup'
+    | 'forgot_password'
+    | 'reset_password'
+    | 'verify_email'
+    | 'resend_verification';
   identifier: string;
   maxAttempts?: number;
   windowMs?: number;

@@ -66,7 +66,23 @@ export function SignupForm({
     length: password.length >= 8,
     mixed: /[a-z]/.test(password) && /[A-Z]/.test(password),
     number: /\d/.test(password),
+    special: /[^A-Za-z0-9]/.test(password),
   };
+  const pwScore =
+    Number(pwChecks.length) +
+    Number(pwChecks.mixed) +
+    Number(pwChecks.number) +
+    Number(pwChecks.special);
+  const pwStrengthLabel =
+    password.length === 0
+      ? ''
+      : pwScore <= 1
+        ? 'Weak'
+        : pwScore === 2
+          ? 'Fair'
+          : pwScore === 3
+            ? 'Good'
+            : 'Strong';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -233,6 +249,40 @@ export function SignupForm({
             )}
           </button>
         </div>
+        {password.length > 0 ? (
+          <div className="mt-2 space-y-1">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-[#64748B] dark:text-[#94A3B8]">Password strength</span>
+              <span
+                className={`font-semibold ${
+                  pwScore >= 3
+                    ? 'text-emerald-700 dark:text-[#34D399]'
+                    : pwScore === 2
+                      ? 'text-amber-700 dark:text-amber-300'
+                      : 'text-rose-600 dark:text-rose-300'
+                }`}
+              >
+                {pwStrengthLabel}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-1" aria-hidden="true">
+              {[1, 2, 3, 4].map((level) => (
+                <span
+                  key={level}
+                  className={`h-1 rounded-full transition ${
+                    pwScore >= level
+                      ? pwScore >= 3
+                        ? 'bg-emerald-500'
+                        : pwScore === 2
+                          ? 'bg-amber-500'
+                          : 'bg-rose-500'
+                      : 'bg-slate-200 dark:bg-[#192337]'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div
           id="signup-password-hints"
           className="mt-2 flex flex-wrap gap-3 text-[11px] text-[#64748B] dark:text-[#94A3B8]"
@@ -367,6 +417,18 @@ export function SignupForm({
           </>
         )}
       </button>
+
+      <p className="text-center text-[11px] leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
+        By creating an account you confirm acceptance of our{' '}
+        <Link href={`/${locale}/terms`} className="underline hover:text-[#6941EF] dark:hover:text-[#A99AFF]">
+          Terms of Service
+        </Link>{' '}
+        and{' '}
+        <Link href={`/${locale}/privacy`} className="underline hover:text-[#6941EF] dark:hover:text-[#A99AFF]">
+          Privacy Policy
+        </Link>
+        . No payment card required.
+      </p>
 
       <p className="text-center text-xs text-[#64748B] dark:text-[#94A3B8]">
         {t.alreadyRegistered}{' '}

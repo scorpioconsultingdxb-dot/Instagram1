@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { isDatabaseConfigured } from '@/lib/env';
+import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import { consumeEmailVerificationToken } from '@/lib/db/repositories/auth-tokens.repo';
 import { checkAuthRateLimit, extractClientIp } from '@/lib/auth/rate-limit';
 
@@ -9,6 +10,10 @@ const verifySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAllowedCsrfOrigin(request)) {
+    return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
   const ip = extractClientIp(request.headers);
   const limit = checkAuthRateLimit({
     scope: 'verify_email',

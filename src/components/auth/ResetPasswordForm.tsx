@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Locale } from '@/i18n/config';
 
@@ -14,9 +14,18 @@ export function ResetPasswordForm({
 }) {
   const [token, setToken] = useState(initialToken);
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const pwChecks = {
+    length: newPassword.length >= 8,
+    mixed: /[a-z]/.test(newPassword) && /[A-Z]/.test(newPassword),
+    number: /\d/.test(newPassword),
+    matches: confirmPassword.length > 0 && newPassword === confirmPassword,
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -24,11 +33,15 @@ export function ResetPasswordForm({
     setSuccess(null);
 
     if (token.trim().length < 16) {
-      setError('Please enter a valid reset token.');
+      setError('Please enter a valid single-use reset token.');
       return;
     }
     if (newPassword.length < 8) {
       setError('New password must be at least 8 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('New password and confirmation do not match.');
       return;
     }
 
@@ -44,8 +57,12 @@ export function ResetPasswordForm({
         setError(json.error ?? `Password reset failed (HTTP ${res.status}).`);
         return;
       }
-      setSuccess(json.message ?? 'Your password has been updated.');
+      setSuccess(
+        json.message ??
+          'Your password has been updated and all prior sessions were signed out.'
+      );
       setNewPassword('');
+      setConfirmPassword('');
     } catch {
       setError('Unable to reach the authentication service right now.');
     } finally {
@@ -82,18 +99,89 @@ export function ResetPasswordForm({
           >
             New password (min 8 characters)
           </label>
+          <div className="relative mt-1.5">
+            <input
+              id="reset-new-password"
+              type={showPassword ? 'text' : 'password'}
+              required
+              minLength={8}
+              autoComplete="new-password"
+              disabled={loading}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Enter a strong new password"
+              aria-describedby="reset-password-hints"
+              className="h-11 w-full rounded-xl border border-slate-300 bg-white pr-11 pl-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-pressed={showPassword}
+              className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded-lg p-1.5 text-[#64748B] hover:bg-slate-100 hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:bg-[#192337] dark:hover:text-white"
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Eye className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
+          <div
+            id="reset-password-hints"
+            className="mt-2 flex flex-wrap gap-3 text-[11px] text-[#64748B] dark:text-[#94A3B8]"
+          >
+            <span
+              className={`inline-flex items-center gap-1 ${pwChecks.length ? 'font-semibold text-emerald-700 dark:text-[#34D399]' : ''}`}
+            >
+              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+              8+ characters
+            </span>
+            <span
+              className={`inline-flex items-center gap-1 ${pwChecks.mixed ? 'font-semibold text-emerald-700 dark:text-[#34D399]' : ''}`}
+            >
+              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+              Upper &amp; lowercase
+            </span>
+            <span
+              className={`inline-flex items-center gap-1 ${pwChecks.number ? 'font-semibold text-emerald-700 dark:text-[#34D399]' : ''}`}
+            >
+              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+              Includes a number
+            </span>
+          </div>
+        </div>
+
+        <div>
+          <label
+            htmlFor="reset-confirm-password"
+            className="block text-xs font-semibold text-[#0F172A] dark:text-slate-200"
+          >
+            Confirm new password
+          </label>
           <input
-            id="reset-new-password"
-            type="password"
+            id="reset-confirm-password"
+            type={showPassword ? 'text' : 'password'}
             required
             minLength={8}
             autoComplete="new-password"
             disabled={loading}
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="Enter a strong new password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Re-enter your new password"
             className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
           />
+          {confirmPassword.length > 0 ? (
+            <p
+              className={`mt-1.5 text-[11px] font-medium ${
+                pwChecks.matches
+                  ? 'text-emerald-700 dark:text-[#34D399]'
+                  : 'text-rose-600 dark:text-rose-300'
+              }`}
+            >
+              {pwChecks.matches ? 'Passwords match.' : 'Passwords do not match yet.'}
+            </p>
+          ) : null}
         </div>
 
         {error ? (

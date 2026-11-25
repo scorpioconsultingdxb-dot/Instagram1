@@ -4,12 +4,15 @@ import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { buildPageMetadata } from '@/lib/seo/metadata';
 import { getCurrentSessionUser, isAdminRole } from '@/lib/auth/session';
+import { getAccountProfilePrefs } from '@/lib/auth/profile-prefs';
 import { resolveEntitlements } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import {
-  CustomerDashboard,
-  type DashboardSavedProfile,
-} from '@/components/dashboard/CustomerDashboard';
+  getUserWorkspaceState,
+  type SavedProfileRecord,
+} from '@/lib/dashboard/store';
+import { listActiveBroadcastNotifications } from '@/lib/admin/store';
+import { CustomerDashboard } from '@/components/dashboard/CustomerDashboard';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,10 +26,37 @@ export async function generateMetadata({
   return buildPageMetadata({
     locale: safeLocale,
     path: '/dashboard',
-    title: 'Customer Dashboard — Viewora',
-    description: 'Manage saved public Instagram profiles, analytics charts, and reports.',
+    title: 'Customer Dashboard',
+    description: 'Manage saved public Instagram profiles, folders, notes, analytics charts, and reports.',
     noIndex: true,
   });
+}
+
+async function buildExplicitDemoPreviewProfiles(workspaceName: string): Promise<SavedProfileRecord[]> {
+  const handles = ['viewora.studio', 'aurora.coffee', 'nordic.design'];
+  const list: SavedProfileRecord[] = [];
+  const now = new Date().toISOString();
+  for (const handle of handles) {
+    const res = await defaultProviderRegistry.lookupPublicProfile(handle, {
+      allowDemoFallback: true,
+    });
+    if (res.data) {
+      list.push({
+        id: `demo-preview-${res.data.username}`,
+        username: res.data.username,
+        profile: res.data,
+        dataClass: res.meta.dataClass,
+        providerLabel: res.meta.providerLabel,
+        workspace: workspaceName,
+        folderId: null,
+        tags: ['demo-preview'],
+        privateNote: '',
+        savedAt: now,
+        updatedAt: now,
+      });
+    }
+  }
+  return list;
 }
 
 export default async function DashboardPage({
@@ -34,10 +64,10 @@ export default async function DashboardPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ demo?: string }>;
 }) {
   const { locale } = await params;
-  const { saved } = await searchParams;
+  const { demo } = await searchParams;
   const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
 
   const user = await getCurrentSessionUser();
@@ -52,26 +82,13 @@ export default async function DashboardPage({
     userId: user.id,
   });
 
-  const starterHandles = Array.from(
-    new Set(
-      [saved, 'viewora.studio', 'aurora.coffee'].filter((h): h is string => Boolean(h))
-    )
-  ).slice(0, entitlements.rules.tracked_profiles.numericLimit ?? 3);
-
-  const initialProfiles: DashboardSavedProfile[] = [];
-  for (const handle of starterHandles) {
-    const res = await defaultProviderRegistry.lookupPublicProfile(handle, {
-      allowDemoFallback: true,
-    });
-    if (res.data) {
-      initialProfiles.push({
-        profile: res.data,
-        dataClass: res.meta.dataClass,
-        providerLabel: res.meta.providerLabel,
-        workspace: user.segment === 'agency' ? 'Primary Agency HQ' : 'Personal Workspace',
-      });
-    }
-  }
+  const profilePrefs = await getAccountProfilePrefs(user.id);
+  const defaultWs =
+    profilePrefs.workspaceName ||
+    (user.segment === 'agency' ? 'Primary Agency HQ' : 'Personal Workspace');
+  const workspace = getUserWorkspaceState(user.id, defaultWs);
+  const demoPreviewProfiles = await buildExplicitDemoPreviewProfiles(defaultWs);
+  const broadcasts = listActiveBroadcastNotifications(user.segment);
 
   return (
     <CustomerDashboard
@@ -79,8 +96,13 @@ export default async function DashboardPage({
       dict={dict}
       user={user}
       entitlements={entitlements}
-      initialProfiles={initialProfiles}
+      initialWorkspace={workspace}
+      demoPreviewProfiles={demoPreviewProfiles}
+      profilePrefs={profilePrefs}
+      broadcasts={broadcasts}
       isAdmin={isAdminRole(user.role)}
+      initialTab="overview"
+      initialDemoPreview={demo === '1'}
     />
   );
 }

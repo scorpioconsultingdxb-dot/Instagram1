@@ -53,6 +53,16 @@ export interface SearchAnalyticsMetric {
   dataClass: 'live' | 'cached' | 'demo';
 }
 
+export interface BroadcastNotificationRecord {
+  id: string;
+  title: string;
+  body: string;
+  category: 'system' | 'tracking' | 'report' | 'billing' | 'security';
+  targetSegment: 'all' | 'personal' | 'business' | 'agency';
+  isActive: boolean;
+  createdAt: string;
+}
+
 const featureFlags: FeatureFlagRecord[] = [
   {
     key: 'payments_enabled',
@@ -244,4 +254,26 @@ export function getApiUsageMetrics(): ApiUsageMetric[] {
 
 export function getSearchAnalyticsMetrics(): SearchAnalyticsMetric[] {
   return searchAnalyticsSnapshot;
+}
+
+const broadcastNotifications: BroadcastNotificationRecord[] = [
+  {
+    id: 'bcast-1',
+    title: 'Transparent Data Provenance Standard Active',
+    body: 'All metrics, charts, and exports display LIVE, CACHED, ESTIMATED, DEMO, or UNAVAILABLE badges. Payments remain disabled.',
+    category: 'system',
+    targetSegment: 'all',
+    isActive: true,
+    createdAt: '2026-11-24T00:00:00.000Z',
+  },
+];
+
+export function listBroadcastNotifications(): BroadcastNotificationRecord[] {
+  return broadcastNotifications;
+}
+
+export function listActiveBroadcastNotifications(segment: 'personal' | 'business' | 'agency'): BroadcastNotificationRecord[] {
+  return broadcastNotifications.filter(
+    (b) => b.isActive && (b.targetSegment === 'all' || b.targetSegment === segment)
+  );
 }

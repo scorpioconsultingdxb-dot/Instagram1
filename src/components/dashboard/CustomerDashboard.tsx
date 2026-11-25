@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Clock,
   CreditCard,
+  Eye,
   FileDown,
   GitCompare,
   LifeBuoy,
@@ -23,18 +24,19 @@ import {
   Settings,
   Shield,
   Sparkles,
-  Trash2,
   User,
   Users,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/types';
 import type { SessionUser } from '@/lib/auth/session';
+import type { PersonalProfilePrefs } from '@/lib/auth/profile-prefs';
 import type { FeatureKey, ResolvedEntitlements } from '@/lib/entitlements/types';
 import { FEATURE_LABELS } from '@/lib/entitlements/catalog';
 import { hasEntitlement } from '@/lib/entitlements/service';
-import type { DataClass, PublicProfileData } from '@/lib/providers/types';
+import type { SavedProfileRecord, UserWorkspaceState } from '@/lib/dashboard/store';
+import type { BroadcastNotificationRecord } from '@/lib/admin/store';
 import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';
 import {
   EmptyState,
@@ -45,15 +47,11 @@ import {
 import { triggerCommandPalette } from '@/components/command/CommandPalette';
 import { AnalyticsVisualizations } from './AnalyticsCharts';
 import { AiIntelligenceStudio } from './AiIntelligenceStudio';
+import { SavedProfilesModule } from './SavedProfilesModule';
+import { CompetitorStudio } from './CompetitorStudio';
+import { NotificationsSupportModule } from './NotificationsSupportModule';
 
-export interface DashboardSavedProfile {
-  profile: PublicProfileData;
-  dataClass: DataClass;
-  providerLabel: string;
-  workspace: string;
-}
-
-type DashboardTab =
+export type DashboardTab =
   | 'overview'
   | 'profiles'
   | 'analytics'
@@ -63,62 +61,68 @@ type DashboardTab =
   | 'ai'
   | 'notifications'
   | 'exports'
-  | 'billing';
+  | 'billing'
+  | 'support';
 
-const AGENCY_WORKSPACES = [
-  'Primary Agency HQ',
-  'Client: Aurora Roasters',
-  'Client: Nordic Interiors',
-];
+export interface DashboardSavedProfile {
+  profile: SavedProfileRecord['profile'];
+  dataClass: SavedProfileRecord['dataClass'];
+  providerLabel: string;
+  workspace: string;
+}
 
 export function CustomerDashboard({
   locale,
   dict,
   user,
   entitlements,
-  initialProfiles,
+  initialWorkspace,
+  demoPreviewProfiles,
+  profilePrefs,
+  broadcasts,
   isAdmin,
+  initialTab = 'overview',
+  initialDemoPreview = false,
 }: {
   locale: Locale;
   dict: Dictionary;
   user: SessionUser;
   entitlements: ResolvedEntitlements;
-  initialProfiles: DashboardSavedProfile[];
+  initialWorkspace: UserWorkspaceState;
+  demoPreviewProfiles: SavedProfileRecord[];
+  profilePrefs: PersonalProfilePrefs;
+  broadcasts: BroadcastNotificationRecord[];
   isAdmin: boolean;
+  initialTab?: DashboardTab;
+  initialDemoPreview?: boolean;
 }) {
   const router = useRouter();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
-  const [activeWorkspace, setActiveWorkspace] = useState(
-    user.segment === 'agency' ? AGENCY_WORKSPACES[0]! : 'Personal Workspace'
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    profilePrefs.sidebarDefaultCollapsed ?? false
   );
-  const [savedProfiles, setSavedProfiles] = useState<DashboardSavedProfile[]>(initialProfiles);
+  const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab);
+  const [workspace, setWorkspace] = useState<UserWorkspaceState>(initialWorkspace);
+  const [demoPreviewMode, setDemoPreviewMode] = useState<boolean>(
+    initialDemoPreview || initialWorkspace.settings.demoPreviewMode
+  );
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [showAddWorkspace, setShowAddWorkspace] = useState(false);
+
+  const effectiveProfiles: SavedProfileRecord[] = useMemo(() => {
+    if (demoPreviewMode && workspace.savedProfiles.length === 0) {
+      return demoPreviewProfiles;
+    }
+    return workspace.savedProfiles;
+  }, [demoPreviewMode, workspace.savedProfiles, demoPreviewProfiles]);
+
   const [selectedUsername, setSelectedUsername] = useState<string>(
-    initialProfiles[0]?.profile.username ?? 'viewora.studio'
+    effectiveProfiles[0]?.username ?? ''
   );
-  const [addInput, setAddInput] = useState('');
-  const [addStatus, setAddStatus] = useState<string | null>(null);
-  const [notifications, setNotifications] = useState([
-    {
-      id: 'n1',
-      title: 'Workspace ready with labeled Demo Data',
-      body: 'Explore interactive charts, AI Intelligence Studio, and PDF/CSV exports transparently.',
-      read: false,
-      time: 'Today',
-    },
-    {
-      id: 'n2',
-      title: 'Personalize your Digital Headquarters',
-      body: 'Customize your cover banner, avatar, and accent theme in My Profile HQ.',
-      read: false,
-      time: 'Today',
-    },
-  ]);
-  const [emailPrefs, setEmailPrefs] = useState(user.emailPreferences);
-  const [prefSaved, setPrefSaved] = useState(false);
 
   const selectedEntry =
-    savedProfiles.find((p) => p.profile.username === selectedUsername) ?? savedProfiles[0];
+    effectiveProfiles.find((p) => p.username === selectedUsername) ?? effectiveProfiles[0] ?? null;
+
+  const isViewingDemoOverlay = demoPreviewMode && workspace.savedProfiles.length === 0;
 
   const trackedLimit = entitlements.rules.tracked_profiles.numericLimit ?? 1;
   const canHistory = hasEntitlement(entitlements, 'historical_analytics_days');
@@ -127,75 +131,68 @@ export function CustomerDashboard({
   const canCsv = hasEntitlement(entitlements, 'csv_export');
   const canPdf = hasEntitlement(entitlements, 'pdf_export');
   const canAgency = hasEntitlement(entitlements, 'agency_dashboard');
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = workspace.notifications.filter((n) => !n.read).length;
+
+  const toggleDemoPreview = async (next: boolean) => {
+    setDemoPreviewMode(next);
+    if (next && !selectedUsername && demoPreviewProfiles[0]) {
+      setSelectedUsername(demoPreviewProfiles[0].username);
+    }
+    try {
+      const res = await fetch('/api/dashboard/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'update_settings', demoPreviewMode: next }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        workspace?: UserWorkspaceState;
+      } | null;
+      if (res.ok && json?.ok && json.workspace) {
+        setWorkspace(json.workspace);
+      }
+    } catch {
+      // keep local toggle responsive
+    }
+  };
+
+  const switchWorkspace = async (wsName: string) => {
+    const res = await fetch('/api/dashboard/workspace', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'update_settings', activeWorkspace: wsName }),
+    });
+    const json = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      workspace?: UserWorkspaceState;
+    } | null;
+    if (res.ok && json?.ok && json.workspace) {
+      setWorkspace(json.workspace);
+    }
+  };
+
+  const createWorkspace = async () => {
+    if (newWorkspaceName.trim().length < 2) return;
+    const res = await fetch('/api/dashboard/workspace', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'create_workspace', name: newWorkspaceName.trim() }),
+    });
+    const json = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      workspace?: UserWorkspaceState;
+    } | null;
+    if (res.ok && json?.ok && json.workspace) {
+      setWorkspace(json.workspace);
+      setNewWorkspaceName('');
+      setShowAddWorkspace(false);
+    }
+  };
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push(`/${locale}`);
     router.refresh();
-  };
-
-  const handleAddProfile = async () => {
-    setAddStatus(null);
-    if (!hasEntitlement(entitlements, 'tracked_profiles', savedProfiles.length)) {
-      setAddStatus(
-        `Your ${entitlements.planName} plan includes up to ${trackedLimit} saved profiles. Remove one or compare upgraded plans.`
-      );
-      return;
-    }
-
-    const res = await fetch(`/api/search?q=${encodeURIComponent(addInput)}&preview=demo`);
-    const json = (await res.json()) as {
-      ok: boolean;
-      error?: { message: string };
-      result?: {
-        data: PublicProfileData | null;
-        meta: { dataClass: DataClass; providerLabel: string; notice: string };
-      };
-    };
-
-    if (!json.ok || !json.result?.data) {
-      setAddStatus(json.error?.message || json.result?.meta.notice || 'Profile unavailable.');
-      return;
-    }
-
-    const found = json.result.data;
-    if (savedProfiles.some((p) => p.profile.username === found.username)) {
-      setAddStatus(`@${found.username} is already saved.`);
-      return;
-    }
-
-    setSavedProfiles([
-      ...savedProfiles,
-      {
-        profile: found,
-        dataClass: json.result.meta.dataClass,
-        providerLabel: json.result.meta.providerLabel,
-        workspace: activeWorkspace,
-      },
-    ]);
-    setSelectedUsername(found.username);
-    setAddInput('');
-    setAddStatus(`Saved @${found.username} (${json.result.meta.dataClass}).`);
-  };
-
-  const handleRemoveProfile = (username: string) => {
-    const next = savedProfiles.filter((p) => p.profile.username !== username);
-    setSavedProfiles(next);
-    if (selectedUsername === username && next[0]) {
-      setSelectedUsername(next[0].profile.username);
-    }
-  };
-
-  const saveEmailPreferences = async () => {
-    setPrefSaved(false);
-    await fetch('/api/auth/preferences', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emailPreferences: emailPrefs }),
-    });
-    setPrefSaved(true);
-    setTimeout(() => setPrefSaved(false), 2500);
   };
 
   const navGroups: Array<{
@@ -214,27 +211,38 @@ export function CustomerDashboard({
     {
       group: 'Monitoring',
       items: [
-        { id: 'timeline', label: 'Activity', icon: Clock },
+        { id: 'timeline', label: 'Timeline', icon: Clock },
         { id: 'calendar', label: 'Calendar', icon: Calendar },
         { id: 'competitors', label: 'Competitors', icon: GitCompare },
-        { id: 'exports', label: 'Reports', icon: FileDown },
+        { id: 'exports', label: 'Reports & Exports', icon: FileDown },
       ],
     },
     {
       group: 'Workspace',
       items: [
         { id: 'notifications', label: 'Notifications', icon: Bell },
-        { id: 'billing', label: 'Subscription', icon: CreditCard },
+        { id: 'billing', label: 'Membership', icon: CreditCard },
+        { id: 'support', label: 'Support', icon: LifeBuoy },
       ],
     },
   ];
 
-  const initials = user.fullName
+  const displayName = profilePrefs.fullName || user.fullName;
+  const initials = displayName
     .split(/\s+/)
     .map((s) => s[0])
     .join('')
     .slice(0, 2)
     .toUpperCase();
+
+  const densityPadding = profilePrefs.dashboardDensity === 'compact' ? 'space-y-3.5' : 'space-y-5';
+
+  const legacyAiProfiles: DashboardSavedProfile[] = effectiveProfiles.map((p) => ({
+    profile: p.profile,
+    dataClass: p.dataClass,
+    providerLabel: p.providerLabel,
+    workspace: p.workspace,
+  }));
 
   return (
     <div className="mx-auto max-w-[1440px] px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:pb-10">
@@ -249,8 +257,8 @@ export function CustomerDashboard({
           <div className="space-y-5">
             <div className="flex items-center justify-between px-1.5">
               {!sidebarCollapsed ? (
-                <span className="text-[11px] font-bold tracking-wider text-[#6941EF] uppercase dark:text-[#A99AFF]">
-                  Workspace
+                <span className="truncate text-[11px] font-bold tracking-wider text-[#6941EF] uppercase dark:text-[#A99AFF]">
+                  {profilePrefs.workspaceName || 'Workspace'}
                 </span>
               ) : null}
               <button
@@ -283,15 +291,27 @@ export function CustomerDashboard({
                         key={item.id}
                         type="button"
                         title={sidebarCollapsed ? item.label : undefined}
+                        aria-current={active ? 'page' : undefined}
                         onClick={() => setActiveTab(item.id)}
-                        className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-semibold transition ${
+                        className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-2.5 py-2 text-xs font-semibold transition ${
                           active
                             ? 'bg-[#7957FF] text-white shadow-xs'
                             : 'text-[#64748B] hover:bg-slate-100 hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:bg-[#192337] dark:hover:text-white'
                         } ${sidebarCollapsed ? 'justify-center' : ''}`}
                       >
-                        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                        {!sidebarCollapsed ? <span>{item.label}</span> : null}
+                        <span className="inline-flex items-center gap-2.5">
+                          <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          {!sidebarCollapsed ? <span>{item.label}</span> : null}
+                        </span>
+                        {!sidebarCollapsed && item.id === 'notifications' && unreadCount > 0 ? (
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                              active ? 'bg-white/20 text-white' : 'bg-[#7957FF] text-white'
+                            }`}
+                          >
+                            {unreadCount}
+                          </span>
+                        ) : null}
                       </button>
                     );
                   })}
@@ -307,7 +327,10 @@ export function CustomerDashboard({
                   sidebarCollapsed ? 'justify-center' : ''
                 }`}
               >
-                <User className="h-4 w-4 shrink-0 text-[#6941EF] dark:text-[#A99AFF]" aria-hidden="true" />
+                <User
+                  className="h-4 w-4 shrink-0 text-[#6941EF] dark:text-[#A99AFF]"
+                  aria-hidden="true"
+                />
                 {!sidebarCollapsed ? <span>My Profile HQ</span> : null}
               </Link>
               <Link
@@ -318,17 +341,7 @@ export function CustomerDashboard({
                 }`}
               >
                 <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {!sidebarCollapsed ? <span>Settings</span> : null}
-              </Link>
-              <Link
-                href={`/${locale}/dashboard/support`}
-                title={sidebarCollapsed ? 'Support' : undefined}
-                className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-semibold text-[#64748B] transition hover:bg-slate-100 hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:bg-[#192337] dark:hover:text-white ${
-                  sidebarCollapsed ? 'justify-center' : ''
-                }`}
-              >
-                <LifeBuoy className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {!sidebarCollapsed ? <span>Support</span> : null}
+                {!sidebarCollapsed ? <span>Privacy &amp; Settings</span> : null}
               </Link>
             </div>
           </div>
@@ -347,7 +360,7 @@ export function CustomerDashboard({
         </aside>
 
         {/* Main Workspace Canvas */}
-        <div className="min-w-0 flex-1 space-y-5">
+        <div className={`min-w-0 flex-1 ${densityPadding}`}>
           {/* Top Personalized Greeting & Utility Bar */}
           <div className="viewora-card flex flex-wrap items-center justify-between gap-4 rounded-2xl p-5">
             <div className="flex items-center gap-3.5">
@@ -356,23 +369,28 @@ export function CustomerDashboard({
                 aria-label="Open My Profile HQ"
                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#7957FF] to-[#22D3EE] font-display text-sm font-extrabold text-white shadow-sm transition hover:scale-105"
               >
-                {initials}
+                {profilePrefs.avatarPreset === 'custom-emoji' && profilePrefs.avatarEmoji
+                  ? profilePrefs.avatarEmoji
+                  : initials}
               </Link>
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="font-display text-lg font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
-                    Welcome back, {user.fullName.split(' ')[0]}
+                    Welcome back, {displayName.split(' ')[0]}
                   </h1>
                   <MembershipBadge planCode={user.planCode} />
-                  <ProvenanceBadge dataClass="demo" labels={dict.provenance} />
+                  {isViewingDemoOverlay ? (
+                    <ProvenanceBadge dataClass="demo" labels={dict.provenance} />
+                  ) : null}
                 </div>
                 <p className="mt-0.5 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                  {activeWorkspace} · <span className="capitalize">{user.segment}</span> workflow ·{' '}
+                  {workspace.settings.activeWorkspace} ·{' '}
+                  <span className="capitalize">{user.segment}</span> workflow ·{' '}
                   <Link
                     href={`/${locale}/dashboard/profile`}
                     className="font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
                   >
-                    Customize Personal HQ →
+                    Personal Digital HQ →
                   </Link>
                 </p>
               </div>
@@ -381,30 +399,54 @@ export function CustomerDashboard({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                aria-pressed={demoPreviewMode}
+                onClick={() => void toggleDemoPreview(!demoPreviewMode)}
+                className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition ${
+                  demoPreviewMode
+                    ? 'border-amber-400 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200'
+                    : 'border-slate-200 bg-white text-[#64748B] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#94A3B8]'
+                }`}
+              >
+                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                {demoPreviewMode ? 'Demo Preview: ON' : 'Demo Preview'}
+              </button>
+
+              <button
+                type="button"
                 onClick={triggerCommandPalette}
                 className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-medium text-[#64748B] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#94A3B8]"
               >
                 <Search className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Search</span>
+                <span className="hidden sm:inline">Search</span>
                 <kbd className="font-mono text-[10px]">⌘K</kbd>
               </button>
 
               {user.segment === 'agency' || canAgency ? (
-                <label className="inline-flex items-center gap-1.5 text-xs">
-                  <Building2 className="h-4 w-4 text-[#64748B]" aria-hidden="true" />
-                  <span className="sr-only">Switch workspace</span>
-                  <select
-                    value={activeWorkspace}
-                    onChange={(e) => setActiveWorkspace(e.target.value)}
-                    className="h-9 rounded-xl border border-slate-200 bg-slate-50 px-2.5 text-xs font-semibold text-[#0F172A] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#F8FAFC]"
+                <div className="flex items-center gap-1">
+                  <label className="inline-flex items-center gap-1.5 text-xs">
+                    <Building2 className="h-4 w-4 text-[#64748B]" aria-hidden="true" />
+                    <span className="sr-only">Switch workspace</span>
+                    <select
+                      value={workspace.settings.activeWorkspace}
+                      onChange={(e) => void switchWorkspace(e.target.value)}
+                      className="h-9 rounded-xl border border-slate-200 bg-slate-50 px-2.5 text-xs font-semibold text-[#0F172A] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#F8FAFC]"
+                    >
+                      {workspace.workspaces.map((ws) => (
+                        <option key={ws} value={ws}>
+                          {ws}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddWorkspace((p) => !p)}
+                    aria-label="Add workspace"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-[#64748B] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A]"
                   >
-                    {AGENCY_WORKSPACES.map((ws) => (
-                      <option key={ws} value={ws}>
-                        {ws}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
               ) : null}
 
               <button
@@ -433,25 +475,63 @@ export function CustomerDashboard({
             </div>
           </div>
 
+          {showAddWorkspace ? (
+            <div className="viewora-card flex flex-wrap items-center gap-2 rounded-2xl p-4">
+              <input
+                type="text"
+                value={newWorkspaceName}
+                onChange={(e) => setNewWorkspaceName(e.target.value)}
+                placeholder="New client workspace name (e.g. Client: Nordic Studio)"
+                className="h-9 flex-1 rounded-xl border border-slate-300 bg-white px-3 text-xs dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
+              />
+              <button
+                type="button"
+                onClick={() => void createWorkspace()}
+                className="viewora-btn-primary h-9 rounded-xl px-4 text-xs font-semibold"
+              >
+                Create Workspace
+              </button>
+            </div>
+          ) : null}
+
+          {/* Explicit Demo Preview Mode Banner */}
+          {isViewingDemoOverlay ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/80 bg-amber-50/80 px-4 py-3 text-xs text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
+              <span>
+                <strong>Explicit Demo Preview Mode Active:</strong> Showing labeled sample profiles
+                (<span className="font-mono">@viewora.studio</span>,{' '}
+                <span className="font-mono">@aurora.coffee</span>) for interface exploration. Your
+                real saved workspace currently has 0 saved profiles.
+              </span>
+              <button
+                type="button"
+                onClick={() => void toggleDemoPreview(false)}
+                className="rounded-lg border border-amber-400 bg-white px-3 py-1 font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-700 dark:bg-[#131C2E] dark:text-amber-200"
+              >
+                Exit Demo Preview
+              </button>
+            </div>
+          ) : null}
+
           {/* Active Profile Selector Strip */}
-          {savedProfiles.length > 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/70 px-4 py-2.5 text-xs dark:border-[#263047] dark:bg-[#131C2E]/70">
+          {effectiveProfiles.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-xs dark:border-[#263047] dark:bg-[#131C2E]/80">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-[#64748B] dark:text-[#94A3B8]">
                   Active profile:
                 </span>
-                {savedProfiles.map((item) => (
+                {effectiveProfiles.map((item) => (
                   <button
-                    key={item.profile.username}
+                    key={item.username}
                     type="button"
-                    onClick={() => setSelectedUsername(item.profile.username)}
+                    onClick={() => setSelectedUsername(item.username)}
                     className={`rounded-lg px-2.5 py-1 font-mono text-xs transition ${
-                      selectedEntry?.profile.username === item.profile.username
+                      selectedEntry?.username === item.username
                         ? 'bg-[#7957FF] font-semibold text-white'
                         : 'bg-slate-100 text-[#0F172A] hover:bg-slate-200 dark:bg-[#0F172A] dark:text-slate-200'
                     }`}
                   >
-                    @{item.profile.username}
+                    @{item.username}
                   </button>
                 ))}
               </div>
@@ -461,7 +541,7 @@ export function CustomerDashboard({
                 className="inline-flex items-center gap-1 text-xs font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                Add Profile
+                Manage Profiles
               </button>
             </div>
           ) : null}
@@ -469,30 +549,34 @@ export function CustomerDashboard({
           {/* TAB VIEWS */}
           {activeTab === 'overview' ? (
             <div className="space-y-5">
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
                 <MetricCard
-                  label="Saved Eligible Profiles"
-                  value={`${savedProfiles.length} / ${trackedLimit}`}
-                  hint={`${entitlements.planName} entitlement`}
+                  label="Saved Profiles"
+                  value={`${workspace.savedProfiles.length} / ${trackedLimit}`}
+                  hint={`${workspace.folders.length} research folder${workspace.folders.length === 1 ? '' : 's'}`}
                 />
                 <MetricCard
-                  label="Monthly AI Reports"
-                  value={`${entitlements.rules.ai_profile_reports.numericLimit ?? 0}`}
-                  hint={canAi ? 'AI Intelligence Studio ready' : 'Upgrade to unlock AI reports'}
-                />
-                <MetricCard
-                  label="Historical Lookback"
-                  value={
-                    canHistory
-                      ? `${entitlements.rules.historical_analytics_days.numericLimit}d`
-                      : 'Current'
+                  label="Saved AI Reports"
+                  value={`${workspace.reports.length}`}
+                  hint={
+                    canAi
+                      ? `Plan quota: ${entitlements.rules.ai_profile_reports.numericLimit}/mo`
+                      : 'Upgrade for AI Studio'
                   }
-                  hint={canHistory ? 'Recorded public snapshots' : 'Starter+ unlocks 30–365d'}
                 />
                 <MetricCard
-                  label="Team Seats"
-                  value={`${entitlements.rules.team_seats.numericLimit ?? 1}`}
-                  hint={`Workspace: ${activeWorkspace}`}
+                  label="Comparison Projects"
+                  value={`${workspace.comparisons.length}`}
+                  hint={
+                    canHistory
+                      ? `${entitlements.rules.historical_analytics_days.numericLimit}d history lookback`
+                      : 'Starter+ unlocks history'
+                  }
+                />
+                <MetricCard
+                  label="Recorded Exports"
+                  value={`${workspace.exports.length}`}
+                  hint={`${entitlements.rules.team_seats.numericLimit ?? 1} seat${(entitlements.rules.team_seats.numericLimit ?? 1) === 1 ? '' : 's'} · ${workspace.settings.activeWorkspace}`}
                 />
               </div>
 
@@ -501,7 +585,7 @@ export function CustomerDashboard({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                        Active Profile Intelligence — @{selectedEntry.profile.username}
+                        Active Profile Intelligence — @{selectedEntry.username}
                       </h2>
                       <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
                         {selectedEntry.profile.displayName} · {selectedEntry.providerLabel}
@@ -510,7 +594,7 @@ export function CustomerDashboard({
                     <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
                   </div>
 
-                  <div className="mt-5 grid gap-3 sm:grid-cols-4">
+                  <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <MetricCard
                       label="Followers"
                       value={(selectedEntry.profile.followersCount ?? 0).toLocaleString()}
@@ -535,9 +619,9 @@ export function CustomerDashboard({
                 </div>
               ) : (
                 <EmptyState
-                  title="No saved public profiles yet"
-                  description="Save an eligible public business profile or labeled demo account to inspect historical charts, calendar cadence, and AI briefs."
-                  actionLabel="Add your first profile"
+                  title="Your workspace starts clean — no forced sample accounts"
+                  description="Save an eligible public profile into your folders to unlock persistent notes and trend charts, or activate explicit Demo Preview Mode to explore sample analytics."
+                  actionLabel="Open Saved Profiles"
                   onAction={() => setActiveTab('profiles')}
                 />
               )}
@@ -545,102 +629,35 @@ export function CustomerDashboard({
           ) : null}
 
           {activeTab === 'profiles' ? (
-            <div className="viewora-card space-y-5 rounded-2xl p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                    Saved Profiles ({savedProfiles.length} / {trackedLimit})
-                  </h2>
-                  <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
-                    Try adding <span className="font-mono">@nordic.design</span> or{' '}
-                    <span className="font-mono">@solaris.fitness</span>.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={addInput}
-                    onChange={(e) => setAddInput(e.target.value)}
-                    placeholder="Enter @username"
-                    className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void handleAddProfile()}
-                    className="viewora-btn-primary inline-flex h-10 items-center gap-1 rounded-xl px-4 text-xs font-semibold"
-                  >
-                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                    Save
-                  </button>
-                </div>
-              </div>
-
-              {addStatus ? (
-                <p className="text-xs font-semibold text-[#6941EF] dark:text-[#A99AFF]">{addStatus}</p>
-              ) : null}
-
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {savedProfiles.map((item) => (
-                  <div
-                    key={item.profile.username}
-                    className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-[#263047] dark:bg-[#0F172A]"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <Link
-                          href={`/${locale}/dashboard/profiles/${encodeURIComponent(item.profile.username)}`}
-                          className="font-mono text-sm font-bold text-[#0F172A] hover:text-[#6941EF] dark:text-[#F8FAFC]"
-                        >
-                          @{item.profile.username}
-                        </Link>
-                        <ProvenanceBadge dataClass={item.dataClass} labels={dict.provenance} />
-                      </div>
-                      <p className="mt-1 text-xs text-[#64748B]">{item.profile.displayName}</p>
-                      <p className="mt-2 text-xs tabular-nums text-[#0F172A] dark:text-slate-300">
-                        {(item.profile.followersCount ?? 0).toLocaleString()} followers ·{' '}
-                        {item.profile.estimatedEngagementRate ?? '—'}% est. ER
-                      </p>
-                    </div>
-                    <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3 dark:border-[#263047]">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedUsername(item.profile.username);
-                          setActiveTab('analytics');
-                        }}
-                        className="text-xs font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
-                      >
-                        Open analytics →
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveProfile(item.profile.username)}
-                        aria-label={`Remove @${item.profile.username}`}
-                        className="text-slate-400 hover:text-rose-500"
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <SavedProfilesModule
+              locale={locale}
+              dict={dict}
+              workspace={workspace}
+              trackedLimit={trackedLimit}
+              onWorkspaceChange={(next) => {
+                setWorkspace(next);
+                if (!selectedUsername && next.savedProfiles[0]) {
+                  setSelectedUsername(next.savedProfiles[0].username);
+                }
+              }}
+              onInspectProfile={(handle) => {
+                setSelectedUsername(handle);
+                setActiveTab('analytics');
+              }}
+              onEnableDemoPreview={() => void toggleDemoPreview(true)}
+            />
           ) : null}
 
-          {activeTab === 'analytics' && selectedEntry ? (
+          {activeTab === 'analytics' ? (
             <div className="viewora-card rounded-2xl p-6">
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                    Interactive Analytics — @{selectedEntry.profile.username}
-                  </h2>
-                  <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
-                    Area growth trajectory, engagement bars, format donut &amp; publishing heatmap.
-                  </p>
-                </div>
-                <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
-              </div>
-              {!canHistory ? (
+              {!selectedEntry ? (
+                <EmptyState
+                  title="Select or save a profile to inspect analytics"
+                  description="Add an eligible public profile in Saved Profiles or turn on Demo Preview Mode to explore interactive charts and tabular checkpoints."
+                  actionLabel="Enable Demo Preview Mode"
+                  onAction={() => void toggleDemoPreview(true)}
+                />
+              ) : !canHistory ? (
                 <UpgradePreviewCard
                   title="Historical Public Analytics (30 to 365 days)"
                   description="Upgrade from Free to inspect interactive follower progression charts, format mix breakdowns, and lookback windows."
@@ -648,7 +665,21 @@ export function CustomerDashboard({
                   ctaHref={`/${locale}/pricing`}
                 />
               ) : (
-                <AnalyticsVisualizations profile={selectedEntry.profile} />
+                <>
+                  <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                        Interactive Analytics — @{selectedEntry.username}
+                      </h2>
+                      <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+                        Source: {selectedEntry.providerLabel} · Saved{' '}
+                        {new Date(selectedEntry.savedAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
+                  </div>
+                  <AnalyticsVisualizations profile={selectedEntry.profile} />
+                </>
               )}
             </div>
           ) : null}
@@ -661,13 +692,13 @@ export function CustomerDashboard({
                 </h2>
                 <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
                   Generate structured Gemini-backed or transparent template reports across 7
-                  analytical workflows.
+                  analytical workflows. Generated briefs are stored in your Report Library.
                 </p>
               </div>
               <AiIntelligenceStudio
                 locale={locale}
                 dict={dict}
-                profiles={savedProfiles}
+                profiles={legacyAiProfiles}
                 canGenerateAi={canAi}
                 canPdf={canPdf}
                 canCsv={canCsv}
@@ -675,267 +706,204 @@ export function CustomerDashboard({
             </div>
           ) : null}
 
-          {activeTab === 'timeline' && selectedEntry ? (
+          {activeTab === 'timeline' ? (
             <div className="viewora-card rounded-2xl p-6">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Activity &amp; Snapshot Timeline — @{selectedEntry.profile.username}
-                </h2>
-                <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
-              </div>
-              <ol className="mt-5 space-y-3 border-l-2 border-[#7957FF]/30 pl-4">
-                {selectedEntry.profile.historicalTrend
-                  .slice()
-                  .reverse()
-                  .map((pt) => (
-                    <li
-                      key={pt.date}
-                      className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs dark:border-[#263047] dark:bg-[#0F172A]"
-                    >
-                      <div className="flex items-center justify-between font-semibold tabular-nums text-[#0F172A] dark:text-white">
-                        <span>Observed {pt.date}</span>
-                        <span>{pt.followers.toLocaleString()} followers</span>
-                      </div>
-                      <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
-                        {pt.posts} total public posts · {pt.engagementRate}% estimated engagement
-                      </p>
-                    </li>
-                  ))}
-              </ol>
-            </div>
-          ) : null}
-
-          {activeTab === 'calendar' && selectedEntry ? (
-            <div className="viewora-card rounded-2xl p-6">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Publishing Calendar — November 2026
-                </h2>
-                <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
-              </div>
-              <div className="mt-5 grid grid-cols-7 gap-2 text-center text-xs">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                  <div key={d} className="font-semibold text-[#64748B]">
-                    {d}
-                  </div>
-                ))}
-                {Array.from({ length: 30 }, (_, i) => i + 1).map((day) => {
-                  const dateStr = `2026-11-${String(day).padStart(2, '0')}`;
-                  const matchingPost = selectedEntry.profile.recentPosts.find((p) =>
-                    p.publishedAt.startsWith(dateStr)
-                  );
-                  return (
-                    <div
-                      key={day}
-                      className={`min-h-16 rounded-xl border p-2 text-left ${
-                        matchingPost
-                          ? 'border-[#7957FF] bg-violet-50/70 dark:bg-violet-950/40'
-                          : 'border-slate-200 bg-slate-50 dark:border-[#263047] dark:bg-[#0F172A]'
-                      }`}
-                    >
-                      <span className="font-mono text-[11px] font-semibold tabular-nums text-slate-700 dark:text-slate-300">
-                        {day}
-                      </span>
-                      {matchingPost ? (
-                        <p className="mt-1 truncate rounded bg-[#7957FF] px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                          {matchingPost.mediaType}
-                        </p>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          {activeTab === 'competitors' ? (
-            <div className="viewora-card rounded-2xl p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Competitor Comparison Matrix
-                </h2>
-                <ProvenanceBadge dataClass="demo" labels={dict.provenance} />
-              </div>
-              {!canCompetitors ? (
-                <UpgradePreviewCard
-                  title="Multi-Profile Competitor Monitoring"
-                  description="Compare engagement deltas, audience ratios, and weekly posting cadence across saved public profiles."
-                  requiredTier="Premium+ Plan"
-                  ctaHref={`/${locale}/pricing`}
+              {!selectedEntry ? (
+                <EmptyState
+                  title="No timeline checkpoints to display yet"
+                  description="Save an eligible profile or enable Demo Preview Mode to review historical snapshot checkpoints."
+                  actionLabel="Enable Demo Preview Mode"
+                  onAction={() => void toggleDemoPreview(true)}
                 />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[540px] text-left text-xs tabular-nums">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-[#64748B] dark:border-[#263047]">
-                        <th className="py-2.5 pr-4">Profile</th>
-                        <th className="py-2.5 pr-4">Followers</th>
-                        <th className="py-2.5 pr-4">Est. ER</th>
-                        <th className="py-2.5 pr-4">Posts / wk</th>
-                        <th className="py-2.5">Provenance</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-[#263047]">
-                      {savedProfiles.map((item) => (
-                        <tr key={item.profile.username}>
-                          <td className="py-3 pr-4 font-mono font-bold text-[#0F172A] dark:text-white">
-                            @{item.profile.username}
-                          </td>
-                          <td className="py-3 pr-4">
-                            {(item.profile.followersCount ?? 0).toLocaleString()}
-                          </td>
-                          <td className="py-3 pr-4 font-bold text-[#6941EF] dark:text-[#A99AFF]">
-                            {item.profile.estimatedEngagementRate ?? '—'}%
-                          </td>
-                          <td className="py-3 pr-4">{item.profile.postingCadencePerWeek ?? '—'}</td>
-                          <td className="py-3">
-                            <ProvenanceBadge dataClass={item.dataClass} labels={dict.provenance} />
-                          </td>
-                        </tr>
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                      Activity &amp; Snapshot Timeline — @{selectedEntry.username}
+                    </h2>
+                    <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
+                  </div>
+                  <ol className="mt-5 space-y-3 border-l-2 border-[#7957FF]/30 pl-4">
+                    {selectedEntry.profile.historicalTrend
+                      .slice()
+                      .reverse()
+                      .map((pt) => (
+                        <li
+                          key={pt.date}
+                          className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs dark:border-[#263047] dark:bg-[#0F172A]"
+                        >
+                          <div className="flex items-center justify-between font-semibold tabular-nums text-[#0F172A] dark:text-white">
+                            <span>Observed {pt.date}</span>
+                            <span>{pt.followers.toLocaleString()} followers</span>
+                          </div>
+                          <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
+                            {pt.posts} total public posts · {pt.engagementRate}% estimated engagement
+                          </p>
+                        </li>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
+                  </ol>
+                </>
               )}
             </div>
           ) : null}
 
-          {activeTab === 'notifications' ? (
-            <div className="grid gap-5 lg:grid-cols-2">
-              <div className="viewora-card rounded-2xl p-6">
-                <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Notification Center
-                </h2>
-                <div className="mt-4 space-y-3">
-                  {notifications.map((n) => (
-                    <div
-                      key={n.id}
-                      className={`rounded-xl border p-3.5 text-xs ${
-                        n.read
-                          ? 'border-slate-200 bg-slate-50 dark:border-[#263047] dark:bg-[#0F172A]'
-                          : 'border-[#7957FF]/40 bg-violet-50/50 dark:bg-violet-950/30'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between font-semibold text-[#0F172A] dark:text-white">
-                        <span>{n.title}</span>
-                        <span className="text-[11px] font-normal text-[#64748B]">{n.time}</span>
+          {activeTab === 'calendar' ? (
+            <div className="viewora-card rounded-2xl p-6">
+              {!selectedEntry ? (
+                <EmptyState
+                  title="No publishing calendar data yet"
+                  description="Save an eligible profile or activate Demo Preview Mode to inspect post cadence by calendar date."
+                  actionLabel="Enable Demo Preview Mode"
+                  onAction={() => void toggleDemoPreview(true)}
+                />
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                      Publishing Calendar — @{selectedEntry.username}
+                    </h2>
+                    <ProvenanceBadge dataClass={selectedEntry.dataClass} labels={dict.provenance} />
+                  </div>
+                  <div className="mt-5 grid grid-cols-7 gap-2 text-center text-xs">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                      <div key={d} className="font-semibold text-[#64748B]">
+                        {d}
                       </div>
-                      <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">{n.body}</p>
-                      {!n.read ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setNotifications((prev) =>
-                              prev.map((item) => (item.id === n.id ? { ...item, read: true } : item))
-                            )
-                          }
-                          className="mt-2 text-[11px] font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+                    ))}
+                    {Array.from({ length: 30 }, (_, i) => i + 1).map((day) => {
+                      const monthPrefix =
+                        selectedEntry.profile.recentPosts[0]?.publishedAt.slice(0, 7) || '2026-11';
+                      const dateStr = `${monthPrefix}-${String(day).padStart(2, '0')}`;
+                      const matchingPost = selectedEntry.profile.recentPosts.find((p) =>
+                        p.publishedAt.startsWith(dateStr)
+                      );
+                      return (
+                        <div
+                          key={day}
+                          className={`min-h-16 rounded-xl border p-2 text-left ${
+                            matchingPost
+                              ? 'border-[#7957FF] bg-violet-50/70 dark:bg-violet-950/40'
+                              : 'border-slate-200 bg-slate-50 dark:border-[#263047] dark:bg-[#0F172A]'
+                          }`}
                         >
-                          Mark as read
-                        </button>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="viewora-card rounded-2xl p-6">
-                <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Email Notification Controls
-                </h2>
-                <div className="mt-4 space-y-3 text-xs text-[#0F172A] dark:text-slate-300">
-                  {(
-                    [
-                      ['trackingAlerts', 'Saved profile tracking alerts'],
-                      ['weeklyDigest', 'Weekly analytics summary'],
-                      ['productUpdates', 'Product updates & new tools'],
-                      ['marketing', 'Promotional offers'],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <label key={key} className="flex items-center gap-2.5">
-                      <input
-                        type="checkbox"
-                        checked={emailPrefs[key]}
-                        onChange={(e) => setEmailPrefs({ ...emailPrefs, [key]: e.target.checked })}
-                      />
-                      <span>{label}</span>
-                    </label>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void saveEmailPreferences()}
-                  className="viewora-btn-primary mt-5 rounded-xl px-4 py-2 text-xs font-semibold"
-                >
-                  Save Preferences
-                </button>
-                {prefSaved ? (
-                  <span className="ml-3 text-xs font-semibold text-emerald-600 dark:text-[#34D399]">
-                    Saved
-                  </span>
-                ) : null}
-              </div>
+                          <span className="font-mono text-[11px] font-semibold tabular-nums text-slate-700 dark:text-slate-300">
+                            {day}
+                          </span>
+                          {matchingPost ? (
+                            <p className="mt-1 truncate rounded bg-[#7957FF] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                              {matchingPost.mediaType}
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
           ) : null}
 
-          {activeTab === 'exports' && selectedEntry ? (
-            <div className="viewora-card rounded-2xl p-6">
-              <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                Report Center — @{selectedEntry.profile.username}
-              </h2>
-              <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                Every download is protected server-side by centralized entitlements and stamped with
-                data source &amp; timestamp.
-              </p>
-              <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 p-5 dark:border-[#263047]">
-                  <h3 className="text-sm font-bold text-[#0F172A] dark:text-white">
-                    Viewora Branded PDF Report
-                  </h3>
-                  <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                    Clean printable layout with profile summary &amp; historical checkpoints.
-                  </p>
-                  {canPdf ? (
-                    <a
-                      href={`/api/dashboard/export?format=pdf&username=${encodeURIComponent(selectedEntry.profile.username)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="viewora-btn-primary mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold"
-                    >
-                      <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
-                      Open PDF Report
-                    </a>
-                  ) : (
-                    <p className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-[#FBBF24]">
-                      <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                      Requires Premium+ Plan
-                    </p>
-                  )}
-                </div>
+          {activeTab === 'competitors' ? (
+            <CompetitorStudio
+              locale={locale}
+              dict={dict}
+              canCompetitors={canCompetitors}
+              workspace={workspace}
+              activeProfiles={effectiveProfiles}
+              isDemoPreview={isViewingDemoOverlay}
+              onWorkspaceChange={setWorkspace}
+            />
+          ) : null}
 
-                <div className="rounded-2xl border border-slate-200 p-5 dark:border-[#263047]">
-                  <h3 className="text-sm font-bold text-[#0F172A] dark:text-white">
-                    Structured CSV Export
-                  </h3>
+          {activeTab === 'notifications' ? (
+            <NotificationsSupportModule
+              mode="notifications"
+              workspace={workspace}
+              broadcasts={broadcasts}
+              initialEmailPrefs={user.emailPreferences}
+              onWorkspaceChange={setWorkspace}
+            />
+          ) : null}
+
+          {activeTab === 'support' ? (
+            <NotificationsSupportModule
+              mode="support"
+              workspace={workspace}
+              broadcasts={broadcasts}
+              initialEmailPrefs={user.emailPreferences}
+              onWorkspaceChange={setWorkspace}
+            />
+          ) : null}
+
+          {activeTab === 'exports' ? (
+            <div className="viewora-card rounded-2xl p-6">
+              {!selectedEntry ? (
+                <EmptyState
+                  title="Select or save a profile to export reports"
+                  description="Save an eligible profile or turn on Demo Preview Mode to download provenance-stamped PDF and CSV exports."
+                  actionLabel="Enable Demo Preview Mode"
+                  onAction={() => void toggleDemoPreview(true)}
+                />
+              ) : (
+                <>
+                  <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                    Report Center — @{selectedEntry.username}
+                  </h2>
                   <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                    Spreadsheet-ready metrics and timeline rows with provenance labels.
+                    Every download is protected server-side by centralized entitlements and stamped
+                    with data source &amp; timestamp.
                   </p>
-                  {canCsv ? (
-                    <a
-                      href={`/api/dashboard/export?format=csv&username=${encodeURIComponent(selectedEntry.profile.username)}`}
-                      className="viewora-btn-primary mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold"
-                    >
-                      <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
-                      Download CSV
-                    </a>
-                  ) : (
-                    <p className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-[#FBBF24]">
-                      <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                      Requires Pro+ Plan
-                    </p>
-                  )}
-                </div>
-              </div>
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 p-5 dark:border-[#263047]">
+                      <h3 className="text-sm font-bold text-[#0F172A] dark:text-white">
+                        Viewora Branded PDF Report
+                      </h3>
+                      <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
+                        Clean printable layout with profile summary &amp; historical checkpoints.
+                      </p>
+                      {canPdf ? (
+                        <a
+                          href={`/api/dashboard/export?format=pdf&username=${encodeURIComponent(selectedEntry.username)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="viewora-btn-primary mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold"
+                        >
+                          <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+                          Open PDF Report
+                        </a>
+                      ) : (
+                        <p className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-[#FBBF24]">
+                          <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                          Requires Premium+ Plan
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 p-5 dark:border-[#263047]">
+                      <h3 className="text-sm font-bold text-[#0F172A] dark:text-white">
+                        Structured CSV Export
+                      </h3>
+                      <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
+                        Spreadsheet-ready metrics and timeline rows with provenance labels.
+                      </p>
+                      {canCsv ? (
+                        <a
+                          href={`/api/dashboard/export?format=csv&username=${encodeURIComponent(selectedEntry.username)}`}
+                          className="viewora-btn-primary mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold"
+                        >
+                          <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+                          Download CSV
+                        </a>
+                      ) : (
+                        <p className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-[#FBBF24]">
+                          <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                          Requires Pro+ Plan
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           ) : null}
 
@@ -997,7 +965,7 @@ export function CustomerDashboard({
         </div>
       </div>
 
-      {/* Native-Style Mobile Bottom Navigation Bar */}
+      {/* Mobile Bottom Navigation Bar */}
       <nav
         aria-label="Mobile dashboard navigation"
         className="fixed right-0 bottom-0 left-0 z-40 flex items-center justify-around border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-[#263047] dark:bg-[#080D19]/95 lg:hidden"

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentSessionUser } from '@/lib/auth/session';
+import { getAccountProfilePrefs } from '@/lib/auth/profile-prefs';
+import { getUserWorkspaceState } from '@/lib/dashboard/store';
 import { resolveEntitlements } from '@/lib/entitlements/service';
 
 /**
@@ -17,6 +19,8 @@ export async function GET() {
     billingInterval: user.billingInterval,
     userId: user.id,
   });
+  const profilePrefs = await getAccountProfilePrefs(user.id);
+  const workspace = getUserWorkspaceState(user.id);
 
   const payload = {
     exportedAt: new Date().toISOString(),
@@ -30,7 +34,23 @@ export async function GET() {
       planCode: user.planCode,
       billingInterval: user.billingInterval,
       emailPreferences: user.emailPreferences,
+      createdAt: user.createdAt,
       authMode: user.authMode,
+    },
+    profilePreferences: profilePrefs,
+    workspace: {
+      folders: workspace.folders,
+      savedProfiles: workspace.savedProfiles.map((p) => ({
+        username: p.username,
+        folderId: p.folderId,
+        tags: p.tags,
+        privateNote: p.privateNote,
+        dataClass: p.dataClass,
+        savedAt: p.savedAt,
+      })),
+      comparisons: workspace.comparisons,
+      reportsCount: workspace.reports.length,
+      exportsCount: workspace.exports.length,
     },
     entitlements,
   };

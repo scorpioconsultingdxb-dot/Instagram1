@@ -4,7 +4,8 @@ import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
 import { buildPageMetadata } from '@/lib/seo/metadata';
 import { getCurrentSessionUser } from '@/lib/auth/session';
 import { resolveEntitlements } from '@/lib/entitlements/service';
-import { getExtendedProfilePrefs } from '@/lib/auth/profile-prefs';
+import { getAccountProfilePrefs } from '@/lib/auth/profile-prefs';
+import { getWorkspaceUsageStats } from '@/lib/dashboard/store';
 import { ProfileHeadquarters } from '@/components/profile/ProfileHeadquarters';
 
 export const dynamic = 'force-dynamic';
@@ -19,9 +20,9 @@ export async function generateMetadata({
   return buildPageMetadata({
     locale: safeLocale,
     path: '/dashboard/profile',
-    title: 'My Profile — Personal Digital HQ | Viewora',
+    title: 'My Profile — Personal Digital HQ',
     description:
-      'Customize your Viewora personal digital headquarters, cover banner, accent palette, workspace identity, membership, and privacy controls.',
+      'Customize your Viewora personal digital headquarters, avatar, cover banner, accent palette, shortcuts, workspace identity, membership, and privacy controls.',
     noIndex: true,
   });
 }
@@ -45,7 +46,8 @@ export default async function UserProfileHeadquartersPage({
     userId: user.id,
   });
 
-  const initialPrefs = getExtendedProfilePrefs(user.id);
+  const initialPrefs = await getAccountProfilePrefs(user.id);
+  const usageStats = getWorkspaceUsageStats(user.id);
 
   return (
     <ProfileHeadquarters
@@ -53,6 +55,7 @@ export default async function UserProfileHeadquartersPage({
       user={user}
       entitlements={entitlements}
       initialPrefs={initialPrefs}
+      usageStats={usageStats}
     />
   );
 }

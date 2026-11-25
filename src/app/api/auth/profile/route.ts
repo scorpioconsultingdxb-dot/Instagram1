@@ -1,8 +1,29 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getCurrentSessionUser, upsertLocalUser } from '@/lib/auth/session';
-import { profilePatchSchema, saveExtendedProfilePrefs } from '@/lib/auth/profile-prefs';
+import {
+  getAccountProfilePrefs,
+  profilePatchSchema,
+  saveAccountProfilePrefs,
+} from '@/lib/auth/profile-prefs';
+import { getWorkspaceUsageStats } from '@/lib/dashboard/store';
 import { isSupabaseConfigured } from '@/lib/env';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+
+export async function GET() {
+  const user = await getCurrentSessionUser();
+  if (!user) {
+    return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
+  }
+
+  const profile = await getAccountProfilePrefs(user.id);
+  const usage = getWorkspaceUsageStats(user.id);
+
+  return NextResponse.json({
+    ok: true,
+    profile,
+    usage,
+    memberSince: user.createdAt,
+  });
+}
 
 export async function PATCH(request: NextRequest) {
   const user = await getCurrentSessionUser();
@@ -13,22 +34,38 @@ export async function PATCH(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const parsed = profilePatchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ ok: false, error: 'Invalid profile update payload.' }, { status: 400 });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'Invalid profile update payload. Check field lengths and shortcut paths.',
+        issues: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+      },
+      { status: 400 }
+    );
   }
 
-  const merged = saveExtendedProfilePrefs(user.id, parsed.data);
-
-  if (parsed.data.fullName) {
-    if (isSupabaseConfigured()) {
-      const supabase = await createSupabaseServerClient();
-      await supabase
-        ?.from('profiles')
-        .update({ full_name: parsed.data.fullName.trim() })
-        .eq('id', user.id);
-    } else {
-      upsertLocalUser({ ...user, fullName: parsed.data.fullName.trim() });
-    }
+  const saved = await saveAccountProfilePrefs(user.id, parsed.data);
+  if (!saved.ok) {
+    return NextResponse.json({ ok: false, error: saved.error }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, profile: merged });
+  if (parsed.data.fullName && !isSupabaseConfigured()) {
+    upsertLocalUser({ ...user, fullName: parsed.data.fullName.trim() });
+  }
+
+  const response = NextResponse.json({
+    ok: true,
+    profile: saved.profile,
+    persistedAt: saved.profile.updatedAt,
+  });
+
+  if (parsed.data.preferredLocale) {
+    response.cookies.set('viewora_locale', parsed.data.preferredLocale, {
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: 'lax',
+    });
+  }
+
+  return response;
 }

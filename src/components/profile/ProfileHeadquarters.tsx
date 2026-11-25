@@ -1,27 +1,34 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
+  AlertTriangle,
+  ArrowRight,
   Bell,
   Building2,
   Check,
   CreditCard,
   Download,
   FileText,
+  Globe,
   KeyRound,
   LayoutDashboard,
+  Loader2,
   Palette,
+  Plus,
   Shield,
   Sparkles,
   Trash2,
   User,
 } from 'lucide-react';
 import { useState } from 'react';
-import type { Locale } from '@/i18n/config';
+import { LOCALE_METADATA, SUPPORTED_LOCALES, type Locale } from '@/i18n/config';
 import type { SessionUser } from '@/lib/auth/session';
 import type { ResolvedEntitlements } from '@/lib/entitlements/types';
 import { hasEntitlement } from '@/lib/entitlements/service';
-import type { PersonalProfilePrefs } from '@/lib/auth/profile-prefs';
+import type { PersonalProfilePrefs, PersonalShortcut } from '@/lib/auth/profile-prefs';
+import type { WorkspaceUsageStats } from '@/lib/dashboard/store';
 import { useTheme, type AccentPreset, type ThemePreference } from '@/components/theme/ThemeProvider';
 import { Breadcrumbs, MembershipBadge, MetricCard } from '@/components/ui/Primitives';
 
@@ -36,7 +43,7 @@ type ProfileTab =
   | 'privacy';
 
 const COVER_STYLES: Record<
-  NonNullable<PersonalProfilePrefs['coverPreset']>,
+  PersonalProfilePrefs['coverPreset'],
   { label: string; gradient: string }
 > = {
   aurora: {
@@ -55,6 +62,36 @@ const COVER_STYLES: Record<
     label: 'Obsidian Slate',
     gradient: 'from-[#080D19] via-[#1E293B] to-[#334155]',
   },
+  sunset: {
+    label: 'Violet Horizon',
+    gradient: 'from-[#080D19] via-[#4C1D95] to-[#9D174D]',
+  },
+};
+
+const AVATAR_STYLES: Record<
+  PersonalProfilePrefs['avatarPreset'],
+  { label: string; gradient: string }
+> = {
+  'violet-cyan': {
+    label: 'Electric Violet',
+    gradient: 'from-[#7957FF] to-[#22D3EE]',
+  },
+  'emerald-teal': {
+    label: 'Emerald Signal',
+    gradient: 'from-[#10B981] to-[#0891B2]',
+  },
+  'amber-rose': {
+    label: 'Warm Amber',
+    gradient: 'from-[#F59E0B] to-[#EC4899]',
+  },
+  'obsidian-indigo': {
+    label: 'Midnight Indigo',
+    gradient: 'from-[#1E293B] to-[#6366F1]',
+  },
+  'custom-emoji': {
+    label: 'Custom Monogram / Emoji',
+    gradient: 'from-[#6941EF] to-[#0891B2]',
+  },
 };
 
 const ACCENT_SWATCHES: Array<{ id: AccentPreset; label: string; hex: string }> = [
@@ -64,45 +101,82 @@ const ACCENT_SWATCHES: Array<{ id: AccentPreset; label: string; hex: string }> =
   { id: 'indigo', label: 'Deep Indigo', hex: '#6366F1' },
 ];
 
+const SHORTCUT_CATALOG: Array<{ label: string; href: string }> = [
+  { label: 'Analytics Dashboard', href: '/dashboard/analytics' },
+  { label: 'Saved Profiles', href: '/dashboard/profiles' },
+  { label: 'Competitor Projects', href: '/dashboard/competitors' },
+  { label: 'AI Intelligence Studio', href: '/dashboard/ai-insights' },
+  { label: 'Report Library & Exports', href: '/dashboard/reports' },
+  { label: '12 Free Instagram Tools', href: '/tools' },
+  { label: 'Engagement Calculator', href: '/instagram-engagement-calculator' },
+  { label: 'Pricing & Entitlements', href: '/pricing' },
+];
+
+function formatMemberSince(iso?: string): string {
+  if (!iso) return 'Active Member';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Active Member';
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(d);
+}
+
 export function ProfileHeadquarters({
   locale,
   user,
   entitlements,
   initialPrefs,
+  usageStats,
 }: {
   locale: Locale;
   user: SessionUser;
   entitlements: ResolvedEntitlements;
   initialPrefs: PersonalProfilePrefs;
+  usageStats: WorkspaceUsageStats;
 }) {
+  const router = useRouter();
   const { theme, setTheme, accent, setAccent } = useTheme();
   const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
-  const [fullName, setFullName] = useState(user.fullName);
-  const [title, setTitle] = useState(initialPrefs.professionalTitle ?? 'Social Intelligence Strategist');
-  const [organization, setOrganization] = useState(initialPrefs.organization ?? 'Viewora Workspace');
-  const [coverPreset, setCoverPreset] = useState<NonNullable<PersonalProfilePrefs['coverPreset']>>(
-    initialPrefs.coverPreset ?? 'aurora'
+  const [fullName, setFullName] = useState(initialPrefs.fullName || user.fullName);
+  const [title, setTitle] = useState(initialPrefs.professionalTitle);
+  const [organization, setOrganization] = useState(initialPrefs.organization);
+  const [avatarPreset, setAvatarPreset] = useState<PersonalProfilePrefs['avatarPreset']>(
+    initialPrefs.avatarPreset
   );
-  const [timezone, setTimezone] = useState(initialPrefs.timezone ?? 'UTC');
+  const [avatarEmoji, setAvatarEmoji] = useState(initialPrefs.avatarEmoji || '');
+  const [coverPreset, setCoverPreset] = useState<PersonalProfilePrefs['coverPreset']>(
+    initialPrefs.coverPreset
+  );
+  const [preferredLocale, setPreferredLocale] = useState<Locale>(
+    initialPrefs.preferredLocale || locale
+  );
+  const [timezone, setTimezone] = useState(initialPrefs.timezone);
   const [defaultRange, setDefaultRange] = useState<'7d' | '30d' | '90d'>(
-    initialPrefs.defaultDateRange ?? '30d'
+    initialPrefs.defaultDateRange
   );
   const [density, setDensity] = useState<'comfortable' | 'compact'>(
-    initialPrefs.dashboardDensity ?? 'comfortable'
+    initialPrefs.dashboardDensity
   );
-  const [workspaceName, setWorkspaceName] = useState(
-    initialPrefs.workspaceName ?? 'Primary Workspace'
+  const [sidebarDefaultCollapsed, setSidebarDefaultCollapsed] = useState(
+    initialPrefs.sidebarDefaultCollapsed
   );
+  const [workspaceName, setWorkspaceName] = useState(initialPrefs.workspaceName);
+  const [shortcuts, setShortcuts] = useState<PersonalShortcut[]>(initialPrefs.personalShortcuts);
+  const [newShortcutHref, setNewShortcutHref] = useState(SHORTCUT_CATALOG[0]!.href);
   const [emailPrefs, setEmailPrefs] = useState(user.emailPreferences);
+
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
   const initials = fullName
+    .trim()
     .split(/\s+/)
     .map((s) => s[0])
     .join('')
     .slice(0, 2)
     .toUpperCase();
+
+  const avatarDisplay =
+    avatarPreset === 'custom-emoji' && avatarEmoji.trim() ? avatarEmoji.trim() : initials || 'VW';
 
   const canAgencyBranding = hasEntitlement(entitlements, 'agency_dashboard');
   const trackedLimit = entitlements.rules.tracked_profiles.numericLimit ?? 1;
@@ -110,42 +184,109 @@ export function ProfileHeadquarters({
   const seatsLimit = entitlements.rules.team_seats.numericLimit ?? 1;
 
   const persistProfile = async () => {
-    setSaving(true);
+    setErrorNotice(null);
     setSavedNotice(null);
+
+    if (fullName.trim().length < 2) {
+      setErrorNotice('Display name must be at least 2 characters.');
+      return;
+    }
+    if (workspaceName.trim().length < 2) {
+      setErrorNotice('Workspace name must be at least 2 characters.');
+      return;
+    }
+
+    setSaving(true);
     try {
-      await fetch('/api/auth/profile', {
+      const profileRes = await fetch('/api/auth/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fullName,
-          professionalTitle: title,
-          organization,
+          fullName: fullName.trim(),
+          professionalTitle: title.trim(),
+          organization: organization.trim(),
+          avatarPreset,
+          avatarEmoji: avatarEmoji.trim().slice(0, 4),
           coverPreset,
+          preferredLocale,
+          themePreference: theme,
           accentPreset: accent,
           timezone,
           defaultDateRange: defaultRange,
           dashboardDensity: density,
-          workspaceName,
+          sidebarDefaultCollapsed,
+          workspaceName: workspaceName.trim(),
+          personalShortcuts: shortcuts,
         }),
       });
-      await fetch('/api/auth/preferences', {
+      const profileJson = (await profileRes.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        persistedAt?: string;
+      } | null;
+
+      if (!profileRes.ok || !profileJson?.ok) {
+        setErrorNotice(
+          profileJson?.error ??
+            `Failed to persist profile settings (HTTP ${profileRes.status}). No changes were confirmed.`
+        );
+        return;
+      }
+
+      const prefsRes = await fetch('/api/auth/preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emailPreferences: emailPrefs }),
       });
-      setSavedNotice('Personal headquarters settings saved.');
-      setTimeout(() => setSavedNotice(null), 2600);
+      const prefsJson = (await prefsRes.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
+
+      if (!prefsRes.ok || !prefsJson?.ok) {
+        setErrorNotice(
+          prefsJson?.error ??
+            `Profile details saved, but email notification preferences failed (HTTP ${prefsRes.status}).`
+        );
+        return;
+      }
+
+      setSavedNotice(
+        `Personal Digital HQ saved (${new Date(profileJson.persistedAt ?? Date.now()).toLocaleTimeString()}).`
+      );
+      if (preferredLocale !== locale) {
+        router.push(`/${preferredLocale}/dashboard/profile`);
+      } else {
+        router.refresh();
+      }
+    } catch {
+      setErrorNotice('Network error while saving settings. Please verify your connection and retry.');
     } finally {
       setSaving(false);
     }
   };
 
+  const addShortcut = () => {
+    if (shortcuts.length >= 6) return;
+    const match = SHORTCUT_CATALOG.find((s) => s.href === newShortcutHref);
+    if (!match) return;
+    if (shortcuts.some((s) => s.href === match.href)) return;
+    setShortcuts([
+      ...shortcuts,
+      { id: `sc-${Date.now()}`, label: match.label, href: match.href },
+    ]);
+  };
+
+  const removeShortcut = (id: string) => {
+    setShortcuts(shortcuts.filter((s) => s.id !== id));
+  };
+
   const tabs: Array<{ id: ProfileTab; label: string; icon: typeof User }> = [
     { id: 'overview', label: 'My Overview', icon: LayoutDashboard },
-    { id: 'workspace', label: 'My Workspace', icon: Building2 },
+    { id: 'personalization', label: 'Avatar & Theme', icon: Palette },
+    { id: 'workspace', label: 'Workspace & Layout', icon: Building2 },
     { id: 'reports', label: 'My Reports', icon: FileText },
     { id: 'membership', label: 'Membership', icon: CreditCard },
-    { id: 'personalization', label: 'Personalization', icon: Palette },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Security', icon: KeyRound },
     { id: 'privacy', label: 'Privacy', icon: Shield },
@@ -162,24 +303,24 @@ export function ProfileHeadquarters({
 
       {/* Premium Profile Hero Cover & Identity Card */}
       <section className="viewora-card-elevated overflow-hidden rounded-3xl">
-        {/* Customizable Cover Banner */}
         <div
           className={`relative h-36 bg-gradient-to-r sm:h-44 ${COVER_STYLES[coverPreset].gradient}`}
         >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.14),transparent_55%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.16),transparent_55%)]" />
           <div className="absolute top-4 right-4 flex items-center gap-2">
-            <span className="rounded-full bg-black/35 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
+            <span className="rounded-full bg-black/40 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
               Private Profile · Visible Only to You
             </span>
           </div>
         </div>
 
-        {/* Identity Bar */}
         <div className="px-6 pb-6">
           <div className="-mt-12 flex flex-wrap items-end justify-between gap-4">
             <div className="flex flex-wrap items-end gap-4">
-              <div className="flex h-24 w-24 items-center justify-center rounded-3xl border-4 border-white bg-gradient-to-br from-[#7957FF] to-[#22D3EE] font-display text-2xl font-extrabold text-white shadow-lg dark:border-[#131C2E]">
-                {initials || 'VW'}
+              <div
+                className={`flex h-24 w-24 items-center justify-center rounded-3xl border-4 border-white bg-gradient-to-br font-display text-2xl font-extrabold text-white shadow-lg dark:border-[#131C2E] ${AVATAR_STYLES[avatarPreset].gradient}`}
+              >
+                {avatarDisplay}
               </div>
               <div className="pb-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -192,7 +333,8 @@ export function ProfileHeadquarters({
                   {title} · {organization}
                 </p>
                 <p className="mt-1 font-mono text-[11px] text-[#64748B] dark:text-[#94A3B8]">
-                  {user.email} · Workspace: {workspaceName} · Member since Nov 2026
+                  {user.email} · Workspace: {workspaceName} · Member since{' '}
+                  {formatMemberSince(user.createdAt)}
                 </p>
               </div>
             </div>
@@ -203,38 +345,38 @@ export function ProfileHeadquarters({
                 onClick={() => setActiveTab('personalization')}
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-[#0F172A] transition hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#192337] dark:text-[#F8FAFC]"
               >
-                Edit Profile &amp; Theme
+                Edit Identity &amp; Theme
               </button>
               <Link
                 href={`/${locale}/dashboard`}
                 className="viewora-btn-primary rounded-xl px-4 py-2 text-xs font-semibold"
               >
-                Back to Workspace
+                Open Workspace
               </Link>
             </div>
           </div>
 
-          {/* Personal Workspace Statistics */}
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Genuine Account Usage Statistics */}
+          <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <MetricCard
-              label="Saved Profile Allowance"
-              value={`${trackedLimit}`}
-              hint={`${entitlements.planName} tier limit`}
+              label="Saved Profiles Used"
+              value={`${usageStats.savedProfilesCount} / ${trackedLimit}`}
+              hint={`${usageStats.foldersCount} research folder${usageStats.foldersCount === 1 ? '' : 's'}`}
             />
             <MetricCard
-              label="Monthly AI Reports"
-              value={`${aiLimit}`}
-              hint="Gemini Intelligence Studio"
+              label="Private Notes & Comparisons"
+              value={`${usageStats.notesCount} / ${usageStats.comparisonsCount}`}
+              hint="Notes saved / comparison projects"
             />
             <MetricCard
-              label="Team Seats"
-              value={`${seatsLimit}`}
-              hint={`Segment: ${user.segment}`}
+              label="Saved AI Reports"
+              value={`${usageStats.reportsCount}`}
+              hint={`Plan quota: ${aiLimit}/mo`}
             />
             <MetricCard
-              label="Default Lookback"
-              value={defaultRange.toUpperCase()}
-              hint={`Timezone: ${timezone}`}
+              label="Exports Recorded"
+              value={`${usageStats.exportsCount}`}
+              hint={`Lookback: ${defaultRange.toUpperCase()} · ${density}`}
             />
           </div>
         </div>
@@ -269,12 +411,22 @@ export function ProfileHeadquarters({
         })}
       </div>
 
+      {errorNotice ? (
+        <div
+          role="alert"
+          className="animate-viewora-enter flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/50 dark:text-rose-200"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{errorNotice}</span>
+        </div>
+      ) : null}
+
       {savedNotice ? (
         <div
           role="status"
           className="animate-viewora-enter flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/50 dark:text-[#34D399]"
         >
-          <Check className="h-4 w-4" aria-hidden="true" />
+          <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{savedNotice}</span>
         </div>
       ) : null}
@@ -285,69 +437,276 @@ export function ProfileHeadquarters({
           <div className="grid gap-6 md:grid-cols-2">
             <div className="space-y-3">
               <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                Identity Summary
+                Account &amp; Workspace Summary
               </h2>
               <p className="text-xs leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
-                Your Personal Digital Headquarters centralizes workspace branding, visual
-                personalization, entitlement status, and GDPR/LGPD/UAE PDPL privacy controls. Your
-                profile remains strictly private by default.
+                Your Personal Digital Headquarters stores your private workspace preferences,
+                personal shortcuts, visual theme, and GDPR/LGPD/UAE PDPL privacy controls. All saves
+                are validated server-side and scoped strictly to your authenticated account.
               </p>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
                 <p className="font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Active Workspace Milestones
+                  Verified Account Details
                 </p>
                 <ul className="mt-2 space-y-1.5 text-[#64748B] dark:text-[#94A3B8]">
-                  <li>• Account authenticated ({user.authMode === 'supabase' ? 'Supabase Auth' : 'Isolated Local Demo'})</li>
-                  <li>• Segment configured as <strong className="capitalize">{user.segment}</strong></li>
-                  <li>• Privacy-first cookie &amp; email preferences active</li>
+                  <li>
+                    • Authentication:{' '}
+                    <strong className="text-[#0F172A] dark:text-white">
+                      {user.authMode === 'supabase' ? 'Supabase Auth' : 'Isolated Local Demo'}
+                    </strong>
+                  </li>
+                  <li>
+                    • Member since:{' '}
+                    <strong className="text-[#0F172A] dark:text-white">
+                      {formatMemberSince(user.createdAt)}
+                    </strong>
+                  </li>
+                  <li>
+                    • Preferred language:{' '}
+                    <strong className="text-[#0F172A] dark:text-white">
+                      {LOCALE_METADATA[preferredLocale].nativeLabel} ({preferredLocale})
+                    </strong>
+                  </li>
+                  <li>
+                    • Unread notifications:{' '}
+                    <strong className="tabular-nums text-[#0F172A] dark:text-white">
+                      {usageStats.unreadNotificationsCount}
+                    </strong>
+                  </li>
                 </ul>
               </div>
             </div>
 
             <div className="space-y-3">
-              <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                Quick Workspace Actions
-              </h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                  Personal Shortcuts ({shortcuts.length}/6)
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('workspace')}
+                  className="text-xs font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+                >
+                  Customize →
+                </button>
+              </div>
               <div className="grid gap-2.5">
-                <Link
-                  href={`/${locale}/dashboard`}
-                  className="rounded-xl border border-slate-200 p-3.5 text-xs font-semibold text-[#0F172A] transition hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
-                >
-                  Open Analytics Dashboard →
-                </Link>
-                <Link
-                  href={`/${locale}/dashboard/ai-insights`}
-                  className="rounded-xl border border-slate-200 p-3.5 text-xs font-semibold text-[#0F172A] transition hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
-                >
-                  Launch AI Intelligence Studio →
-                </Link>
-                <Link
-                  href={`/${locale}/tools`}
-                  className="rounded-xl border border-slate-200 p-3.5 text-xs font-semibold text-[#0F172A] transition hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
-                >
-                  Explore 12 Free Instagram Tools →
-                </Link>
+                {shortcuts.map((sc) => (
+                  <Link
+                    key={sc.id}
+                    href={`/${locale}${sc.href}`}
+                    className="flex items-center justify-between rounded-xl border border-slate-200 p-3.5 text-xs font-semibold text-[#0F172A] transition hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
+                  >
+                    <span>{sc.label}</span>
+                    <ArrowRight className="h-3.5 w-3.5 text-[#6941EF] dark:text-[#A99AFF]" aria-hidden="true" />
+                  </Link>
+                ))}
               </div>
             </div>
           </div>
         ) : null}
 
-        {activeTab === 'workspace' ? (
-          <div className="space-y-5">
-            <div>
-              <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                Workspace Identity &amp; Branding
-              </h2>
-              <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
-                Configure your organization display name and client report branding.
-              </p>
-            </div>
+        {activeTab === 'personalization' ? (
+          <div className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                Workspace Name
+                Display Name *
+                <input
+                  type="text"
+                  value={fullName}
+                  maxLength={80}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                Professional Title
+                <input
+                  type="text"
+                  value={title}
+                  maxLength={80}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                />
+              </label>
+            </div>
+
+            {/* Editable Avatar Picker */}
+            <div>
+              <p className="text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                Editable Avatar Style
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+                {(Object.keys(AVATAR_STYLES) as Array<keyof typeof AVATAR_STYLES>).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={avatarPreset === key}
+                    onClick={() => setAvatarPreset(key)}
+                    className={`flex flex-col items-center gap-2 rounded-xl border p-3 text-center transition ${
+                      avatarPreset === key
+                        ? 'border-[#7957FF] ring-2 ring-[#7957FF]/30'
+                        : 'border-slate-200 dark:border-[#263047]'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br font-display text-sm font-extrabold text-white ${AVATAR_STYLES[key].gradient}`}
+                    >
+                      {key === 'custom-emoji' ? avatarEmoji || '✦' : initials || 'VW'}
+                    </span>
+                    <span className="text-[11px] font-semibold text-[#0F172A] dark:text-slate-200">
+                      {AVATAR_STYLES[key].label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {avatarPreset === 'custom-emoji' ? (
+                <label className="mt-3 block max-w-xs text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                  Custom Emoji or 2-letter Monogram (max 4 chars)
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={avatarEmoji}
+                    onChange={(e) => setAvatarEmoji(e.target.value)}
+                    placeholder="e.g. AR or ✦"
+                    className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                  />
+                </label>
+              ) : null}
+            </div>
+
+            {/* Cover Banner Picker */}
+            <div>
+              <p className="text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                Customizable Cover Banner
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+                {(Object.keys(COVER_STYLES) as Array<keyof typeof COVER_STYLES>).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={coverPreset === key}
+                    onClick={() => setCoverPreset(key)}
+                    className={`overflow-hidden rounded-xl border p-1.5 text-left transition ${
+                      coverPreset === key
+                        ? 'border-[#7957FF] ring-2 ring-[#7957FF]/30'
+                        : 'border-slate-200 dark:border-[#263047]'
+                    }`}
+                  >
+                    <div className={`h-10 rounded-lg bg-gradient-to-r ${COVER_STYLES[key].gradient}`} />
+                    <span className="mt-1.5 block px-1 text-[11px] font-semibold text-[#0F172A] dark:text-slate-200">
+                      {COVER_STYLES[key].label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Live Theme, Accent & Preferred Language */}
+            <div className="grid gap-5 md:grid-cols-3">
+              <div>
+                <p className="text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                  Appearance Mode
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(['light', 'dark', 'system'] as ThemePreference[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={theme === mode}
+                      onClick={() => setTheme(mode)}
+                      className={`rounded-xl border px-3.5 py-2 text-xs font-semibold capitalize ${
+                        theme === mode
+                          ? 'border-[#7957FF] bg-[#7957FF] text-white'
+                          : 'border-slate-200 text-[#64748B] dark:border-[#263047] dark:text-[#94A3B8]'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                  Accessible Accent Preset
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {ACCENT_SWATCHES.map((sw) => (
+                    <button
+                      key={sw.id}
+                      type="button"
+                      aria-pressed={accent === sw.id}
+                      onClick={() => setAccent(sw.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold ${
+                        accent === sw.id
+                          ? 'border-[#7957FF] bg-violet-50 text-[#0F172A] dark:bg-[#192337] dark:text-white'
+                          : 'border-slate-200 text-[#64748B] dark:border-[#263047] dark:text-[#94A3B8]'
+                      }`}
+                    >
+                      <span
+                        className="h-3 w-3 rounded-full"
+                        style={{ backgroundColor: sw.hex }}
+                        aria-hidden="true"
+                      />
+                      {sw.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                  <span className="inline-flex items-center gap-1">
+                    <Globe className="h-3.5 w-3.5 text-[#6941EF] dark:text-[#A99AFF]" aria-hidden="true" />
+                    Preferred Language
+                  </span>
+                  <select
+                    value={preferredLocale}
+                    onChange={(e) => setPreferredLocale(e.target.value as Locale)}
+                    className="mt-2 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                  >
+                    {SUPPORTED_LOCALES.map((loc) => (
+                      <option key={loc} value={loc}>
+                        {LOCALE_METADATA[loc].nativeLabel} ({loc})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void persistProfile()}
+              className="viewora-btn-primary inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold disabled:opacity-60"
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+              {saving ? 'Saving Identity & Theme…' : 'Save Identity & Theme'}
+            </button>
+          </div>
+        ) : null}
+
+        {activeTab === 'workspace' ? (
+          <div className="space-y-6">
+            <div>
+              <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                Workspace Identity, Dashboard Layout &amp; Personal Shortcuts
+              </h2>
+              <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
+                Configure your organization display name, default dashboard density, and quick-launch
+                shortcuts.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                Workspace Name *
                 <input
                   type="text"
                   value={workspaceName}
+                  maxLength={80}
                   onChange={(e) => setWorkspaceName(e.target.value)}
                   className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
                 />
@@ -357,11 +716,114 @@ export function ProfileHeadquarters({
                 <input
                   type="text"
                   value={organization}
+                  maxLength={80}
                   onChange={(e) => setOrganization(e.target.value)}
                   className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
                 />
               </label>
             </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                Timezone
+                <select
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                >
+                  <option value="UTC">UTC</option>
+                  <option value="America/New_York">America/New_York</option>
+                  <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+                  <option value="Europe/Berlin">Europe/Berlin</option>
+                  <option value="Europe/Paris">Europe/Paris</option>
+                  <option value="Asia/Dubai">Asia/Dubai</option>
+                </select>
+              </label>
+
+              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                Default Analytics Range
+                <select
+                  value={defaultRange}
+                  onChange={(e) => setDefaultRange(e.target.value as typeof defaultRange)}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                >
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="90d">Last 90 days</option>
+                </select>
+              </label>
+
+              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                Dashboard Density
+                <select
+                  value={density}
+                  onChange={(e) => setDensity(e.target.value as typeof density)}
+                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
+                >
+                  <option value="comfortable">Comfortable</option>
+                  <option value="compact">Compact</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="flex items-center gap-2.5 text-xs text-[#0F172A] dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={sidebarDefaultCollapsed}
+                onChange={(e) => setSidebarDefaultCollapsed(e.target.checked)}
+              />
+              <span>Start desktop dashboard with sidebar collapsed for wider charts</span>
+            </label>
+
+            {/* Personal Shortcuts Manager */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-[#263047] dark:bg-[#0F172A]">
+              <p className="text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                Personal Shortcuts ({shortcuts.length}/6)
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {shortcuts.map((sc) => (
+                  <span
+                    key={sc.id}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0F172A] dark:border-[#263047] dark:bg-[#131C2E] dark:text-slate-200"
+                  >
+                    {sc.label}
+                    <button
+                      type="button"
+                      onClick={() => removeShortcut(sc.id)}
+                      aria-label={`Remove shortcut ${sc.label}`}
+                      className="text-[#64748B] hover:text-rose-500"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              {shortcuts.length < 6 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <select
+                    aria-label="Choose shortcut destination"
+                    value={newShortcutHref}
+                    onChange={(e) => setNewShortcutHref(e.target.value)}
+                    className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs dark:border-[#263047] dark:bg-[#131C2E] dark:text-white"
+                  >
+                    {SHORTCUT_CATALOG.map((item) => (
+                      <option key={item.href} value={item.href}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={addShortcut}
+                    className="inline-flex h-9 items-center gap-1 rounded-xl border border-[#7957FF] px-3 text-xs font-semibold text-[#6941EF] hover:bg-violet-50 dark:text-[#A99AFF] dark:hover:bg-[#192337]"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    Add Shortcut
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
               <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">
                 White-Label Report Branding:{' '}
@@ -374,13 +836,15 @@ export function ProfileHeadquarters({
                 <strong>{entitlements.rules.workspaces.numericLimit ?? 1}</strong>.
               </p>
             </div>
+
             <button
               type="button"
               disabled={saving}
               onClick={() => void persistProfile()}
-              className="viewora-btn-primary rounded-xl px-5 py-2.5 text-xs font-semibold disabled:opacity-60"
+              className="viewora-btn-primary inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold disabled:opacity-60"
             >
-              {saving ? 'Saving…' : 'Save Workspace Identity'}
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+              {saving ? 'Saving Workspace Settings…' : 'Save Workspace & Layout'}
             </button>
           </div>
         ) : null}
@@ -388,11 +852,11 @@ export function ProfileHeadquarters({
         {activeTab === 'reports' ? (
           <div className="space-y-4">
             <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-              My Generated Reports
+              My Generated Reports &amp; Exports
             </h2>
             <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
-              Generate structured AI reports or download provenance-stamped PDF and CSV exports from
-              your workspace.
+              Recorded AI reports in your library: <strong>{usageStats.reportsCount}</strong> ·
+              Recorded PDF/CSV exports: <strong>{usageStats.exportsCount}</strong>.
             </p>
             <div className="flex flex-wrap gap-3">
               <Link
@@ -406,7 +870,7 @@ export function ProfileHeadquarters({
                 href={`/${locale}/dashboard/reports`}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
               >
-                Go to Report Exports
+                Open Report Library &amp; Export History
               </Link>
             </div>
           </div>
@@ -439,13 +903,13 @@ export function ProfileHeadquarters({
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
                 <span className="text-[#64748B]">Saved Profiles Quota</span>
                 <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-[#0F172A] dark:text-white">
-                  {trackedLimit}
+                  {usageStats.savedProfilesCount} / {trackedLimit}
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
                 <span className="text-[#64748B]">Monthly AI Reports</span>
                 <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-[#0F172A] dark:text-white">
-                  {aiLimit}
+                  {usageStats.reportsCount} / {aiLimit}
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
@@ -455,160 +919,6 @@ export function ProfileHeadquarters({
                 </p>
               </div>
             </div>
-          </div>
-        ) : null}
-
-        {activeTab === 'personalization' ? (
-          <div className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                Display Name
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
-                />
-              </label>
-              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                Professional Title
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
-                />
-              </label>
-            </div>
-
-            {/* Cover Banner Picker */}
-            <div>
-              <p className="text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                Cover Banner Style
-              </p>
-              <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                {(Object.keys(COVER_STYLES) as Array<keyof typeof COVER_STYLES>).map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setCoverPreset(key)}
-                    className={`overflow-hidden rounded-xl border p-1.5 text-left transition ${
-                      coverPreset === key
-                        ? 'border-[#7957FF] ring-2 ring-[#7957FF]/30'
-                        : 'border-slate-200 dark:border-[#263047]'
-                    }`}
-                  >
-                    <div className={`h-10 rounded-lg bg-gradient-to-r ${COVER_STYLES[key].gradient}`} />
-                    <span className="mt-1.5 block px-1 text-[11px] font-semibold text-[#0F172A] dark:text-slate-200">
-                      {COVER_STYLES[key].label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Live Theme & Accent Color Switcher */}
-            <div className="grid gap-5 sm:grid-cols-2">
-              <div>
-                <p className="text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Appearance Mode
-                </p>
-                <div className="mt-2 flex gap-2">
-                  {(['light', 'dark', 'system'] as ThemePreference[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setTheme(mode)}
-                      className={`rounded-xl border px-3.5 py-2 text-xs font-semibold capitalize ${
-                        theme === mode
-                          ? 'border-[#7957FF] bg-[#7957FF] text-white'
-                          : 'border-slate-200 text-[#64748B] dark:border-[#263047] dark:text-[#94A3B8]'
-                      }`}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Accessible Accent Preset
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {ACCENT_SWATCHES.map((sw) => (
-                    <button
-                      key={sw.id}
-                      type="button"
-                      onClick={() => setAccent(sw.id)}
-                      className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold ${
-                        accent === sw.id
-                          ? 'border-[#7957FF] bg-violet-50 text-[#0F172A] dark:bg-[#192337] dark:text-white'
-                          : 'border-slate-200 text-[#64748B] dark:border-[#263047] dark:text-[#94A3B8]'
-                      }`}
-                    >
-                      <span
-                        className="h-3 w-3 rounded-full"
-                        style={{ backgroundColor: sw.hex }}
-                        aria-hidden="true"
-                      />
-                      {sw.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-3">
-              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                Timezone
-                <select
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
-                >
-                  <option value="UTC">UTC</option>
-                  <option value="America/New_York">America/New_York</option>
-                  <option value="America/Sao_Paulo">America/Sao_Paulo</option>
-                  <option value="Europe/Berlin">Europe/Berlin</option>
-                  <option value="Asia/Dubai">Asia/Dubai</option>
-                </select>
-              </label>
-
-              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                Default Analytics Range
-                <select
-                  value={defaultRange}
-                  onChange={(e) => setDefaultRange(e.target.value as typeof defaultRange)}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
-                >
-                  <option value="7d">Last 7 days</option>
-                  <option value="30d">Last 30 days</option>
-                  <option value="90d">Last 90 days</option>
-                </select>
-              </label>
-
-              <label className="block text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                Dashboard Density
-                <select
-                  value={density}
-                  onChange={(e) => setDensity(e.target.value as typeof density)}
-                  className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-normal dark:border-[#263047] dark:bg-[#0F172A] dark:text-white"
-                >
-                  <option value="comfortable">Comfortable</option>
-                  <option value="compact">Compact</option>
-                </select>
-              </label>
-            </div>
-
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => void persistProfile()}
-              className="viewora-btn-primary rounded-xl px-5 py-2.5 text-xs font-semibold disabled:opacity-60"
-            >
-              {saving ? 'Saving Personalization…' : 'Save Personalization'}
-            </button>
           </div>
         ) : null}
 
@@ -640,9 +950,10 @@ export function ProfileHeadquarters({
               type="button"
               disabled={saving}
               onClick={() => void persistProfile()}
-              className="viewora-btn-primary rounded-xl px-5 py-2.5 text-xs font-semibold"
+              className="viewora-btn-primary inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold disabled:opacity-60"
             >
-              Save Notification Preferences
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+              {saving ? 'Saving Preferences…' : 'Save Notification Preferences'}
             </button>
           </div>
         ) : null}
@@ -655,7 +966,7 @@ export function ProfileHeadquarters({
             <p>
               Authentication Mode:{' '}
               <strong className="font-mono text-[#0F172A] dark:text-white">{user.authMode}</strong>{' '}
-              · Sessions use HttpOnly cookies with server-side verification.
+              · Sessions use HttpOnly signed cookies with server-side verification.
             </p>
             <div className="flex flex-wrap gap-3">
               <Link
@@ -663,6 +974,12 @@ export function ProfileHeadquarters({
                 className="rounded-xl border border-slate-200 px-4 py-2 font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
               >
                 Password Recovery Flow
+              </Link>
+              <Link
+                href={`/${locale}/dashboard/settings`}
+                className="rounded-xl border border-slate-200 px-4 py-2 font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-[#F8FAFC]"
+              >
+                Account &amp; Privacy Settings
               </Link>
               <Link
                 href="/api/meta/oauth/start"

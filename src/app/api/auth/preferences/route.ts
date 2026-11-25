@@ -30,26 +30,48 @@ export async function PATCH(request: NextRequest) {
 
   if (isSupabaseConfigured()) {
     const supabase = await createSupabaseServerClient();
-    if (supabase) {
-      await supabase
-        .from('profiles')
-        .update({
-          ...(parsed.data.segment ? { segment: parsed.data.segment } : {}),
-          ...(parsed.data.emailPreferences
-            ? { email_preferences: parsed.data.emailPreferences }
-            : {}),
-          onboarding_completed: true,
-        })
-        .eq('id', user.id);
+    if (!supabase) {
+      return NextResponse.json(
+        { ok: false, error: 'Database service unavailable. Preferences were not saved.' },
+        { status: 503 }
+      );
+    }
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        ...(parsed.data.segment ? { segment: parsed.data.segment } : {}),
+        ...(parsed.data.emailPreferences
+          ? { email_preferences: parsed.data.emailPreferences }
+          : {}),
+        onboarding_completed: true,
+      })
+      .eq('id', user.id);
+
+    if (error) {
+      return NextResponse.json(
+        { ok: false, error: `Could not save preferences: ${error.message}` },
+        { status: 500 }
+      );
     }
   } else {
-    upsertLocalUser({
-      ...user,
-      segment: parsed.data.segment ?? user.segment,
-      emailPreferences: parsed.data.emailPreferences ?? user.emailPreferences,
-      onboardingCompleted: true,
-    });
+    try {
+      upsertLocalUser({
+        ...user,
+        segment: parsed.data.segment ?? user.segment,
+        emailPreferences: parsed.data.emailPreferences ?? user.emailPreferences,
+        onboardingCompleted: true,
+      });
+    } catch (err) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            err instanceof Error ? err.message : 'Unable to persist account preferences locally.',
+        },
+        { status: 500 }
+      );
+    }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, persistedAt: new Date().toISOString() });
 }

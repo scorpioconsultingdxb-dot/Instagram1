@@ -198,34 +198,36 @@ export function CustomerDashboard({
     router.refresh();
   };
 
+  const td = dict.dashboard;
+
   const navGroups: Array<{
     group: string;
     items: Array<{ id: DashboardTab; label: string; icon: typeof Activity }>;
   }> = [
     {
-      group: 'Intelligence',
+      group: td.groupIntelligence,
       items: [
-        { id: 'overview', label: 'Overview', icon: Activity },
-        { id: 'profiles', label: 'Saved Profiles', icon: Users },
-        { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-        { id: 'ai', label: 'AI Studio', icon: Sparkles },
+        { id: 'overview', label: td.tabOverview, icon: Activity },
+        { id: 'profiles', label: td.tabProfiles, icon: Users },
+        { id: 'analytics', label: td.tabAnalytics, icon: BarChart3 },
+        { id: 'ai', label: td.tabAi, icon: Sparkles },
       ],
     },
     {
-      group: 'Monitoring',
+      group: td.groupMonitoring,
       items: [
-        { id: 'timeline', label: 'Timeline', icon: Clock },
-        { id: 'calendar', label: 'Calendar', icon: Calendar },
-        { id: 'competitors', label: 'Competitors', icon: GitCompare },
-        { id: 'exports', label: 'Reports & Exports', icon: FileDown },
+        { id: 'timeline', label: td.tabTimeline, icon: Clock },
+        { id: 'calendar', label: td.tabCalendar, icon: Calendar },
+        { id: 'competitors', label: td.tabCompetitors, icon: GitCompare },
+        { id: 'exports', label: td.tabExports, icon: FileDown },
       ],
     },
     {
-      group: 'Workspace',
+      group: td.groupWorkspace,
       items: [
-        { id: 'notifications', label: 'Notifications', icon: Bell },
-        { id: 'billing', label: 'Membership', icon: CreditCard },
-        { id: 'support', label: 'Support', icon: LifeBuoy },
+        { id: 'notifications', label: td.tabNotifications, icon: Bell },
+        { id: 'billing', label: td.tabBilling, icon: CreditCard },
+        { id: 'support', label: td.tabSupport, icon: LifeBuoy },
       ],
     },
   ];
@@ -325,7 +327,7 @@ export function CustomerDashboard({
             <div className="border-t border-slate-200 pt-3 dark:border-[#263047]">
               <Link
                 href={`/${locale}/dashboard/profile`}
-                title={sidebarCollapsed ? 'My Profile HQ' : undefined}
+                title={sidebarCollapsed ? td.myProfileHq : undefined}
                 className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-semibold text-[#64748B] transition hover:bg-slate-100 hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:bg-[#192337] dark:hover:text-white ${
                   sidebarCollapsed ? 'justify-center' : ''
                 }`}
@@ -334,17 +336,17 @@ export function CustomerDashboard({
                   className="h-4 w-4 shrink-0 text-[#6941EF] dark:text-[#A99AFF]"
                   aria-hidden="true"
                 />
-                {!sidebarCollapsed ? <span>My Profile HQ</span> : null}
+                {!sidebarCollapsed ? <span>{td.myProfileHq}</span> : null}
               </Link>
               <Link
                 href={`/${locale}/dashboard/settings`}
-                title={sidebarCollapsed ? 'Settings' : undefined}
+                title={sidebarCollapsed ? td.settingsShort : undefined}
                 className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-semibold text-[#64748B] transition hover:bg-slate-100 hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:bg-[#192337] dark:hover:text-white ${
                   sidebarCollapsed ? 'justify-center' : ''
                 }`}
               >
                 <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {!sidebarCollapsed ? <span>Privacy &amp; Settings</span> : null}
+                {!sidebarCollapsed ? <span>{td.privacySettings}</span> : null}
               </Link>
             </div>
           </div>
@@ -352,13 +354,13 @@ export function CustomerDashboard({
           <button
             type="button"
             onClick={() => void handleLogout()}
-            title={sidebarCollapsed ? 'Sign out' : undefined}
+            title={sidebarCollapsed ? td.signOut : undefined}
             className={`mt-6 flex w-full items-center gap-2 rounded-xl border border-slate-200 px-2.5 py-2 text-xs font-semibold text-[#64748B] hover:border-rose-300 hover:text-rose-600 dark:border-[#263047] dark:text-[#94A3B8] ${
               sidebarCollapsed ? 'justify-center' : ''
             }`}
           >
             <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
-            {!sidebarCollapsed ? <span>Sign out</span> : null}
+            {!sidebarCollapsed ? <span>{td.signOut}</span> : null}
           </button>
         </aside>
 
@@ -369,7 +371,7 @@ export function CustomerDashboard({
             <div className="flex items-center gap-3.5">
               <Link
                 href={`/${locale}/dashboard/profile`}
-                aria-label="Open My Profile HQ"
+                aria-label={td.myProfileHq}
                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#7957FF] to-[#22D3EE] font-display text-sm font-extrabold text-white shadow-sm transition hover:scale-105"
               >
                 {profilePrefs.avatarPreset === 'custom-emoji' && profilePrefs.avatarEmoji
@@ -379,7 +381,7 @@ export function CustomerDashboard({
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="font-display text-lg font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
-                    Welcome back, {displayName.split(' ')[0]}
+                    {td.welcomeBack} {displayName.split(' ')[0]}
                   </h1>
                   <MembershipBadge planCode={user.planCode} />
                   {isViewingDemoOverlay ? (
@@ -388,12 +390,12 @@ export function CustomerDashboard({
                 </div>
                 <p className="mt-0.5 text-xs text-[#64748B] dark:text-[#94A3B8]">
                   {workspace.settings.activeWorkspace} ·{' '}
-                  <span className="capitalize">{user.segment}</span> workflow ·{' '}
+                  <span className="capitalize">{user.segment}</span> {td.workflowLabel} ·{' '}
                   <Link
                     href={`/${locale}/dashboard/profile`}
                     className="font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
                   >
-                    Personal Digital HQ →
+                    {td.personalHqLink}
                   </Link>
                 </p>
               </div>
@@ -411,7 +413,7 @@ export function CustomerDashboard({
                 }`}
               >
                 <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                {demoPreviewMode ? 'Demo Preview: ON' : 'Demo Preview'}
+                {demoPreviewMode ? td.demoPreviewOn : td.demoPreview}
               </button>
 
               <button
@@ -420,7 +422,7 @@ export function CustomerDashboard({
                 className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-medium text-[#64748B] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#94A3B8]"
               >
                 <Search className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="hidden sm:inline">Search</span>
+                <span className="hidden sm:inline">{td.searchButton}</span>
                 <kbd className="font-mono text-[10px]">⌘K</kbd>
               </button>
 
@@ -519,7 +521,7 @@ export function CustomerDashboard({
               className="viewora-card inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-[#64748B] hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:text-white"
             >
               <Settings className="h-3.5 w-3.5" aria-hidden="true" />
-              Settings
+              {td.settingsShort}
             </Link>
             <button
               type="button"
@@ -527,7 +529,7 @@ export function CustomerDashboard({
               className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-rose-600 dark:border-[#263047] dark:bg-[#131C2E] dark:text-rose-400"
             >
               <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-              Sign out
+              {td.signOut}
             </button>
           </div>
 
@@ -545,7 +547,7 @@ export function CustomerDashboard({
                 onClick={() => void createWorkspace()}
                 className="viewora-btn-primary h-9 rounded-xl px-4 text-xs font-semibold"
               >
-                Create Workspace
+                {td.createWorkspace}
               </button>
             </div>
           ) : null}
@@ -564,7 +566,7 @@ export function CustomerDashboard({
                 onClick={() => void toggleDemoPreview(false)}
                 className="rounded-lg border border-amber-400 bg-white px-3 py-1 font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-700 dark:bg-[#131C2E] dark:text-amber-200"
               >
-                Exit Demo Preview
+                {td.exitDemoPreview}
               </button>
             </div>
           ) : null}
@@ -574,7 +576,7 @@ export function CustomerDashboard({
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-xs dark:border-[#263047] dark:bg-[#131C2E]/80">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-[#64748B] dark:text-[#94A3B8]">
-                  Active profile:
+                  {td.activeProfile}
                 </span>
                 {effectiveProfiles.map((item) => (
                   <button
@@ -597,7 +599,7 @@ export function CustomerDashboard({
                 className="inline-flex items-center gap-1 text-xs font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                Manage Profiles
+                {td.manageProfiles}
               </button>
             </div>
           ) : null}
@@ -675,9 +677,9 @@ export function CustomerDashboard({
                 </div>
               ) : (
                 <EmptyState
-                  title="Your workspace starts clean — no forced sample accounts"
-                  description="Save an eligible public profile into your folders to unlock persistent notes and trend charts, or activate explicit Demo Preview Mode to explore sample analytics."
-                  actionLabel="Open Saved Profiles"
+                  title={td.cleanWorkspaceTitle}
+                  description={td.cleanWorkspaceDesc}
+                  actionLabel={td.tabProfiles}
                   onAction={() => setActiveTab('profiles')}
                 />
               )}

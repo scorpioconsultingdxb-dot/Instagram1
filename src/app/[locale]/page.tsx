@@ -20,7 +20,7 @@ import { buildPageMetadata } from '@/lib/seo/metadata';
 import { defaultProviderRegistry, getDemoFixtureUsernames } from '@/lib/providers';
 import { FREE_TOOLS } from '@/lib/tools/catalog';
 import { calculateIntervalPrice } from '@/lib/entitlements/catalog';
-import { getConfiguredPlans } from '@/lib/entitlements/service';
+import { loadConfiguredPlans } from '@/lib/entitlements/service';
 import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';
 import { MembershipBadge } from '@/components/ui/Primitives';
 import { ProfileSearchExperience } from '@/components/search/ProfileSearchExperience';
@@ -55,7 +55,7 @@ export default async function HomePage({
   const dict = getDictionary(safeLocale);
   const providerHealth = await defaultProviderRegistry.checkAllHealth();
   const sampleHandles = getDemoFixtureUsernames();
-  const plans = getConfiguredPlans().filter((p) => p.isActive);
+  const plans = (await loadConfiguredPlans()).filter((p) => p.isActive);
 
   return (
     <div className="viewora-hero-glow">

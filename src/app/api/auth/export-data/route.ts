@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getCurrentSessionUser } from '@/lib/auth/session';
 import { getAccountProfilePrefs } from '@/lib/auth/profile-prefs';
-import { getUserWorkspaceState } from '@/lib/dashboard/store';
-import { resolveEntitlements } from '@/lib/entitlements/service';
+import { loadUserWorkspaceState } from '@/lib/dashboard/store';
+import { loadConfiguredPlans, resolveEntitlements } from '@/lib/entitlements/service';
 
 /**
  * GDPR / LGPD / UAE PDPL Personal Data Export endpoint.
@@ -14,13 +14,17 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
   }
 
+  const [plans, profilePrefs, workspace] = await Promise.all([
+    loadConfiguredPlans(),
+    getAccountProfilePrefs(user.id),
+    loadUserWorkspaceState(user.id),
+  ]);
   const entitlements = resolveEntitlements({
     planCode: user.planCode,
     billingInterval: user.billingInterval,
     userId: user.id,
+    plans,
   });
-  const profilePrefs = await getAccountProfilePrefs(user.id);
-  const workspace = getUserWorkspaceState(user.id);
 
   const payload = {
     exportedAt: new Date().toISOString(),

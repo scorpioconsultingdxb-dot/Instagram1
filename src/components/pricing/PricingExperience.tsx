@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { Check, CheckCircle2, Info, Loader2, Minus, ShieldAlert, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import type { Locale } from '@/i18n/config';
+import type { Dictionary } from '@/i18n/types';
+import { getDictionary } from '@/i18n/get-dictionary';
 import type {
   BillingInterval,
   FeatureKey,
@@ -15,15 +17,19 @@ import { MembershipBadge } from '@/components/ui/Primitives';
 
 export function PricingExperience({
   locale,
+  dict: providedDict,
   plans,
   paymentsEnabled,
   currentPlanCode,
 }: {
   locale: Locale;
+  dict?: Dictionary;
   plans: PlanDefinition[];
   paymentsEnabled: boolean;
   currentPlanCode?: PlanCode | null;
 }) {
+  const dict = providedDict ?? getDictionary(locale);
+  const t = dict.pricing;
   const [interval, setInterval] = useState<BillingInterval>('annual');
   const [selectedNotice, setSelectedNotice] = useState<string | null>(null);
   const [submittingCode, setSubmittingCode] = useState<string | null>(null);
@@ -35,9 +41,9 @@ export function PricingExperience({
     samplePaidPlan?.billingOptions.find((o) => o.interval === 'annual')?.discountPercent ?? 30;
 
   const intervals: Array<{ id: BillingInterval; label: string; badge?: string }> = [
-    { id: 'monthly', label: 'Monthly' },
-    { id: 'quarterly', label: 'Quarterly', badge: `Save ${quarterlyDiscount}%` },
-    { id: 'annual', label: 'Annual', badge: `Save ${annualDiscount}%` },
+    { id: 'monthly', label: t.monthly },
+    { id: 'quarterly', label: t.quarterly, badge: `${t.savePrefix} ${quarterlyDiscount}%` },
+    { id: 'annual', label: t.annual, badge: `${t.savePrefix} ${annualDiscount}%` },
   ];
 
   const handleSelectPlan = async (plan: PlanDefinition) => {
@@ -71,14 +77,8 @@ export function PricingExperience({
         <div className="flex items-start gap-3">
           <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
           <div>
-            <p className="font-bold">
-              Demonstration Pricing Only — Live Payments Strictly Disabled (PAYMENTS_ENABLED=false)
-            </p>
-            <p className="mt-1 text-xs leading-relaxed">
-              All five membership tiers below are synchronized directly from Viewora&apos;s
-              centralized entitlement engine. No credit cards are collected and no charges are ever
-              processed until live billing is explicitly authorized.
-            </p>
+            <p className="font-bold">{t.demoNoticeTitle}</p>
+            <p className="mt-1 text-xs leading-relaxed">{t.demoNoticeBody}</p>
           </div>
         </div>
       </div>
@@ -122,15 +122,15 @@ export function PricingExperience({
           })}
         </div>
         <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
-          Showing{' '}
+          {t.showingLabel}{' '}
           <strong className="text-[#0F172A] dark:text-white">
             {interval === 'monthly'
-              ? 'Monthly billing'
+              ? t.monthlyBilling
               : interval === 'quarterly'
-                ? `Quarterly billing (${quarterlyDiscount}% savings)`
-                : `Annual billing (${annualDiscount}% savings)`}
+                ? `${t.quarterlyBilling} (${quarterlyDiscount}% ${t.savingsWord})`
+                : `${t.annualBilling} (${annualDiscount}% ${t.savingsWord})`}
           </strong>{' '}
-          · Synchronized across public pricing, dashboard, and admin settings.
+          · {t.synchronizedNote}
         </p>
       </div>
 
@@ -169,12 +169,12 @@ export function PricingExperience({
                   {isCurrent ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]">
                       <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-                      Current
+                      {t.currentBadge}
                     </span>
                   ) : plan.highlighted ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-[#6941EF] dark:bg-violet-950 dark:text-[#A99AFF]">
                       <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
-                      Recommended
+                      {t.recommendedBadge}
                     </span>
                   ) : (
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-[#64748B] dark:bg-[#0F172A] dark:text-[#94A3B8]">
@@ -195,14 +195,14 @@ export function PricingExperience({
                     <span className="font-display text-3xl font-extrabold text-[#0F172A] dark:text-white">
                       {calc.formattedMonthly}
                     </span>
-                    <span className="text-xs text-[#64748B] dark:text-[#94A3B8]">/ mo</span>
+                    <span className="text-xs text-[#64748B] dark:text-[#94A3B8]">{t.perMonth}</span>
                   </div>
                   <p className="mt-1 text-[11px] tabular-nums text-[#64748B] dark:text-[#94A3B8]">
                     {plan.monthlyPriceCents === 0
-                      ? 'Free forever · Zero card required'
+                      ? t.freeForever
                       : interval === 'monthly'
-                        ? 'Billed monthly (demo pricing)'
-                        : `${calc.formattedTotal} / ${calc.months} mo · Save ${formatUsdCents(savingsCents)}`}
+                        ? t.billedMonthlyDemo
+                        : `${calc.formattedTotal} / ${calc.months} mo · ${t.savePrefix} ${formatUsdCents(savingsCents)}`}
                   </p>
                 </div>
 
@@ -211,47 +211,52 @@ export function PricingExperience({
                     <Check className="h-3.5 w-3.5 shrink-0 text-[#34D399]" aria-hidden="true" />
                     <span>
                       <strong className="tabular-nums">
-                        {plan.entitlements.daily_searches.numericLimit}
+                        {plan.entitlements.daily_searches.numericLimit === null
+                          ? '∞'
+                          : plan.entitlements.daily_searches.numericLimit}
                       </strong>{' '}
-                      daily searches
+                      {t.dailySearches}
                     </span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 shrink-0 text-[#34D399]" aria-hidden="true" />
                     <span>
                       <strong className="tabular-nums">
-                        {plan.entitlements.tracked_profiles.numericLimit}
+                        {plan.entitlements.tracked_profiles.numericLimit === null
+                          ? '∞'
+                          : plan.entitlements.tracked_profiles.numericLimit}
                       </strong>{' '}
-                      saved eligible profile
-                      {plan.entitlements.tracked_profiles.numericLimit === 1 ? '' : 's'}
+                      {plan.entitlements.tracked_profiles.numericLimit === 1
+                        ? t.savedProfileSingular
+                        : t.savedProfilePlural}
                     </span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 shrink-0 text-[#34D399]" aria-hidden="true" />
                     <span>
                       {plan.entitlements.historical_analytics_days.enabled
-                        ? `${plan.entitlements.historical_analytics_days.numericLimit}-day history`
-                        : 'Current snapshot only'}
+                        ? `${plan.entitlements.historical_analytics_days.numericLimit ?? '∞'}${t.dayHistorySuffix}`
+                        : t.currentSnapshotOnly}
                     </span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 shrink-0 text-[#34D399]" aria-hidden="true" />
                     <span>
                       {plan.entitlements.ai_profile_reports.enabled
-                        ? `${plan.entitlements.ai_profile_reports.numericLimit} AI reports / mo`
-                        : '12 free tools included'}
+                        ? `${plan.entitlements.ai_profile_reports.numericLimit ?? '∞'} ${t.aiReportsSuffix}`
+                        : t.freeToolsIncluded}
                     </span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 shrink-0 text-[#34D399]" aria-hidden="true" />
                     <span>
                       {plan.entitlements.pdf_export.enabled && plan.entitlements.csv_export.enabled
-                        ? 'PDF & CSV exports'
+                        ? t.pdfAndCsvExports
                         : plan.entitlements.pdf_export.enabled
-                          ? 'PDF exports included'
+                          ? t.pdfExportsIncluded
                           : plan.entitlements.csv_export.enabled
-                            ? 'CSV exports only'
-                            : 'No report exports'}
+                            ? t.csvExportsOnly
+                            : t.noReportExports}
                     </span>
                   </li>
                 </ul>
@@ -263,14 +268,14 @@ export function PricingExperience({
                     href={`/${locale}/dashboard/subscription`}
                     className="block w-full rounded-xl border border-emerald-300 bg-emerald-50 py-2.5 text-center text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-[#34D399]"
                   >
-                    Manage Current Plan
+                    {t.manageCurrentPlan}
                   </Link>
                 ) : plan.code === 'free' ? (
                   <Link
                     href={`/${locale}/register`}
                     className="block w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 text-center text-xs font-semibold text-[#0F172A] transition hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-slate-100"
                   >
-                    Start Free Account
+                    {t.startFreeAccount}
                   </Link>
                 ) : (
                   <button
@@ -287,8 +292,8 @@ export function PricingExperience({
                       <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                     ) : null}
                     {paymentsEnabled
-                      ? `Choose ${plan.name}`
-                      : `Preview ${plan.name} (No Charge)`}
+                      ? `${t.choosePlanPrefix} ${plan.name}`
+                      : `${t.previewPlanPrefix} ${plan.name} ${t.previewPlanSuffix}`}
                   </button>
                 )}
               </div>
@@ -301,12 +306,9 @@ export function PricingExperience({
       <section className="viewora-card overflow-hidden rounded-3xl">
         <div className="border-b border-slate-200 px-6 py-4 dark:border-[#263047]">
           <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-            Synchronized Entitlement Matrix
+            {t.matrixTitle}
           </h2>
-          <p className="mt-0.5 text-xs text-[#64748B] dark:text-[#94A3B8]">
-            Directly driven by Viewora&apos;s server-side entitlement catalog — every limit shown
-            here matches dashboard enforcement and admin settings.
-          </p>
+          <p className="mt-0.5 text-xs text-[#64748B] dark:text-[#94A3B8]">{t.matrixSubtitle}</p>
         </div>
 
         <div className="overflow-x-auto">
@@ -314,7 +316,7 @@ export function PricingExperience({
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 dark:border-[#263047] dark:bg-[#0F172A]">
                 <th className="px-4 py-3 font-semibold text-[#64748B] dark:text-[#94A3B8]">
-                  Capability
+                  {t.capabilityHeading}
                 </th>
                 {plans.map((p) => (
                   <th
@@ -341,12 +343,12 @@ export function PricingExperience({
                           {!rule.enabled ? (
                             <Minus
                               className="mx-auto h-4 w-4 text-slate-300 dark:text-slate-700"
-                              aria-label="Not included"
+                              aria-label={t.notIncluded}
                             />
                           ) : rule.numericLimit === null ? (
                             <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 dark:text-[#34D399]">
                               <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                              Included
+                              {t.included}
                             </span>
                           ) : (
                             <span className="font-semibold text-[#0F172A] dark:text-white">

@@ -18,8 +18,7 @@ export async function generateMetadata({
     locale: safeLocale,
     path: '/tools',
     title: `12 ${dict.nav.tools}`,
-    description:
-      'Explore all 12 free Instagram analytics, profile lookup, bio optimization, hashtag, caption, content ideas, and benchmarking tools built with transparent data standards.',
+    description: dict.tools.directorySubtitle,
   });
 }
 
@@ -37,20 +36,18 @@ export default async function ToolsDirectoryPage({
       <div className="max-w-3xl">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-[#6941EF] dark:border-violet-800/60 dark:bg-violet-950/60 dark:text-[#A99AFF]">
           <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-          12 Free Instagram Tools · No Sign-Up Required
+          {dict.tools.directoryBadge}
         </span>
         <h1 className="mt-4 font-display text-3xl font-extrabold tracking-tight text-[#0F172A] sm:text-4xl dark:text-[#F8FAFC]">
           {dict.nav.tools}
         </h1>
         <p className="mt-2.5 text-base leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
-          Every Viewora tool runs transparent, verifiable formulas on your entered numbers or
-          queries authorized public/demo providers — never fabricating live Instagram metrics or
-          claiming private-account access.
+          {dict.tools.directorySubtitle}
         </p>
       </div>
 
       <div className="mt-8">
-        <ToolsDirectoryClient locale={safeLocale} />
+        <ToolsDirectoryClient locale={safeLocale} dict={dict} />
       </div>
     </div>
   );

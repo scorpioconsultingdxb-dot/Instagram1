@@ -4,8 +4,8 @@ import { ArrowLeft } from 'lucide-react';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { getCurrentSessionUser } from '@/lib/auth/session';
-import { getUserWorkspaceState } from '@/lib/dashboard/store';
-import { isFeatureFlagEnabled } from '@/lib/admin/store';
+import { loadUserWorkspaceState } from '@/lib/dashboard/store';
+import { loadIsFeatureFlagEnabled } from '@/lib/admin/store';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';
 
@@ -24,7 +24,10 @@ export default async function SavedProfileDetailPage({
   }
 
   const dict = getDictionary(safeLocale);
-  const workspace = getUserWorkspaceState(user.id);
+  const [workspace, demoAllowed] = await Promise.all([
+    loadUserWorkspaceState(user.id),
+    loadIsFeatureFlagEnabled('demo_provider_enabled'),
+  ]);
   const savedRecord = workspace.savedProfiles.find(
     (p) => p.username.toLowerCase() === id.toLowerCase()
   );
@@ -33,7 +36,7 @@ export default async function SavedProfileDetailPage({
     : null;
 
   const lookup = await defaultProviderRegistry.lookupPublicProfile(id, {
-    allowDemoFallback: isFeatureFlagEnabled('demo_provider_enabled'),
+    allowDemoFallback: demoAllowed,
   });
   const profileData = savedRecord?.profile ?? lookup.data;
   const dataClass = savedRecord?.dataClass ?? (lookup.data ? lookup.meta.dataClass : 'unavailable');

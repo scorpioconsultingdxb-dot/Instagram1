@@ -5,13 +5,17 @@ import { getDictionary } from '@/i18n/get-dictionary';
 import { buildPageMetadata } from '@/lib/seo/metadata';
 import { getCurrentSessionUser, isAdminRole } from '@/lib/auth/session';
 import { getAccountProfilePrefs } from '@/lib/auth/profile-prefs';
-import { resolveEntitlements } from '@/lib/entitlements/service';
+import {
+  loadConfiguredPlans,
+  loadUserEntitlementOverrides,
+  resolveEntitlements,
+} from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import {
-  getUserWorkspaceState,
+  loadUserWorkspaceState,
   type SavedProfileRecord,
 } from '@/lib/dashboard/store';
-import { listActiveBroadcastNotifications } from '@/lib/admin/store';
+import { loadActiveBroadcastNotifications } from '@/lib/admin/store';
 import { CustomerDashboard } from '@/components/dashboard/CustomerDashboard';
 
 export const dynamic = 'force-dynamic';
@@ -76,19 +80,27 @@ export default async function DashboardPage({
   }
 
   const dict = getDictionary(safeLocale);
+  const [plans, overrides, profilePrefs, broadcasts] = await Promise.all([
+    loadConfiguredPlans(),
+    loadUserEntitlementOverrides(user.id),
+    getAccountProfilePrefs(user.id),
+    loadActiveBroadcastNotifications(user.segment),
+  ]);
   const entitlements = resolveEntitlements({
     planCode: user.planCode,
     billingInterval: user.billingInterval,
     userId: user.id,
+    plans,
+    overrides,
   });
 
-  const profilePrefs = await getAccountProfilePrefs(user.id);
   const defaultWs =
     profilePrefs.workspaceName ||
     (user.segment === 'agency' ? 'Primary Agency HQ' : 'Personal Workspace');
-  const workspace = getUserWorkspaceState(user.id, defaultWs);
-  const demoPreviewProfiles = await buildExplicitDemoPreviewProfiles(defaultWs);
-  const broadcasts = listActiveBroadcastNotifications(user.segment);
+  const [workspace, demoPreviewProfiles] = await Promise.all([
+    loadUserWorkspaceState(user.id, defaultWs),
+    buildExplicitDemoPreviewProfiles(defaultWs),
+  ]);
 
   const queuedHandle = saved?.trim() ? saved.trim().replace(/^@+/, '') : undefined;
 

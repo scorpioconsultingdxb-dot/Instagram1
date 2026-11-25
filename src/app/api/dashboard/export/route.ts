@@ -3,13 +3,15 @@ import { getCurrentSessionUser } from '@/lib/auth/session';
 import {
   assertEntitlement,
   EntitlementDeniedError,
+  loadConfiguredPlans,
+  loadUserEntitlementOverrides,
   resolveEntitlements,
 } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { buildProfileCsvExport } from '@/lib/reports/export';
-import { recordExportHistory } from '@/lib/dashboard/store';
+import { persistExportHistory } from '@/lib/dashboard/store';
 import { normalizeInstagramInput } from '@/lib/instagram/normalize';
-import { isFeatureFlagEnabled } from '@/lib/admin/store';
+import { loadIsFeatureFlagEnabled } from '@/lib/admin/store';
 
 function escapeHtml(value: string): string {
   return value
@@ -34,10 +36,16 @@ export async function GET(request: NextRequest) {
   }
   const username = normalized.username;
 
+  const [plans, overrides] = await Promise.all([
+    loadConfiguredPlans(),
+    loadUserEntitlementOverrides(user.id),
+  ]);
   const entitlements = resolveEntitlements({
     planCode: user.planCode,
     billingInterval: user.billingInterval,
     userId: user.id,
+    plans,
+    overrides,
   });
 
   try {
@@ -58,7 +66,7 @@ export async function GET(request: NextRequest) {
   }
 
   const lookup = await defaultProviderRegistry.lookupPublicProfile(username, {
-    allowDemoFallback: isFeatureFlagEnabled('demo_provider_enabled'),
+    allowDemoFallback: await loadIsFeatureFlagEnabled('demo_provider_enabled'),
   });
 
   if (!lookup.data) {
@@ -68,7 +76,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  recordExportHistory(user.id, {
+  await persistExportHistory(user.id, {
     username: lookup.data.username,
     format,
     dataClass: lookup.meta.dataClass,

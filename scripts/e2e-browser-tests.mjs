@@ -258,7 +258,7 @@ async function runTests() {
     await sleep(300);
     report.screenshots.push(await cdp.screenshot('final_home_390px_mobile.png'));
 
-    // 2. Five-language interface verification
+    // 2. Five-language interface verification (homepage + pricing, tools, login, register)
     await cdp.setViewport(1440, 900);
     for (const loc of ['en', 'pt-BR', 'es', 'de', 'fr']) {
       await cdp.goto(`${BASE_URL}/${loc}`, 800);
@@ -272,7 +272,24 @@ async function runTests() {
       assert(!langCheck.title.includes('Viewora | Viewora'), `Duplicate brand title in ${loc}: ${langCheck.title}`);
       report.locales.push({ locale: loc, ...langCheck });
     }
-    report.passed.push('Five-language routes (/en, /pt-BR, /es, /de, /fr) verified');
+
+    const localizedJourneyChecks = [
+      { path: '/pt-BR/pricing', expected: ['Planos Simples e Transparentes', 'Trimestral', 'Anual'] },
+      { path: '/es/tools', expected: ['12 Herramientas Gratis de Instagram', 'Analítica'] },
+      { path: '/de/login', expected: ['Bei Viewora anmelden', 'Passwort vergessen?'] },
+      { path: '/fr/register', expected: ['Créez votre compte Viewora gratuit', 'Entreprise'] },
+    ];
+    for (const check of localizedJourneyChecks) {
+      await cdp.goto(`${BASE_URL}${check.path}`, 900);
+      const bodyText = await cdp.eval(`document.body.innerText`);
+      for (const phrase of check.expected) {
+        assert(
+          bodyText.includes(phrase),
+          `Localized route ${check.path} missing expected translation "${phrase}"`
+        );
+      }
+    }
+    report.passed.push('Five-language routes (/en, /pt-BR, /es, /de, /fr) and localized Pricing/Tools/Auth journeys verified');
 
     // 3. Free Tools Directory & Engagement Calculator + Story Viewer honesty
     await cdp.goto(`${BASE_URL}/en/tools`, 1000);
@@ -422,7 +439,18 @@ async function runTests() {
     assert(hqText.includes('Maya Strategy Studio'), 'Workspace identity did not persist in Profile HQ');
     assert(!hqText.includes('Member since Nov 2026'), 'Hardcoded Member since Nov 2026 still present');
     report.screenshots.push(await cdp.screenshot('final_profile_hq_1440px.png'));
-    report.passed.push('Personal Digital HQ persistence & genuine member-since / usage stats verified');
+
+    // Verify localized authenticated Customer Dashboard & Profile HQ rendering
+    await cdp.goto(`${BASE_URL}/pt-BR/dashboard`, 1100);
+    const ptDashText = await cdp.eval(`document.body.innerText`);
+    assert(ptDashText.includes('Perfis Salvos'), 'Localized /pt-BR/dashboard missing Perfis Salvos');
+    await cdp.goto(`${BASE_URL}/de/dashboard/profile`, 1100);
+    const deHqText = await cdp.eval(`document.body.innerText`);
+    assert(
+      deHqText.includes('Persönliches Digital-HQ'),
+      'Localized /de/dashboard/profile missing Persönliches Digital-HQ'
+    );
+    report.passed.push('Personal Digital HQ persistence, genuine usage stats, and localized authenticated routes verified');
 
     // 7. Admin Console RBAC & Persistence
     const adminLogin = await cdp.eval(`(async () => {
@@ -480,8 +508,57 @@ async function runTests() {
       `Expected ai_insights_enabled flag enforcement (503 then 200), got ${JSON.stringify(aiFlagRuntimeTest)}`
     );
 
+    // Verify inline Admin Entitlement numeric limit editing in UI + persistence across reload
+    await cdp.goto(`${BASE_URL}/en/admin/entitlements`, 1200);
+    const openedEdit = await cdp.eval(`(() => {
+      const btn = document.querySelector('button[aria-label="Edit limit for Starter tracked_profiles"]');
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`);
+    assert(openedEdit, 'Edit limit button for Starter tracked_profiles not found in Admin Entitlements UI');
+    await sleep(250);
+    const savedInlineLimit = await cdp.eval(`(() => {
+      const input = document.querySelector('input[aria-label="Numeric limit for Starter tracked_profiles"]');
+      if (!input) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, '5');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const saveBtn = Array.from(input.closest('td').querySelectorAll('button')).find(b => b.innerText.trim() === 'Save');
+      if (!saveBtn) return false;
+      saveBtn.click();
+      return true;
+    })()`);
+    assert(savedInlineLimit, 'Failed to submit inline numeric limit edit in Admin Entitlements UI');
+    await sleep(700);
+    await cdp.goto(`${BASE_URL}/en/admin/entitlements`, 1200);
+    const persistedToggleText = await cdp.eval(
+      `document.querySelector('button[aria-label="Toggle Starter tracked_profiles"]')?.innerText.trim() ?? ''`
+    );
+    assert(
+      persistedToggleText === '5',
+      `Expected persisted Starter tracked_profiles limit "5" after reload, got "${persistedToggleText}"`
+    );
+
+    // Also verify previously omitted featureKey (follower_trends) & unlimited (null) limit works cleanly
+    const extraKeyRes = await cdp.eval(`(async () => {
+      const res = await fetch('/api/admin/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'update_entitlement',
+          planCode: 'starter',
+          featureKey: 'follower_trends',
+          enabled: true,
+          numericLimit: null
+        })
+      });
+      return res.status;
+    })()`);
+    assert(extraKeyRes === 200, `Expected 200 updating follower_trends unlimited limit, got ${extraKeyRes}`);
+
     report.screenshots.push(await cdp.screenshot('final_admin_1440px.png'));
-    report.passed.push('Admin Console rendering, RBAC, locked payments_enabled guard, and runtime feature-flag enforcement verified');
+    report.passed.push('Admin Console rendering, RBAC, inline entitlement limit editing, locked payments_enabled guard, and runtime feature-flag enforcement verified');
 
     report.consoleErrors = cdp.consoleErrors;
     report.pageErrors = cdp.pageErrors;

@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Locale } from '@/i18n/config';
+import type { Dictionary } from '@/i18n/types';
+import { getDictionary } from '@/i18n/get-dictionary';
 import type { CustomerSegment } from '@/lib/entitlements/types';
 
 function safeClientRedirect(raw: string | undefined): string | null {
@@ -25,6 +27,7 @@ function safeClientRedirect(raw: string | undefined): string | null {
 
 export function SignupForm({
   locale,
+  dict: providedDict,
   initialHandle,
   initialSegment = 'personal',
   redirectTo,
@@ -32,12 +35,15 @@ export function SignupForm({
   demoModeEnabled,
 }: {
   locale: Locale;
+  dict?: Dictionary;
   initialHandle?: string;
   initialSegment?: CustomerSegment;
   redirectTo?: string;
   supabaseConfigured: boolean;
   demoModeEnabled: boolean;
 }) {
+  const dict = providedDict ?? getDictionary(locale);
+  const t = dict.auth;
   const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -137,8 +143,7 @@ export function SignupForm({
 
       {!supabaseConfigured && demoModeEnabled ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-          <strong>Isolated Local Demo Mode:</strong> Accounts created here are stored locally for
-          evaluation only and are not production Supabase Auth accounts.
+          <strong>{t.localDemoTitle}:</strong> {t.localDemoSignupNotice}
         </div>
       ) : null}
 
@@ -155,7 +160,7 @@ export function SignupForm({
             htmlFor="signup-name"
             className="block text-xs font-semibold text-[#0F172A] dark:text-slate-200"
           >
-            Full name *
+            {t.fullNameLabel}
           </label>
           <input
             id="signup-name"
@@ -176,7 +181,7 @@ export function SignupForm({
             htmlFor="signup-email"
             className="block text-xs font-semibold text-[#0F172A] dark:text-slate-200"
           >
-            Work or personal email *
+            {t.workEmailLabel}
           </label>
           <input
             id="signup-email"
@@ -197,7 +202,7 @@ export function SignupForm({
           htmlFor="signup-password"
           className="block text-xs font-semibold text-[#0F172A] dark:text-slate-200"
         >
-          Password (minimum 8 characters) *
+          {t.passwordMinLabel}
         </label>
         <div className="relative mt-1.5">
           <input
@@ -210,13 +215,13 @@ export function SignupForm({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             aria-describedby="signup-password-hints"
-            placeholder="Create a strong password"
+            placeholder={t.createPasswordPlaceholder}
             className="h-11 w-full rounded-xl border border-slate-300 bg-white pr-11 pl-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
           />
           <button
             type="button"
             onClick={() => setShowPassword((prev) => !prev)}
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            aria-label={showPassword ? t.hidePassword : t.showPassword}
             aria-pressed={showPassword}
             className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded-lg p-1.5 text-[#64748B] hover:bg-slate-100 hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:bg-[#192337] dark:hover:text-white"
           >
@@ -235,19 +240,19 @@ export function SignupForm({
             className={`inline-flex items-center gap-1 ${pwChecks.length ? 'font-semibold text-emerald-700 dark:text-[#34D399]' : ''}`}
           >
             <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-            8+ characters
+            {t.pwRuleLength}
           </span>
           <span
             className={`inline-flex items-center gap-1 ${pwChecks.mixed ? 'font-semibold text-emerald-700 dark:text-[#34D399]' : ''}`}
           >
             <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-            Upper &amp; lowercase
+            {t.pwRuleMixed}
           </span>
           <span
             className={`inline-flex items-center gap-1 ${pwChecks.number ? 'font-semibold text-emerald-700 dark:text-[#34D399]' : ''}`}
           >
             <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-            Includes a number
+            {t.pwRuleNumber}
           </span>
         </div>
       </div>
@@ -255,14 +260,14 @@ export function SignupForm({
       {/* Segment Onboarding Selector */}
       <fieldset>
         <legend className="text-xs font-semibold text-[#0F172A] dark:text-slate-200">
-          How will you use Viewora?
+          {t.segmentLegend}
         </legend>
         <div className="mt-2 grid gap-2.5 sm:grid-cols-3">
           {(
             [
-              { id: 'personal', title: 'Personal', desc: 'Quick lookups & simple calculators' },
-              { id: 'business', title: 'Business', desc: 'Competitors & content trends' },
-              { id: 'agency', title: 'Agency', desc: 'Multi-client workspaces & exports' },
+              { id: 'personal', title: t.segmentPersonal, desc: t.segmentPersonalDesc },
+              { id: 'business', title: t.segmentBusiness, desc: t.segmentBusinessDesc },
+              { id: 'agency', title: t.segmentAgency, desc: t.segmentAgencyDesc },
             ] as const
           ).map((opt) => (
             <button
@@ -290,7 +295,7 @@ export function SignupForm({
       {/* Transparent, User-Controlled Email Preferences */}
       <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-[#263047] dark:bg-[#0F172A]">
         <legend className="text-xs font-semibold text-[#0F172A] dark:text-slate-200">
-          Email &amp; Onboarding Preferences
+          {t.prefsLegend}
         </legend>
         <div className="mt-2.5 space-y-2 text-xs text-[#0F172A] dark:text-slate-300">
           <label className="flex items-center gap-2">
@@ -299,7 +304,7 @@ export function SignupForm({
               checked={runOnboarding}
               onChange={(e) => setRunOnboarding(e.target.checked)}
             />
-            <span>Show optional 30-second workspace setup after registration</span>
+            <span>{t.prefOnboarding}</span>
           </label>
           <label className="flex items-center gap-2">
             <input
@@ -309,7 +314,7 @@ export function SignupForm({
                 setEmailPreferences({ ...emailPreferences, trackingAlerts: e.target.checked })
               }
             />
-            <span>Tracking alerts for profiles I explicitly save</span>
+            <span>{t.prefTrackingAlerts}</span>
           </label>
           <label className="flex items-center gap-2">
             <input
@@ -319,7 +324,7 @@ export function SignupForm({
                 setEmailPreferences({ ...emailPreferences, weeklyDigest: e.target.checked })
               }
             />
-            <span>Weekly analytics summary digest (optional)</span>
+            <span>{t.prefWeeklyDigest}</span>
           </label>
           <label className="flex items-center gap-2">
             <input
@@ -329,7 +334,7 @@ export function SignupForm({
                 setEmailPreferences({ ...emailPreferences, marketing: e.target.checked })
               }
             />
-            <span>Promotional offers (off by default)</span>
+            <span>{t.prefMarketing}</span>
           </label>
         </div>
       </fieldset>
@@ -352,23 +357,23 @@ export function SignupForm({
         {loading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            Creating workspace…
+            {t.creatingWorkspace}
           </>
         ) : (
           <>
-            Create Free Viewora Account
+            {t.createAccountCta}
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </>
         )}
       </button>
 
       <p className="text-center text-xs text-[#64748B] dark:text-[#94A3B8]">
-        Already registered?{' '}
+        {t.alreadyRegistered}{' '}
         <Link
           href={loginHref}
           className="font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
         >
-          Sign in
+          {t.signInLink}
         </Link>
       </p>
     </form>

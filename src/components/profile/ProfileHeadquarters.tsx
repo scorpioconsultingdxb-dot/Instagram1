@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { LOCALE_METADATA, SUPPORTED_LOCALES, type Locale } from '@/i18n/config';
+import type { Dictionary } from '@/i18n/types';
+import { getDictionary } from '@/i18n/get-dictionary';
 import type { SessionUser } from '@/lib/auth/session';
 import type { ResolvedEntitlements } from '@/lib/entitlements/types';
 import { hasEntitlement } from '@/lib/entitlements/helpers';
@@ -121,17 +123,21 @@ function formatMemberSince(iso?: string): string {
 
 export function ProfileHeadquarters({
   locale,
+  dict: providedDict,
   user,
   entitlements,
   initialPrefs,
   usageStats,
 }: {
   locale: Locale;
+  dict?: Dictionary;
   user: SessionUser;
   entitlements: ResolvedEntitlements;
   initialPrefs: PersonalProfilePrefs;
   usageStats: WorkspaceUsageStats;
 }) {
+  const dict = providedDict ?? getDictionary(locale);
+  const tp = dict.profileHq;
   const router = useRouter();
   const { theme, setTheme, accent, setAccent } = useTheme();
   const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
@@ -296,22 +302,22 @@ export function ProfileHeadquarters({
   };
 
   const tabs: Array<{ id: ProfileTab; label: string; icon: typeof User }> = [
-    { id: 'overview', label: 'My Overview', icon: LayoutDashboard },
-    { id: 'personalization', label: 'Avatar & Theme', icon: Palette },
-    { id: 'workspace', label: 'Workspace & Layout', icon: Building2 },
-    { id: 'reports', label: 'My Reports', icon: FileText },
-    { id: 'membership', label: 'Membership', icon: CreditCard },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'security', label: 'Security', icon: KeyRound },
-    { id: 'privacy', label: 'Privacy', icon: Shield },
+    { id: 'overview', label: tp.tabOverview, icon: LayoutDashboard },
+    { id: 'personalization', label: tp.tabPersonalization, icon: Palette },
+    { id: 'workspace', label: tp.tabWorkspace, icon: Building2 },
+    { id: 'reports', label: tp.tabReports, icon: FileText },
+    { id: 'membership', label: tp.tabMembership, icon: CreditCard },
+    { id: 'notifications', label: tp.tabNotifications, icon: Bell },
+    { id: 'security', label: tp.tabSecurity, icon: KeyRound },
+    { id: 'privacy', label: tp.tabPrivacy, icon: Shield },
   ];
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <Breadcrumbs
         items={[
-          { label: 'Dashboard', href: `/${locale}/dashboard` },
-          { label: 'My Profile — Personal Digital HQ' },
+          { label: dict.nav.dashboard, href: `/${locale}/dashboard` },
+          { label: tp.breadcrumbTitle },
         ]}
       />
 
@@ -323,7 +329,7 @@ export function ProfileHeadquarters({
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.16),transparent_55%)]" />
           <div className="absolute top-4 right-4 flex items-center gap-2">
             <span className="rounded-full bg-black/40 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
-              Private Profile · Visible Only to You
+              {tp.privateBadge}
             </span>
           </div>
         </div>
@@ -347,7 +353,7 @@ export function ProfileHeadquarters({
                   {title} · {organization}
                 </p>
                 <p className="mt-1 font-mono text-[11px] text-[#64748B] dark:text-[#94A3B8]">
-                  {user.email} · Workspace: {workspaceName} · Member since{' '}
+                  {user.email} · {tp.workspaceLabel}: {workspaceName} · {tp.memberSince}{' '}
                   {formatMemberSince(user.createdAt)}
                 </p>
               </div>
@@ -359,13 +365,13 @@ export function ProfileHeadquarters({
                 onClick={() => setActiveTab('personalization')}
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-[#0F172A] transition hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#192337] dark:text-[#F8FAFC]"
               >
-                Edit Identity &amp; Theme
+                {tp.editIdentityTheme}
               </button>
               <Link
                 href={`/${locale}/dashboard`}
                 className="viewora-btn-primary rounded-xl px-4 py-2 text-xs font-semibold"
               >
-                Open Workspace
+                {tp.openWorkspace}
               </Link>
             </div>
           </div>
@@ -373,22 +379,22 @@ export function ProfileHeadquarters({
           {/* Genuine Account Usage Statistics */}
           <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <MetricCard
-              label="Saved Profiles Used"
+              label={tp.statSavedProfiles}
               value={`${usageStats.savedProfilesCount} / ${trackedLimit}`}
               hint={`${usageStats.foldersCount} research folder${usageStats.foldersCount === 1 ? '' : 's'}`}
             />
             <MetricCard
-              label="Private Notes & Comparisons"
+              label={tp.statNotesComparisons}
               value={`${usageStats.notesCount} / ${usageStats.comparisonsCount}`}
               hint="Notes saved / comparison projects"
             />
             <MetricCard
-              label="Saved AI Reports"
+              label={tp.statAiReports}
               value={`${usageStats.reportsCount}`}
               hint={`Plan quota: ${aiLimit}/mo`}
             />
             <MetricCard
-              label="Exports Recorded"
+              label={tp.statExports}
               value={`${usageStats.exportsCount}`}
               hint={`Lookback: ${defaultRange.toUpperCase()} · ${density}`}
             />
@@ -451,16 +457,14 @@ export function ProfileHeadquarters({
           <div className="grid gap-6 md:grid-cols-2">
             <div className="space-y-3">
               <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                Account &amp; Workspace Summary
+                {tp.summaryHeading}
               </h2>
               <p className="text-xs leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
-                Your Personal Digital Headquarters stores your private workspace preferences,
-                personal shortcuts, visual theme, and GDPR/LGPD/UAE PDPL privacy controls. All saves
-                are validated server-side and scoped strictly to your authenticated account.
+                {tp.summaryBody}
               </p>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
                 <p className="font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Verified Account Details
+                  {tp.verifiedDetailsHeading}
                 </p>
                 <ul className="mt-2 space-y-1.5 text-[#64748B] dark:text-[#94A3B8]">
                   <li>
@@ -470,19 +474,19 @@ export function ProfileHeadquarters({
                     </strong>
                   </li>
                   <li>
-                    • Member since:{' '}
+                    • {tp.memberSince}:{' '}
                     <strong className="text-[#0F172A] dark:text-white">
                       {formatMemberSince(user.createdAt)}
                     </strong>
                   </li>
                   <li>
-                    • Preferred language:{' '}
+                    • {dict.nav.language}:{' '}
                     <strong className="text-[#0F172A] dark:text-white">
                       {LOCALE_METADATA[preferredLocale].nativeLabel} ({preferredLocale})
                     </strong>
                   </li>
                   <li>
-                    • Unread notifications:{' '}
+                    • {tp.tabNotifications}:{' '}
                     <strong className="tabular-nums text-[#0F172A] dark:text-white">
                       {usageStats.unreadNotificationsCount}
                     </strong>
@@ -494,14 +498,14 @@ export function ProfileHeadquarters({
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Personal Shortcuts ({shortcuts.length}/6)
+                  {tp.shortcutsHeading} ({shortcuts.length}/6)
                 </h2>
                 <button
                   type="button"
                   onClick={() => setActiveTab('workspace')}
                   className="text-xs font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
                 >
-                  Customize →
+                  {tp.customizeAction}
                 </button>
               </div>
               <div className="grid gap-2.5">

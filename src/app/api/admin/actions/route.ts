@@ -2,17 +2,17 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { hasAdminCapability, requireAdminApi } from '@/lib/admin/rbac';
 import {
-  createBroadcastNotification,
-  recordAuditLog,
-  toggleBroadcastNotification,
-  toggleFeatureFlag,
-  updateCmsContent,
-  updateSupportTicket,
+  persistAuditLog,
+  persistBroadcastCreate,
+  persistBroadcastToggle,
+  persistCmsContentUpdate,
+  persistFeatureFlagToggle,
+  persistSupportTicketUpdate,
 } from '@/lib/admin/store';
 import { getLocalUserById, updateLocalUserPlan, updateLocalUserRole } from '@/lib/auth/session';
 import {
-  updateConfiguredPlan,
-  updatePlanEntitlement,
+  persistConfiguredPlan,
+  persistPlanEntitlement,
 } from '@/lib/entitlements/service';
 import type { FeatureKey } from '@/lib/entitlements/types';
 
@@ -20,8 +20,11 @@ const featureKeySchema = z.enum([
   'daily_searches',
   'tracked_profiles',
   'historical_analytics_days',
+  'follower_trends',
   'competitor_monitoring',
   'ai_profile_reports',
+  'influencer_research',
+  'email_notifications',
   'pdf_export',
   'csv_export',
   'team_seats',
@@ -142,7 +145,7 @@ export async function POST(request: NextRequest) {
       updateLocalUserRole(action.userId, action.role);
     }
     if (action.planCode) updateLocalUserPlan(action.userId, action.planCode);
-    const audit = recordAuditLog({
+    const audit = await persistAuditLog({
       actorId: actor.id,
       actorEmail: actor.email,
       action: 'admin.user.updated',
@@ -160,7 +163,7 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    const updated = updateConfiguredPlan(action.planCode, {
+    const updated = await persistConfiguredPlan(action.planCode, {
       monthlyPriceCents: action.monthlyPriceCents,
       quarterlyDiscount: action.quarterlyDiscount,
       annualDiscount: action.annualDiscount,
@@ -168,7 +171,7 @@ export async function POST(request: NextRequest) {
     if (!updated) {
       return NextResponse.json({ ok: false, error: 'Plan not found.' }, { status: 404 });
     }
-    const audit = recordAuditLog({
+    const audit = await persistAuditLog({
       actorId: actor.id,
       actorEmail: actor.email,
       action: 'admin.plan.updated',
@@ -190,7 +193,7 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    const ok = updatePlanEntitlement(
+    const ok = await persistPlanEntitlement(
       action.planCode,
       action.featureKey as FeatureKey,
       action.enabled,
@@ -199,7 +202,7 @@ export async function POST(request: NextRequest) {
     if (!ok) {
       return NextResponse.json({ ok: false, error: 'Plan not found.' }, { status: 404 });
     }
-    const audit = recordAuditLog({
+    const audit = await persistAuditLog({
       actorId: actor.id,
       actorEmail: actor.email,
       action: 'admin.entitlement.updated',
@@ -217,11 +220,11 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    const result = toggleFeatureFlag(action.key, action.enabled);
+    const result = await persistFeatureFlagToggle(action.key, action.enabled, actor.id);
     if (!result.ok) {
       return NextResponse.json({ ok: false, error: result.error }, { status: 403 });
     }
-    const audit = recordAuditLog({
+    const audit = await persistAuditLog({
       actorId: actor.id,
       actorEmail: actor.email,
       action: 'admin.feature_flag.toggled',
@@ -239,7 +242,7 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    const updated = updateSupportTicket(action.id, {
+    const updated = await persistSupportTicketUpdate(action.id, {
       status: action.status,
       priority: action.priority,
       adminNotes: action.adminNotes,
@@ -247,7 +250,7 @@ export async function POST(request: NextRequest) {
     if (!updated) {
       return NextResponse.json({ ok: false, error: 'Ticket not found.' }, { status: 404 });
     }
-    const audit = recordAuditLog({
+    const audit = await persistAuditLog({
       actorId: actor.id,
       actorEmail: actor.email,
       action: 'admin.support_ticket.updated',
@@ -265,14 +268,15 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    const broadcast = createBroadcastNotification({
+    const broadcast = await persistBroadcastCreate({
       title: action.title,
       body: action.body,
       category: action.category,
       targetSegment: action.targetSegment,
       isActive: true,
+      createdBy: actor.id,
     });
-    const audit = recordAuditLog({
+    const audit = await persistAuditLog({
       actorId: actor.id,
       actorEmail: actor.email,
       action: 'admin.broadcast.created',
@@ -290,11 +294,11 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    const broadcast = toggleBroadcastNotification(action.id, action.isActive);
+    const broadcast = await persistBroadcastToggle(action.id, action.isActive);
     if (!broadcast) {
       return NextResponse.json({ ok: false, error: 'Notification not found.' }, { status: 404 });
     }
-    const audit = recordAuditLog({
+    const audit = await persistAuditLog({
       actorId: actor.id,
       actorEmail: actor.email,
       action: 'admin.broadcast.toggled',
@@ -312,15 +316,19 @@ export async function POST(request: NextRequest) {
       { status: 403 }
     );
   }
-  const updatedCms = updateCmsContent(action.id, {
-    title: action.title,
-    body: action.body,
-    isPublished: action.isPublished,
-  });
+  const updatedCms = await persistCmsContentUpdate(
+    action.id,
+    {
+      title: action.title,
+      body: action.body,
+      isPublished: action.isPublished,
+    },
+    actor.id
+  );
   if (!updatedCms) {
     return NextResponse.json({ ok: false, error: 'CMS entry not found.' }, { status: 404 });
   }
-  const audit = recordAuditLog({
+  const audit = await persistAuditLog({
     actorId: actor.id,
     actorEmail: actor.email,
     action: 'admin.cms.updated',

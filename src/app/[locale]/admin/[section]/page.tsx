@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft, ShieldAlert } from 'lucide-react';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
 import { getCurrentSessionUser, isAdminRole, listLocalDemoUsers } from '@/lib/auth/session';
-import { getConfiguredPlans } from '@/lib/entitlements/service';
+import { loadConfiguredPlans } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { PROVIDER_EVALUATION_MATRIX } from '@/lib/providers/resilience';
 import { getAiCostSummary } from '@/lib/ai/gemini';
@@ -13,13 +13,13 @@ import { getReferralOverview } from '@/lib/referrals/service';
 import {
   getApiUsageMetrics,
   getSearchAnalyticsMetrics,
-  listAuditLogs,
-  listBroadcastNotifications,
-  listCmsContent,
-  listFeatureFlags,
-  listSupportTickets,
+  loadAuditLogs,
+  loadBroadcastNotifications,
+  loadCmsContent,
+  loadFeatureFlags,
+  loadSupportTickets,
 } from '@/lib/admin/store';
-import { getFunnelSummary } from '@/lib/analytics/funnel';
+import { loadFunnelSummary } from '@/lib/analytics/funnel';
 import { DEFAULT_EXPERIMENTS } from '@/lib/experiments/ab';
 import { AdminConsole, type AdminTab } from '@/components/admin/AdminConsole';
 
@@ -192,23 +192,41 @@ export default async function AdminSectionPage({
     );
   }
 
-  const providerHealth = await defaultProviderRegistry.checkAllHealth();
+  const [
+    providerHealth,
+    initialPlans,
+    conversionAnalytics,
+    initialCms,
+    initialTickets,
+    initialBroadcasts,
+    initialAuditLogs,
+    initialFlags,
+  ] = await Promise.all([
+    defaultProviderRegistry.checkAllHealth(),
+    loadConfiguredPlans(),
+    loadFunnelSummary(),
+    loadCmsContent(),
+    loadSupportTickets(),
+    loadBroadcastNotifications(),
+    loadAuditLogs(),
+    loadFeatureFlags(),
+  ]);
   return (
     <AdminConsole
       actor={user}
       initialTab={SECTION_TO_ADMIN_TAB[section] ?? 'users'}
       initialUsers={listLocalDemoUsers()}
-      initialPlans={getConfiguredPlans()}
+      initialPlans={initialPlans}
       providerHealth={providerHealth}
       apiUsage={getApiUsageMetrics()}
       searchAnalytics={getSearchAnalyticsMetrics()}
-      conversionAnalytics={getFunnelSummary()}
+      conversionAnalytics={conversionAnalytics}
       experiments={DEFAULT_EXPERIMENTS}
-      initialCms={listCmsContent()}
-      initialTickets={listSupportTickets()}
-      initialBroadcasts={listBroadcastNotifications()}
-      initialAuditLogs={listAuditLogs()}
-      initialFlags={listFeatureFlags()}
+      initialCms={initialCms}
+      initialTickets={initialTickets}
+      initialBroadcasts={initialBroadcasts}
+      initialAuditLogs={initialAuditLogs}
+      initialFlags={initialFlags}
     />
   );
 }

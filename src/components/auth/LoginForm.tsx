@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Locale } from '@/i18n/config';
+import type { Dictionary } from '@/i18n/types';
+import { getDictionary } from '@/i18n/get-dictionary';
 
 const LOCAL_DEMO_ACCOUNTS = [
   { email: 'personal@viewora.demo', label: 'Personal (Free Plan)' },
@@ -24,15 +26,19 @@ function safeClientRedirect(raw: string | undefined, fallback: string): string {
 
 export function LoginForm({
   locale,
+  dict: providedDict,
   supabaseConfigured,
   demoModeEnabled,
   redirectTo,
 }: {
   locale: Locale;
+  dict?: Dictionary;
   supabaseConfigured: boolean;
   demoModeEnabled: boolean;
   redirectTo?: string;
 }) {
+  const dict = providedDict ?? getDictionary(locale);
+  const t = dict.auth;
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -82,7 +88,7 @@ export function LoginForm({
     <div className="space-y-6">
       {redirectTo ? (
         <div className="rounded-xl border border-violet-200 bg-violet-50/70 px-3.5 py-2.5 text-xs text-violet-950 dark:border-[#263047] dark:bg-[#192337] dark:text-violet-200">
-          After signing in, you&apos;ll return directly to{' '}
+          {t.redirectNoticePrefix}{' '}
           <code className="font-mono font-semibold">{destination}</code>.
         </div>
       ) : null}
@@ -93,7 +99,7 @@ export function LoginForm({
             htmlFor="login-email"
             className="block text-xs font-semibold text-[#0F172A] dark:text-slate-200"
           >
-            Email address
+            {t.emailLabel}
           </label>
           <input
             id="login-email"
@@ -115,13 +121,13 @@ export function LoginForm({
               htmlFor="login-password"
               className="block text-xs font-semibold text-[#0F172A] dark:text-slate-200"
             >
-              Password
+              {t.passwordLabel}
             </label>
             <Link
               href={`/${locale}/forgot-password`}
               className="text-xs font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
             >
-              Forgot password?
+              {t.forgotPassword}
             </Link>
           </div>
           <div className="relative mt-1.5">
@@ -134,14 +140,14 @@ export function LoginForm({
               disabled={loading}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
+              placeholder={t.passwordPlaceholder}
               aria-invalid={Boolean(error)}
               className="h-11 w-full rounded-xl border border-slate-300 bg-white pr-11 pl-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
             />
             <button
               type="button"
               onClick={() => setShowPassword((prev) => !prev)}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? t.hidePassword : t.showPassword}
               aria-pressed={showPassword}
               className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded-lg p-1.5 text-[#64748B] hover:bg-slate-100 hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:bg-[#192337] dark:hover:text-white"
             >
@@ -172,11 +178,11 @@ export function LoginForm({
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Signing in…
+              {t.signingIn}
             </>
           ) : (
             <>
-              Sign in
+              {t.signInCta}
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </>
           )}
@@ -187,11 +193,11 @@ export function LoginForm({
       {supabaseConfigured ? (
         <p className="flex items-center justify-center gap-1.5 text-[11px] text-[#64748B] dark:text-[#94A3B8]">
           <ShieldCheck className="h-3.5 w-3.5 text-[#34D399]" aria-hidden="true" />
-          Protected by Supabase Authentication &amp; HttpOnly session cookies.
+          {t.protectedBySupabase}
         </p>
       ) : !demoModeEnabled ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-          <p className="font-bold">Live Authentication Not Configured Yet</p>
+          <p className="font-bold">{t.authNotConfiguredTitle}</p>
           <p className="mt-1 leading-relaxed">
             Configure <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> and{' '}
             <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to activate production
@@ -203,15 +209,14 @@ export function LoginForm({
         <div className="rounded-xl border border-amber-300/80 bg-amber-50/70 p-4 dark:border-amber-800/60 dark:bg-amber-950/25">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-bold text-amber-950 dark:text-amber-200">
-              Isolated Local Demo Mode (Not Production Auth)
+              {t.localDemoTitle}
             </p>
             <span className="rounded-full bg-amber-200/80 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-950 dark:bg-amber-900 dark:text-amber-200">
               DEMO_MODE_ENABLED=true
             </span>
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-amber-900/90 dark:text-amber-200/80">
-            For local product evaluation only. Select a demo persona below to inspect customer and
-            admin workflows:
+            {t.localDemoBody}
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {LOCAL_DEMO_ACCOUNTS.map((acc) => (
@@ -233,12 +238,12 @@ export function LoginForm({
       )}
 
       <p className="text-center text-xs text-[#64748B] dark:text-[#94A3B8]">
-        New to Viewora?{' '}
+        {t.newToViewora}{' '}
         <Link
           href={registerHref}
           className="font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
         >
-          Create a free account
+          {t.createFreeAccount}
         </Link>
       </p>
     </div>

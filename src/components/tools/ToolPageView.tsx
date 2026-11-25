@@ -62,13 +62,29 @@ export function ToolPageView({
   const relatedTools = [...sameCategory, ...otherCategory].slice(0, 4);
 
   const preview = PREMIUM_PREVIEWS[tool.category];
+  const tt = dict.tools;
+
+  const categoryLabel = (cat: ToolDefinition['category']) => {
+    switch (cat) {
+      case 'Viewer':
+        return tt.categoryViewer;
+      case 'Analytics':
+        return tt.categoryAnalytics;
+      case 'Optimization':
+        return tt.categoryOptimization;
+      case 'Research':
+        return tt.categoryResearch;
+      case 'Creation':
+        return tt.categoryCreation;
+    }
+  };
 
   const modeBadge =
     tool.mode === 'functional_calculator'
-      ? { label: 'Deterministic Formula Engine', icon: Calculator }
+      ? { label: tt.modeCalculator, icon: Calculator }
       : tool.mode === 'authorized_status_check'
-        ? { label: 'Authorized Meta Scope Check', icon: Lock }
-        : { label: 'Authorized Public / Demo Provider', icon: Sparkles };
+        ? { label: tt.modeStatusCheck, icon: Lock }
+        : { label: tt.modeProvider, icon: Sparkles };
   const ModeIcon = modeBadge.icon;
 
   const jsonLd = {
@@ -99,7 +115,7 @@ export function ToolPageView({
       <header className="mt-5">
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-block rounded-full bg-violet-50 px-3 py-0.5 text-xs font-bold text-[#6941EF] dark:bg-violet-950/60 dark:text-[#A99AFF]">
-            {tool.category}
+            {categoryLabel(tool.category)}
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-0.5 text-xs font-semibold text-[#64748B] dark:border-[#263047] dark:bg-[#131C2E] dark:text-[#94A3B8]">
             <ModeIcon className="h-3 w-3 text-[#22D3EE]" aria-hidden="true" />
@@ -130,9 +146,7 @@ export function ToolPageView({
             aria-hidden="true"
           />
           <div>
-            <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-              Data-Source &amp; Methodology Disclosure
-            </p>
+            <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">{tt.disclosureTitle}</p>
             <p className="mt-1 leading-relaxed">{tool.dataDisclosure}</p>
           </div>
         </div>
@@ -140,7 +154,7 @@ export function ToolPageView({
 
       <section className="viewora-card mt-8 rounded-2xl p-6">
         <h2 className="font-display text-lg font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-          How to get the most from this tool
+          {tt.howToTitle}
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
           {tool.educationalBody}
@@ -153,14 +167,14 @@ export function ToolPageView({
           description={preview.description}
           requiredTier={preview.tier}
           ctaHref={`/${locale}/pricing`}
-          ctaLabel="Compare Membership Plans (Demo Pricing)"
+          ctaLabel={tt.comparePlansCta}
         />
       </div>
 
       {tool.faqs.length > 0 ? (
         <section className="mt-10">
           <h2 className="font-display text-xl font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-            Frequently Asked Questions
+            {tt.faqTitle}
           </h2>
           <dl className="mt-4 space-y-3">
             {tool.faqs.map((item) => (
@@ -178,13 +192,13 @@ export function ToolPageView({
       <section className="mt-10">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xs font-bold tracking-wider text-[#64748B] uppercase dark:text-[#94A3B8]">
-            Related Free Tools
+            {tt.relatedTitle}
           </h2>
           <Link
             href={`/${locale}/tools`}
             className="inline-flex items-center gap-1 text-xs font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
           >
-            All 12 tools
+            {tt.allTwelveTools}
             <ArrowRight className="h-3 w-3" aria-hidden="true" />
           </Link>
         </div>
@@ -197,14 +211,14 @@ export function ToolPageView({
             >
               <div>
                 <span className="text-[10px] font-bold tracking-wide text-[#64748B] uppercase dark:text-[#94A3B8]">
-                  {rel.category}
+                  {categoryLabel(rel.category)}
                 </span>
                 <p className="mt-1 text-xs font-bold text-[#0F172A] group-hover:text-[#6941EF] dark:text-[#F8FAFC] dark:group-hover:text-[#A99AFF]">
                   {rel.name}
                 </p>
               </div>
               <span className="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-[#6941EF] dark:text-[#A99AFF]">
-                Open <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                {tt.openShort} <ArrowRight className="h-3 w-3" aria-hidden="true" />
               </span>
             </Link>
           ))}

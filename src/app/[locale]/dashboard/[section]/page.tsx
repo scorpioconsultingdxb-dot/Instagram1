@@ -5,10 +5,14 @@ import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { getCurrentSessionUser, isAdminRole } from '@/lib/auth/session';
 import { getAccountProfilePrefs } from '@/lib/auth/profile-prefs';
-import { resolveEntitlements } from '@/lib/entitlements/service';
+import {
+  loadConfiguredPlans,
+  loadUserEntitlementOverrides,
+  resolveEntitlements,
+} from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
-import { getUserWorkspaceState, type SavedProfileRecord } from '@/lib/dashboard/store';
-import { listActiveBroadcastNotifications } from '@/lib/admin/store';
+import { loadUserWorkspaceState, type SavedProfileRecord } from '@/lib/dashboard/store';
+import { loadActiveBroadcastNotifications } from '@/lib/admin/store';
 import {
   CustomerDashboard,
   type DashboardTab,
@@ -121,18 +125,24 @@ export default async function DashboardSectionPage({
   }
 
   const dict = getDictionary(safeLocale);
+  const [plans, overrides, profilePrefs, broadcasts] = await Promise.all([
+    loadConfiguredPlans(),
+    loadUserEntitlementOverrides(user.id),
+    getAccountProfilePrefs(user.id),
+    loadActiveBroadcastNotifications(user.segment),
+  ]);
   const entitlements = resolveEntitlements({
     planCode: user.planCode,
     billingInterval: user.billingInterval,
     userId: user.id,
+    plans,
+    overrides,
   });
 
-  const profilePrefs = await getAccountProfilePrefs(user.id);
   const defaultWs =
     profilePrefs.workspaceName ||
     (user.segment === 'agency' ? 'Primary Agency HQ' : 'Personal Workspace');
-  const workspace = getUserWorkspaceState(user.id, defaultWs);
-  const broadcasts = listActiveBroadcastNotifications(user.segment);
+  const workspace = await loadUserWorkspaceState(user.id, defaultWs);
 
   const demoPreviewProfiles: SavedProfileRecord[] = [];
   const now = new Date().toISOString();

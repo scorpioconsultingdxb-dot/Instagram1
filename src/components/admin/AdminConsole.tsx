@@ -11,6 +11,7 @@ import {
   HeartPulse,
   LifeBuoy,
   Lock,
+  Pencil,
   Plus,
   Search,
   Shield,
@@ -101,6 +102,12 @@ export function AdminConsole({
   const [users, setUsers] = useState(initialUsers);
   const [userSearch, setUserSearch] = useState('');
   const [plans, setPlans] = useState(initialPlans);
+  const [editingEnt, setEditingEnt] = useState<{
+    planCode: PlanCode;
+    featureKey: FeatureKey;
+  } | null>(null);
+  const [entDraftLimit, setEntDraftLimit] = useState('');
+  const [entDraftUnlimited, setEntDraftUnlimited] = useState(false);
   const [cmsItems, setCmsItems] = useState(initialCms);
   const [editingCmsId, setEditingCmsId] = useState<string | null>(null);
   const [cmsDraftTitle, setCmsDraftTitle] = useState('');
@@ -520,10 +527,11 @@ export function AdminConsole({
               Centralized Entitlement Matrix (Persisted)
             </h2>
             <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
-              Click any cell to toggle entitlement activation. Updates sync immediately with public
-              pricing and server-side quota enforcement.
+              Toggle feature activation or click any quota to edit numeric or unlimited (∞) limits
+              inline. Updates persist immediately across public pricing and server-side quota
+              enforcement.
             </p>
-            <table className="mt-4 w-full min-w-[680px] text-left text-xs tabular-nums">
+            <table className="mt-4 w-full min-w-[780px] text-left text-xs tabular-nums">
               <thead>
                 <tr className="border-b border-slate-200 text-[#64748B] dark:border-[#263047]">
                   <th className="py-2 pr-4">Feature Key</th>
@@ -547,60 +555,182 @@ export function AdminConsole({
                       const rule = plan.entitlements[key];
                       const baselineRule = INITIAL_PLANS.find((p) => p.code === plan.code)?.entitlements[key];
                       const isBooleanFeature = baselineRule?.numericLimit === null;
+                      const isEditingThis =
+                        editingEnt?.planCode === plan.code && editingEnt?.featureKey === key;
+
+                      const saveEntitlementLimit = async () => {
+                        let parsedLimit: number | null = null;
+                        if (!entDraftUnlimited) {
+                          const num = Number(entDraftLimit.trim());
+                          if (!Number.isInteger(num) || num < 0 || num > 100_000) {
+                            setBanner({
+                              tone: 'error',
+                              message:
+                                'Quota limit must be a whole number between 0 and 100,000, or set Unlimited (∞).',
+                            });
+                            return;
+                          }
+                          parsedLimit = num;
+                        }
+                        const nextEnabled = entDraftUnlimited ? true : parsedLimit !== 0;
+                        const res = await runAction(
+                          {
+                            type: 'update_entitlement',
+                            planCode: plan.code,
+                            featureKey: key,
+                            enabled: nextEnabled,
+                            numericLimit: parsedLimit,
+                          },
+                          `Updated ${key} on ${plan.name} → ${
+                            nextEnabled ? (parsedLimit === null ? 'Unlimited (∞)' : parsedLimit) : 'Off'
+                          }.`
+                        );
+                        if (res.ok) {
+                          setPlans((prev) =>
+                            prev.map((item) =>
+                              item.code === plan.code
+                                ? {
+                                    ...item,
+                                    entitlements: {
+                                      ...item.entitlements,
+                                      [key]: { enabled: nextEnabled, numericLimit: parsedLimit },
+                                    },
+                                  }
+                                : item
+                            )
+                          );
+                          setEditingEnt(null);
+                        }
+                      };
+
                       return (
-                        <td key={plan.code} className="py-2.5 text-center">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const nextEnabled = !rule.enabled;
-                              let nextLimit: number | null;
-                              if (!nextEnabled) {
-                                nextLimit = isBooleanFeature ? null : 0;
-                              } else if (isBooleanFeature) {
-                                nextLimit = null;
-                              } else {
-                                const restored =
-                                  rule.numericLimit && rule.numericLimit > 0
-                                    ? rule.numericLimit
-                                    : baselineRule?.numericLimit && baselineRule.numericLimit > 0
-                                      ? baselineRule.numericLimit
-                                      : 10;
-                                nextLimit = restored;
-                              }
-                              const res = await runAction(
-                                {
-                                  type: 'update_entitlement',
-                                  planCode: plan.code,
-                                  featureKey: key,
-                                  enabled: nextEnabled,
-                                  numericLimit: nextLimit,
-                                },
-                                `${nextEnabled ? 'Enabled' : 'Disabled'} ${key} on ${plan.name}.`
-                              );
-                              if (res.ok) {
-                                setPlans((prev) =>
-                                  prev.map((item) =>
-                                    item.code === plan.code
-                                      ? {
-                                          ...item,
-                                          entitlements: {
-                                            ...item.entitlements,
-                                            [key]: { enabled: nextEnabled, numericLimit: nextLimit },
-                                          },
-                                        }
-                                      : item
-                                  )
-                                );
-                              }
-                            }}
-                            className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
-                              rule.enabled
-                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-950 dark:text-[#34D399]'
-                                : 'bg-slate-100 text-[#64748B] hover:bg-slate-200 dark:bg-[#0F172A] dark:text-[#94A3B8]'
-                            }`}
-                          >
-                            {rule.enabled ? (rule.numericLimit === null ? '∞' : rule.numericLimit) : 'Off'}
-                          </button>
+                        <td key={plan.code} className="px-1.5 py-2.5 text-center align-middle">
+                          {isEditingThis ? (
+                            <div className="mx-auto flex w-36 flex-col gap-1.5 rounded-xl border border-[#7957FF]/60 bg-white p-2 text-left shadow-sm dark:bg-[#0F172A]">
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100000}
+                                  step={1}
+                                  disabled={entDraftUnlimited}
+                                  value={entDraftUnlimited ? '' : entDraftLimit}
+                                  onChange={(e) => setEntDraftLimit(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      void saveEntitlementLimit();
+                                    } else if (e.key === 'Escape') {
+                                      setEditingEnt(null);
+                                    }
+                                  }}
+                                  placeholder={entDraftUnlimited ? '∞' : 'Quota'}
+                                  aria-label={`Numeric limit for ${plan.name} ${key}`}
+                                  className="h-7 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-[#0F172A] disabled:bg-slate-100 disabled:text-[#64748B] dark:border-[#263047] dark:bg-[#131C2E] dark:text-white"
+                                />
+                              </div>
+                              <label className="flex items-center gap-1.5 text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+                                <input
+                                  type="checkbox"
+                                  checked={entDraftUnlimited}
+                                  onChange={(e) => setEntDraftUnlimited(e.target.checked)}
+                                />
+                                <span>Unlimited (∞)</span>
+                              </label>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => void saveEntitlementLimit()}
+                                  className="viewora-btn-primary flex-1 rounded-md px-2 py-1 text-[10px] font-semibold"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingEnt(null)}
+                                  className="rounded-md border border-slate-200 px-2 py-1 text-[10px] font-semibold text-[#64748B] hover:text-[#0F172A] dark:border-[#263047] dark:text-[#94A3B8]"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                aria-label={`Toggle ${plan.name} ${key}`}
+                                onClick={async () => {
+                                  const nextEnabled = !rule.enabled;
+                                  let nextLimit: number | null;
+                                  if (!nextEnabled) {
+                                    nextLimit = isBooleanFeature ? null : 0;
+                                  } else if (isBooleanFeature) {
+                                    nextLimit = null;
+                                  } else {
+                                    const restored =
+                                      rule.numericLimit && rule.numericLimit > 0
+                                        ? rule.numericLimit
+                                        : baselineRule?.numericLimit && baselineRule.numericLimit > 0
+                                          ? baselineRule.numericLimit
+                                          : 10;
+                                    nextLimit = restored;
+                                  }
+                                  const res = await runAction(
+                                    {
+                                      type: 'update_entitlement',
+                                      planCode: plan.code,
+                                      featureKey: key,
+                                      enabled: nextEnabled,
+                                      numericLimit: nextLimit,
+                                    },
+                                    `${nextEnabled ? 'Enabled' : 'Disabled'} ${key} on ${plan.name}.`
+                                  );
+                                  if (res.ok) {
+                                    setPlans((prev) =>
+                                      prev.map((item) =>
+                                        item.code === plan.code
+                                          ? {
+                                              ...item,
+                                              entitlements: {
+                                                ...item.entitlements,
+                                                [key]: { enabled: nextEnabled, numericLimit: nextLimit },
+                                              },
+                                            }
+                                          : item
+                                      )
+                                    );
+                                  }
+                                }}
+                                className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                                  rule.enabled
+                                    ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-950 dark:text-[#34D399]'
+                                    : 'bg-slate-100 text-[#64748B] hover:bg-slate-200 dark:bg-[#0F172A] dark:text-[#94A3B8]'
+                                }`}
+                              >
+                                {rule.enabled
+                                  ? rule.numericLimit === null
+                                    ? '∞'
+                                    : rule.numericLimit
+                                  : 'Off'}
+                              </button>
+                              <button
+                                type="button"
+                                title={`Edit limit for ${plan.name} ${key}`}
+                                aria-label={`Edit limit for ${plan.name} ${key}`}
+                                onClick={() => {
+                                  setEditingEnt({ planCode: plan.code, featureKey: key });
+                                  const isInf = rule.enabled && rule.numericLimit === null;
+                                  setEntDraftUnlimited(isInf);
+                                  setEntDraftLimit(
+                                    rule.numericLimit !== null ? String(rule.numericLimit) : '10'
+                                  );
+                                }}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-[#64748B] transition hover:border-[#7957FF] hover:text-[#6941EF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#94A3B8] dark:hover:text-[#A99AFF]"
+                              >
+                                <Pencil className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                            </div>
+                          )}
                         </td>
                       );
                     })}

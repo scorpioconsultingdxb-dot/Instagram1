@@ -4,12 +4,14 @@ import { getCurrentSessionUser } from '@/lib/auth/session';
 import {
   assertEntitlement,
   EntitlementDeniedError,
+  loadConfiguredPlans,
+  loadUserEntitlementOverrides,
   resolveEntitlements,
 } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { generateAiProfileReport } from '@/lib/ai/gemini';
-import { getUserWorkspaceState, recordSavedAiReport } from '@/lib/dashboard/store';
-import { isFeatureFlagEnabled } from '@/lib/admin/store';
+import { loadUserWorkspaceState, persistSavedAiReport } from '@/lib/dashboard/store';
+import { loadIsFeatureFlagEnabled } from '@/lib/admin/store';
 
 const requestSchema = z.object({
   username: z.string().min(1).max(60),
@@ -33,7 +35,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
   }
 
-  if (!isFeatureFlagEnabled('ai_insights_enabled')) {
+  if (!(await loadIsFeatureFlagEnabled('ai_insights_enabled'))) {
     return NextResponse.json(
       {
         ok: false,
@@ -49,13 +51,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Invalid AI report request.' }, { status: 400 });
   }
 
+  const [plans, overrides, ws] = await Promise.all([
+    loadConfiguredPlans(),
+    loadUserEntitlementOverrides(user.id),
+    loadUserWorkspaceState(user.id),
+  ]);
   const entitlements = resolveEntitlements({
     planCode: user.planCode,
     billingInterval: user.billingInterval,
     userId: user.id,
+    plans,
+    overrides,
   });
 
-  const ws = getUserWorkspaceState(user.id);
   const currentMonthPrefix = new Date().toISOString().slice(0, 7);
   const reportsThisMonth = ws.reports.filter((r) => r.savedAt.startsWith(currentMonthPrefix)).length;
 
@@ -69,7 +77,7 @@ export async function POST(request: NextRequest) {
   }
 
   const lookup = await defaultProviderRegistry.lookupPublicProfile(parsed.data.username, {
-    allowDemoFallback: isFeatureFlagEnabled('demo_provider_enabled'),
+    allowDemoFallback: await loadIsFeatureFlagEnabled('demo_provider_enabled'),
   });
 
   if (!lookup.data) {
@@ -91,7 +99,7 @@ export async function POST(request: NextRequest) {
     providerLabel: lookup.meta.providerLabel,
   });
 
-  const savedReport = recordSavedAiReport(user.id, report);
+  const savedReport = await persistSavedAiReport(user.id, report);
 
   return NextResponse.json({ ok: true, report, savedReport });
 }

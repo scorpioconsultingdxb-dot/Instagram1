@@ -3,38 +3,56 @@ import { requireAdminApi } from '@/lib/admin/rbac';
 import {
   getApiUsageMetrics,
   getSearchAnalyticsMetrics,
-  listAuditLogs,
-  listBroadcastNotifications,
-  listCmsContent,
-  listFeatureFlags,
-  listSupportTickets,
+  loadAuditLogs,
+  loadBroadcastNotifications,
+  loadCmsContent,
+  loadFeatureFlags,
+  loadSupportTickets,
 } from '@/lib/admin/store';
 import { listLocalDemoUsers } from '@/lib/auth/session';
-import { getConfiguredPlans } from '@/lib/entitlements/service';
+import { loadConfiguredPlans } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
-import { getFunnelSummary } from '@/lib/analytics/funnel';
+import { loadFunnelSummary } from '@/lib/analytics/funnel';
 import { DEFAULT_EXPERIMENTS } from '@/lib/experiments/ab';
 
 export async function GET() {
   const guard = await requireAdminApi();
   if (!guard.ok) return guard.response;
 
-  const providerHealth = await defaultProviderRegistry.checkAllHealth();
+  const [
+    providerHealth,
+    plans,
+    conversionAnalytics,
+    cmsContent,
+    supportTickets,
+    broadcastNotifications,
+    auditLogs,
+    featureFlags,
+  ] = await Promise.all([
+    defaultProviderRegistry.checkAllHealth(),
+    loadConfiguredPlans(),
+    loadFunnelSummary(),
+    loadCmsContent(),
+    loadSupportTickets(),
+    loadBroadcastNotifications(),
+    loadAuditLogs(),
+    loadFeatureFlags(),
+  ]);
 
   return NextResponse.json({
     ok: true,
     actor: { email: guard.user.email, role: guard.user.role },
     users: listLocalDemoUsers(),
-    plans: getConfiguredPlans(),
+    plans,
     providerHealth,
     apiUsage: getApiUsageMetrics(),
     searchAnalytics: getSearchAnalyticsMetrics(),
-    conversionAnalytics: getFunnelSummary(),
+    conversionAnalytics,
     experiments: DEFAULT_EXPERIMENTS,
-    cmsContent: listCmsContent(),
-    supportTickets: listSupportTickets(),
-    broadcastNotifications: listBroadcastNotifications(),
-    auditLogs: listAuditLogs(),
-    featureFlags: listFeatureFlags(),
+    cmsContent,
+    supportTickets,
+    broadcastNotifications,
+    auditLogs,
+    featureFlags,
   });
 }

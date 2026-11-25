@@ -2,9 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getCurrentSessionUser } from '@/lib/auth/session';
 import {
-  createSupportTicket,
-  listSupportTickets,
-  recordAuditLog,
+  loadSupportTickets,
+  persistAuditLog,
+  persistSupportTicketCreate,
 } from '@/lib/admin/store';
 
 const ticketSchema = z.object({
@@ -19,7 +19,7 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
   }
 
-  const ownTickets = listSupportTickets().filter(
+  const ownTickets = (await loadSupportTickets()).filter(
     (t) => t.email.toLowerCase() === user.email.toLowerCase()
   );
 
@@ -41,14 +41,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const ticket = createSupportTicket({
+  const ticket = await persistSupportTicketCreate({
+    userId: user.id,
     email: user.email,
     subject: parsed.data.subject,
     message: parsed.data.message,
     priority: parsed.data.priority,
   });
 
-  recordAuditLog({
+  await persistAuditLog({
     actorId: user.id,
     actorEmail: user.email,
     action: 'customer.support_ticket.created',

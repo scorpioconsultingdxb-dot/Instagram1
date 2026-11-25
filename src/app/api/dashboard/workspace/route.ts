@@ -1,15 +1,31 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getCurrentSessionUser } from '@/lib/auth/session';
-import { hasEntitlement, resolveEntitlements } from '@/lib/entitlements/service';
+import {
+  hasEntitlement,
+  loadConfiguredPlans,
+  loadUserEntitlementOverrides,
+  resolveEntitlements,
+} from '@/lib/entitlements/service';
 import { normalizeInstagramInput } from '@/lib/instagram/normalize';
 import { defaultProviderRegistry } from '@/lib/providers';
 import {
-  getUserWorkspaceState,
-  updateUserWorkspaceState,
+  loadUserWorkspaceState,
+  persistCreateComparison,
+  persistCreateFolder,
+  persistCreateWorkspace,
+  persistDashboardSettings,
+  persistDeleteComparison,
+  persistDeleteFolder,
+  persistMarkAllNotificationsRead,
+  persistMarkNotificationRead,
+  persistProfileMetaUpdate,
+  persistRemoveProfile,
+  persistSavedProfile,
+  persistUpdateComparison,
   type SavedProfileRecord,
 } from '@/lib/dashboard/store';
-import { isFeatureFlagEnabled } from '@/lib/admin/store';
+import { loadIsFeatureFlagEnabled } from '@/lib/admin/store';
 
 const workspaceActionSchema = z.discriminatedUnion('type', [
   z.object({
@@ -86,7 +102,7 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
   }
   const defaultWs = user.segment === 'agency' ? 'Primary Agency HQ' : 'Personal Workspace';
-  const workspace = getUserWorkspaceState(user.id, defaultWs);
+  const workspace = await loadUserWorkspaceState(user.id, defaultWs);
   return NextResponse.json({ ok: true, workspace });
 }
 
@@ -111,14 +127,20 @@ export async function POST(request: NextRequest) {
 
   const action = parsed.data;
   const defaultWs = user.segment === 'agency' ? 'Primary Agency HQ' : 'Personal Workspace';
+  const [plans, overrides] = await Promise.all([
+    loadConfiguredPlans(),
+    loadUserEntitlementOverrides(user.id),
+  ]);
   const entitlements = resolveEntitlements({
     planCode: user.planCode,
     billingInterval: user.billingInterval,
     userId: user.id,
+    plans,
+    overrides,
   });
 
   if (action.type === 'save_profile') {
-    const current = getUserWorkspaceState(user.id, defaultWs);
+    const current = await loadUserWorkspaceState(user.id, defaultWs);
     const normalized = normalizeInstagramInput(action.input);
     if (!normalized.ok) {
       return NextResponse.json({ ok: false, error: normalized.message }, { status: 400 });
@@ -145,8 +167,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const demoAllowed = await loadIsFeatureFlagEnabled('demo_provider_enabled');
     const lookup = await defaultProviderRegistry.lookupPublicProfile(normalized.username, {
-      allowDemoFallback: action.allowDemoFallback && isFeatureFlagEnabled('demo_provider_enabled'),
+      allowDemoFallback: action.allowDemoFallback && demoAllowed,
     });
 
     if (!lookup.data) {
@@ -171,19 +194,18 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     };
 
-    const next = updateUserWorkspaceState(
-      user.id,
-      (ws) => ({
-        ...ws,
-        savedProfiles: [record, ...ws.savedProfiles],
-      }),
-      defaultWs
+    const result = await persistSavedProfile(user.id, record, defaultWs);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json(
+      { ok: true, workspace: result.workspace, savedProfile: result.savedProfile },
+      { status: 201 }
     );
-    return NextResponse.json({ ok: true, workspace: next, savedProfile: record }, { status: 201 });
   }
 
   if (action.type === 'update_profile_meta') {
-    const current = getUserWorkspaceState(user.id, defaultWs);
+    const current = await loadUserWorkspaceState(user.id, defaultWs);
     const target = current.savedProfiles.find(
       (p) => p.username.toLowerCase() === action.username.toLowerCase()
     );
@@ -200,51 +222,40 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const next = updateUserWorkspaceState(
+    const result = await persistProfileMetaUpdate(
       user.id,
-      (ws) => ({
-        ...ws,
-        savedProfiles: ws.savedProfiles.map((p) =>
-          p.username.toLowerCase() === action.username.toLowerCase()
-            ? {
-                ...p,
-                folderId: action.folderId !== undefined ? action.folderId : p.folderId,
-                privateNote:
-                  action.privateNote !== undefined ? action.privateNote : p.privateNote,
-                tags: action.tags !== undefined ? action.tags : p.tags,
-                updatedAt: new Date().toISOString(),
-              }
-            : p
-        ),
-      }),
+      {
+        username: target.username,
+        folderId: action.folderId,
+        privateNote: action.privateNote,
+        tags: action.tags,
+      },
       defaultWs
     );
-    return NextResponse.json({ ok: true, workspace: next });
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, workspace: result.workspace });
   }
 
   if (action.type === 'remove_profile') {
-    const current = getUserWorkspaceState(user.id, defaultWs);
-    if (!current.savedProfiles.some((p) => p.username.toLowerCase() === action.username.toLowerCase())) {
+    const current = await loadUserWorkspaceState(user.id, defaultWs);
+    const target = current.savedProfiles.find(
+      (p) => p.username.toLowerCase() === action.username.toLowerCase()
+    );
+    if (!target) {
       return NextResponse.json({ ok: false, error: 'Saved profile not found.' }, { status: 404 });
     }
-    const next = updateUserWorkspaceState(
-      user.id,
-      (ws) => ({
-        ...ws,
-        savedProfiles: ws.savedProfiles.filter(
-          (p) => p.username.toLowerCase() !== action.username.toLowerCase()
-        ),
-      }),
-      defaultWs
-    );
-    return NextResponse.json({ ok: true, workspace: next });
+    const result = await persistRemoveProfile(user.id, target.username, defaultWs);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, workspace: result.workspace });
   }
 
   if (action.type === 'create_folder') {
-    const current = getUserWorkspaceState(user.id, defaultWs);
-    if (
-      current.folders.some((f) => f.name.toLowerCase() === action.name.toLowerCase())
-    ) {
+    const current = await loadUserWorkspaceState(user.id, defaultWs);
+    if (current.folders.some((f) => f.name.toLowerCase() === action.name.toLowerCase())) {
       return NextResponse.json(
         { ok: false, error: `A research folder named "${action.name}" already exists.` },
         { status: 409 }
@@ -257,35 +268,30 @@ export async function POST(request: NextRequest) {
       description: action.description,
       createdAt: new Date().toISOString(),
     };
-    const next = updateUserWorkspaceState(
-      user.id,
-      (ws) => ({ ...ws, folders: [...ws.folders, folder] }),
-      defaultWs
+    const result = await persistCreateFolder(user.id, folder, defaultWs);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json(
+      { ok: true, workspace: result.workspace, folder: result.folder },
+      { status: 201 }
     );
-    return NextResponse.json({ ok: true, workspace: next, folder }, { status: 201 });
   }
 
   if (action.type === 'delete_folder') {
-    const current = getUserWorkspaceState(user.id, defaultWs);
+    const current = await loadUserWorkspaceState(user.id, defaultWs);
     if (!current.folders.some((f) => f.id === action.folderId)) {
       return NextResponse.json({ ok: false, error: 'Research folder not found.' }, { status: 404 });
     }
-    const next = updateUserWorkspaceState(
-      user.id,
-      (ws) => ({
-        ...ws,
-        folders: ws.folders.filter((f) => f.id !== action.folderId),
-        savedProfiles: ws.savedProfiles.map((p) =>
-          p.folderId === action.folderId ? { ...p, folderId: null } : p
-        ),
-      }),
-      defaultWs
-    );
-    return NextResponse.json({ ok: true, workspace: next });
+    const result = await persistDeleteFolder(user.id, action.folderId, defaultWs);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, workspace: result.workspace });
   }
 
   if (action.type === 'create_comparison') {
-    const current = getUserWorkspaceState(user.id, defaultWs);
+    const current = await loadUserWorkspaceState(user.id, defaultWs);
     if (!hasEntitlement(entitlements, 'competitor_monitoring', current.comparisons.length)) {
       return NextResponse.json(
         {
@@ -306,86 +312,67 @@ export async function POST(request: NextRequest) {
       createdAt: now,
       updatedAt: now,
     };
-    const next = updateUserWorkspaceState(
-      user.id,
-      (ws) => ({ ...ws, comparisons: [project, ...ws.comparisons] }),
-      defaultWs
+    const result = await persistCreateComparison(user.id, project, defaultWs);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json(
+      { ok: true, workspace: result.workspace, comparison: result.comparison },
+      { status: 201 }
     );
-    return NextResponse.json({ ok: true, workspace: next, comparison: project }, { status: 201 });
   }
 
   if (action.type === 'update_comparison') {
-    const current = getUserWorkspaceState(user.id, defaultWs);
+    const current = await loadUserWorkspaceState(user.id, defaultWs);
     if (!current.comparisons.some((c) => c.id === action.id)) {
       return NextResponse.json({ ok: false, error: 'Comparison project not found.' }, { status: 404 });
     }
-    const next = updateUserWorkspaceState(
+    const result = await persistUpdateComparison(
       user.id,
-      (ws) => ({
-        ...ws,
-        comparisons: ws.comparisons.map((c) =>
-          c.id === action.id
-            ? {
-                ...c,
-                name: action.name ?? c.name,
-                notes: action.notes ?? c.notes,
-                usernames: action.usernames
-                  ? Array.from(new Set(action.usernames.map((u) => u.toLowerCase())))
-                  : c.usernames,
-                updatedAt: new Date().toISOString(),
-              }
-            : c
-        ),
-      }),
+      {
+        id: action.id,
+        name: action.name,
+        notes: action.notes,
+        usernames: action.usernames,
+      },
       defaultWs
     );
-    return NextResponse.json({ ok: true, workspace: next });
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, workspace: result.workspace });
   }
 
   if (action.type === 'delete_comparison') {
-    const current = getUserWorkspaceState(user.id, defaultWs);
+    const current = await loadUserWorkspaceState(user.id, defaultWs);
     if (!current.comparisons.some((c) => c.id === action.id)) {
       return NextResponse.json({ ok: false, error: 'Comparison project not found.' }, { status: 404 });
     }
-    const next = updateUserWorkspaceState(
-      user.id,
-      (ws) => ({
-        ...ws,
-        comparisons: ws.comparisons.filter((c) => c.id !== action.id),
-      }),
-      defaultWs
-    );
-    return NextResponse.json({ ok: true, workspace: next });
+    const result = await persistDeleteComparison(user.id, action.id, defaultWs);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, workspace: result.workspace });
   }
 
   if (action.type === 'mark_notification_read') {
-    const next = updateUserWorkspaceState(
-      user.id,
-      (ws) => ({
-        ...ws,
-        notifications: ws.notifications.map((n) =>
-          n.id === action.id ? { ...n, read: action.read } : n
-        ),
-      }),
-      defaultWs
-    );
-    return NextResponse.json({ ok: true, workspace: next });
+    const result = await persistMarkNotificationRead(user.id, action.id, action.read, defaultWs);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, workspace: result.workspace });
   }
 
   if (action.type === 'mark_all_notifications_read') {
-    const next = updateUserWorkspaceState(
-      user.id,
-      (ws) => ({
-        ...ws,
-        notifications: ws.notifications.map((n) => ({ ...n, read: true })),
-      }),
-      defaultWs
-    );
-    return NextResponse.json({ ok: true, workspace: next });
+    const result = await persistMarkAllNotificationsRead(user.id, defaultWs);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, workspace: result.workspace });
   }
 
   if (action.type === 'create_workspace') {
-    const current = getUserWorkspaceState(user.id, defaultWs);
+    const current = await loadUserWorkspaceState(user.id, defaultWs);
     if (!hasEntitlement(entitlements, 'workspaces', current.workspaces.length)) {
       return NextResponse.json(
         { ok: false, error: 'Your current plan has reached its workspace limit.' },
@@ -398,20 +385,15 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       );
     }
-    const next = updateUserWorkspaceState(
-      user.id,
-      (ws) => ({
-        ...ws,
-        workspaces: [...ws.workspaces, action.name],
-        settings: { ...ws.settings, activeWorkspace: action.name },
-      }),
-      defaultWs
-    );
-    return NextResponse.json({ ok: true, workspace: next }, { status: 201 });
+    const result = await persistCreateWorkspace(user.id, action.name, defaultWs);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, workspace: result.workspace }, { status: 201 });
   }
 
   // update_settings
-  const currentForSettings = getUserWorkspaceState(user.id, defaultWs);
+  const currentForSettings = await loadUserWorkspaceState(user.id, defaultWs);
   if (
     action.activeWorkspace !== undefined &&
     !currentForSettings.workspaces.includes(action.activeWorkspace)
@@ -421,22 +403,16 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const next = updateUserWorkspaceState(
-    user.id,
-    (ws) => ({
-      ...ws,
-      settings: {
-        ...ws.settings,
-        ...(action.activeWorkspace !== undefined ? { activeWorkspace: action.activeWorkspace } : {}),
-        ...(action.defaultSort !== undefined ? { defaultSort: action.defaultSort } : {}),
-        ...(action.defaultDateRange !== undefined ? { defaultDateRange: action.defaultDateRange } : {}),
-        ...(action.showTableByDefault !== undefined
-          ? { showTableByDefault: action.showTableByDefault }
-          : {}),
-        ...(action.demoPreviewMode !== undefined ? { demoPreviewMode: action.demoPreviewMode } : {}),
-      },
-    }),
-    defaultWs
-  );
-  return NextResponse.json({ ok: true, workspace: next });
+  const settingsPatch: Record<string, unknown> = {};
+  if (action.activeWorkspace !== undefined) settingsPatch.activeWorkspace = action.activeWorkspace;
+  if (action.defaultSort !== undefined) settingsPatch.defaultSort = action.defaultSort;
+  if (action.defaultDateRange !== undefined) settingsPatch.defaultDateRange = action.defaultDateRange;
+  if (action.showTableByDefault !== undefined) settingsPatch.showTableByDefault = action.showTableByDefault;
+  if (action.demoPreviewMode !== undefined) settingsPatch.demoPreviewMode = action.demoPreviewMode;
+
+  const result = await persistDashboardSettings(user.id, settingsPatch, defaultWs);
+  if (!result.ok) {
+    return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true, workspace: result.workspace });
 }

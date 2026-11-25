@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { deleteLocalUser, getCurrentSessionUser, LOCAL_SESSION_COOKIE } from '@/lib/auth/session';
 import { deleteAccountProfilePrefs } from '@/lib/auth/profile-prefs';
 import { deleteUserWorkspaceState } from '@/lib/dashboard/store';
-import { recordAuditLog } from '@/lib/admin/store';
+import { persistAuditLog } from '@/lib/admin/store';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
 
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   deleteAccountProfilePrefs(user.id);
   deleteUserWorkspaceState(user.id);
 
-  recordAuditLog({
+  await persistAuditLog({
     actorId: user.id,
     actorEmail: user.email,
     action: 'user.account.deleted',

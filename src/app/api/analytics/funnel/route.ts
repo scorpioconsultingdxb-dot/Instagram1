@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { recordFunnelEvent } from '@/lib/analytics/funnel';
+import { persistFunnelEvent } from '@/lib/analytics/funnel';
 import { getCurrentSessionUser } from '@/lib/auth/session';
 
 const funnelSchema = z.object({
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   }
 
   const user = await getCurrentSessionUser();
-  const recorded = recordFunnelEvent({
+  const recorded = await persistFunnelEvent({
     eventName: parsed.data.eventName,
     locale: parsed.data.locale,
     sessionId: parsed.data.sessionId,

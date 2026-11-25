@@ -16,7 +16,7 @@ export async function generateMetadata({
   return buildPageMetadata({
     locale: safeLocale,
     path: '/login',
-    title: 'Sign in — Viewora',
+    title: 'Sign in',
     description: 'Sign in securely to your Viewora social intelligence workspace.',
     noIndex: true,
   });
@@ -34,12 +34,12 @@ export default async function TopLevelLoginPage({
   const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
 
   return (
-    <div className="mx-auto max-w-md px-4 py-14 sm:px-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm dark:border-slate-800 dark:bg-[#131C2E]">
-        <h1 className="text-2xl font-extrabold text-[#0F172A] dark:text-white">
+    <div className="mx-auto max-w-md px-4 py-12 sm:px-6">
+      <div className="viewora-card-elevated rounded-3xl p-7 sm:p-8">
+        <h1 className="font-display text-2xl font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
           Sign in to Viewora
         </h1>
-        <p className="mt-1.5 text-sm text-[#64748B] dark:text-slate-400">
+        <p className="mt-1.5 text-sm text-[#64748B] dark:text-[#94A3B8]">
           Access saved public profiles, historical trends, AI reports, and workspace settings.
         </p>
 

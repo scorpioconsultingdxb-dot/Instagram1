@@ -1,49 +1,21 @@
-import type { Metadata } from 'next';
-import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
-import { buildPageMetadata } from '@/lib/seo/metadata';
-import { SignupForm } from '@/components/auth/SignupForm';
+import { redirect } from 'next/navigation';
+import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/config';
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}): Promise<Metadata> {
-  const { locale } = await params;
-  const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
-  return buildPageMetadata({
-    locale: safeLocale,
-    path: '/auth/signup',
-    title: 'Create Account — Viewora',
-    description: 'Create your free Viewora account and choose your Personal, Business, or Agency workflow.',
-    noIndex: true,
-  });
-}
-
-export default async function SignupPage({
+export default async function LegacyAuthSignupRedirect({
   params,
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ handle?: string }>;
+  searchParams: Promise<{ handle?: string; next?: string; segment?: string }>;
 }) {
   const { locale } = await params;
-  const { handle } = await searchParams;
-  const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
+  const { handle, next, segment } = await searchParams;
+  const safeLocale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
 
-  return (
-    <div className="mx-auto max-w-xl px-4 py-14 sm:px-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">
-          Create your free Viewora account
-        </h1>
-        <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-400">
-          No credit card required. Choose your workflow segment and email preferences below.
-        </p>
-
-        <div className="mt-6">
-          <SignupForm locale={safeLocale} initialHandle={handle} />
-        </div>
-      </div>
-    </div>
-  );
+  const qs = new URLSearchParams();
+  if (handle) qs.set('handle', handle);
+  if (next) qs.set('next', next);
+  if (segment) qs.set('segment', segment);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  redirect(`/${safeLocale}/register${suffix}`);
 }

@@ -2,22 +2,49 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import {
+  AlertCircle,
+  ArrowRight,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Loader2,
+} from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { CustomerSegment } from '@/lib/entitlements/types';
 
+function safeClientRedirect(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return null;
+  }
+  return trimmed;
+}
+
 export function SignupForm({
   locale,
   initialHandle,
+  initialSegment = 'personal',
+  redirectTo,
+  supabaseConfigured,
+  demoModeEnabled,
 }: {
   locale: Locale;
   initialHandle?: string;
+  initialSegment?: CustomerSegment;
+  redirectTo?: string;
+  supabaseConfigured: boolean;
+  demoModeEnabled: boolean;
 }) {
   const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [segment, setSegment] = useState<CustomerSegment>('personal');
+  const [showPassword, setShowPassword] = useState(false);
+  const [segment, setSegment] = useState<CustomerSegment>(initialSegment);
+  const [runOnboarding, setRunOnboarding] = useState(true);
   const [emailPreferences, setEmailPreferences] = useState({
     productUpdates: false,
     weeklyDigest: false,
@@ -27,17 +54,39 @@ export function SignupForm({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const safeNext = safeClientRedirect(redirectTo);
+
+  const pwChecks = {
+    length: password.length >= 8,
+    mixed: /[a-z]/.test(password) && /[A-Z]/.test(password),
+    number: /\d/.test(password),
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+
+    if (fullName.trim().length < 2) {
+      setError('Please enter your full name (at least 2 characters).');
+      return;
+    }
+    if (!email.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long.');
+      return;
+    }
+
+    setLoading(true);
     try {
       const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fullName,
-          email,
+          fullName: fullName.trim(),
+          email: email.trim(),
           password,
           segment,
           locale,
@@ -45,86 +94,173 @@ export function SignupForm({
         }),
       });
       const json = (await res.json()) as { ok: boolean; error?: string };
-      if (!json.ok) {
-        setError(json.error ?? 'Could not create account.');
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? `Could not create account (HTTP ${res.status}).`);
         return;
       }
-      const nextUrl = initialHandle
-        ? `/${locale}/dashboard?saved=${encodeURIComponent(initialHandle)}`
-        : `/${locale}/dashboard`;
-      router.push(nextUrl);
+
+      if (safeNext) {
+        router.push(safeNext);
+      } else if (runOnboarding) {
+        const qs = new URLSearchParams({ segment });
+        if (initialHandle) qs.set('handle', initialHandle);
+        router.push(`/${locale}/onboarding?${qs.toString()}`);
+      } else {
+        const nextUrl = initialHandle
+          ? `/${locale}/dashboard?saved=${encodeURIComponent(initialHandle)}`
+          : `/${locale}/dashboard`;
+        router.push(nextUrl);
+      }
       router.refresh();
     } catch {
-      setError('Unable to complete registration right now.');
+      setError('Unable to reach the registration service right now. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  const loginHref = safeNext
+    ? `/${locale}/login?next=${encodeURIComponent(safeNext)}`
+    : `/${locale}/login`;
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      {!supabaseConfigured && !demoModeEnabled ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+          <p className="font-bold">Supabase Auth Configuration Required</p>
+          <p className="mt-1 leading-relaxed">
+            New account registration requires live Supabase credentials. Local demo registration is
+            disabled by default (<code className="font-mono">DEMO_MODE_ENABLED=false</code>).
+          </p>
+        </div>
+      ) : null}
+
+      {!supabaseConfigured && demoModeEnabled ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <strong>Isolated Local Demo Mode:</strong> Accounts created here are stored locally for
+          evaluation only and are not production Supabase Auth accounts.
+        </div>
+      ) : null}
+
       {initialHandle ? (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-xs text-indigo-900 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200">
-          Your search for <span className="font-mono font-semibold">@{initialHandle}</span> will be
-          waiting in your dashboard right after registration.
+        <div className="rounded-xl border border-violet-200 bg-violet-50/80 px-4 py-3 text-xs text-violet-950 dark:border-[#263047] dark:bg-[#192337] dark:text-violet-200">
+          Your search for <span className="font-mono font-bold">@{initialHandle}</span> will be
+          carried into your first workspace step after registration.
         </div>
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="block">
-          <span className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            Full name
-          </span>
+        <div>
+          <label
+            htmlFor="signup-name"
+            className="block text-xs font-semibold text-[#0F172A] dark:text-slate-200"
+          >
+            Full name *
+          </label>
           <input
+            id="signup-name"
             type="text"
             required
             minLength={2}
+            autoComplete="name"
+            disabled={loading}
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             placeholder="Alex Rivera"
-            className="mt-1 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
           />
-        </label>
+        </div>
 
-        <label className="block">
-          <span className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            Work or personal email
-          </span>
+        <div>
+          <label
+            htmlFor="signup-email"
+            className="block text-xs font-semibold text-[#0F172A] dark:text-slate-200"
+          >
+            Work or personal email *
+          </label>
           <input
+            id="signup-email"
             type="email"
             required
+            autoComplete="email"
+            disabled={loading}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className="mt-1 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
           />
-        </label>
+        </div>
       </div>
 
-      <label className="block">
-        <span className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-          Password (min 8 characters)
-        </span>
-        <input
-          type="password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Create a strong password"
-          className="mt-1 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-        />
-      </label>
+      <div>
+        <label
+          htmlFor="signup-password"
+          className="block text-xs font-semibold text-[#0F172A] dark:text-slate-200"
+        >
+          Password (minimum 8 characters) *
+        </label>
+        <div className="relative mt-1.5">
+          <input
+            id="signup-password"
+            type={showPassword ? 'text' : 'password'}
+            required
+            minLength={8}
+            autoComplete="new-password"
+            disabled={loading}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            aria-describedby="signup-password-hints"
+            placeholder="Create a strong password"
+            className="h-11 w-full rounded-xl border border-slate-300 bg-white pr-11 pl-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((prev) => !prev)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            aria-pressed={showPassword}
+            className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded-lg p-1.5 text-[#64748B] hover:bg-slate-100 hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:bg-[#192337] dark:hover:text-white"
+          >
+            {showPassword ? (
+              <EyeOff className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Eye className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
+        </div>
+        <div
+          id="signup-password-hints"
+          className="mt-2 flex flex-wrap gap-3 text-[11px] text-[#64748B] dark:text-[#94A3B8]"
+        >
+          <span
+            className={`inline-flex items-center gap-1 ${pwChecks.length ? 'font-semibold text-emerald-700 dark:text-[#34D399]' : ''}`}
+          >
+            <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+            8+ characters
+          </span>
+          <span
+            className={`inline-flex items-center gap-1 ${pwChecks.mixed ? 'font-semibold text-emerald-700 dark:text-[#34D399]' : ''}`}
+          >
+            <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+            Upper &amp; lowercase
+          </span>
+          <span
+            className={`inline-flex items-center gap-1 ${pwChecks.number ? 'font-semibold text-emerald-700 dark:text-[#34D399]' : ''}`}
+          >
+            <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+            Includes a number
+          </span>
+        </div>
+      </div>
 
       {/* Segment Onboarding Selector */}
       <fieldset>
-        <legend className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+        <legend className="text-xs font-semibold text-[#0F172A] dark:text-slate-200">
           How will you use Viewora?
         </legend>
         <div className="mt-2 grid gap-2.5 sm:grid-cols-3">
           {(
             [
-              { id: 'personal', title: 'Personal', desc: 'Quick lookups & simple reports' },
+              { id: 'personal', title: 'Personal', desc: 'Quick lookups & simple calculators' },
               { id: 'business', title: 'Business', desc: 'Competitors & content trends' },
               { id: 'agency', title: 'Agency', desc: 'Multi-client workspaces & exports' },
             ] as const
@@ -132,17 +268,18 @@ export function SignupForm({
             <button
               key={opt.id}
               type="button"
+              aria-pressed={segment === opt.id}
               onClick={() => setSegment(opt.id)}
               className={`rounded-xl border p-3 text-left transition ${
                 segment === opt.id
-                  ? 'border-indigo-500 bg-indigo-50/70 ring-1 ring-indigo-500 dark:border-indigo-400 dark:bg-indigo-950/40'
-                  : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950'
+                  ? 'border-[#7957FF] bg-violet-50/80 ring-1 ring-[#7957FF] dark:border-[#A99AFF] dark:bg-[#192337]'
+                  : 'border-slate-200 bg-white hover:border-slate-300 dark:border-[#263047] dark:bg-[#080D19]'
               }`}
             >
-              <span className="block text-xs font-bold text-slate-900 dark:text-white">
+              <span className="block text-xs font-bold text-[#0F172A] dark:text-white">
                 {opt.title}
               </span>
-              <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
+              <span className="mt-0.5 block text-[11px] text-[#64748B] dark:text-[#94A3B8]">
                 {opt.desc}
               </span>
             </button>
@@ -151,11 +288,19 @@ export function SignupForm({
       </fieldset>
 
       {/* Transparent, User-Controlled Email Preferences */}
-      <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-        <legend className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-          Email Preferences (fully user-controlled)
+      <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-[#263047] dark:bg-[#0F172A]">
+        <legend className="text-xs font-semibold text-[#0F172A] dark:text-slate-200">
+          Email &amp; Onboarding Preferences
         </legend>
-        <div className="mt-2.5 space-y-2 text-xs text-slate-700 dark:text-slate-300">
+        <div className="mt-2.5 space-y-2 text-xs text-[#0F172A] dark:text-slate-300">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={runOnboarding}
+              onChange={(e) => setRunOnboarding(e.target.checked)}
+            />
+            <span>Show optional 30-second workspace setup after registration</span>
+          </label>
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -179,16 +324,6 @@ export function SignupForm({
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
-              checked={emailPreferences.productUpdates}
-              onChange={(e) =>
-                setEmailPreferences({ ...emailPreferences, productUpdates: e.target.checked })
-              }
-            />
-            <span>Product release announcements (optional)</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
               checked={emailPreferences.marketing}
               onChange={(e) =>
                 setEmailPreferences({ ...emailPreferences, marketing: e.target.checked })
@@ -200,24 +335,38 @@ export function SignupForm({
       </fieldset>
 
       {error ? (
-        <p role="alert" className="text-xs font-medium text-rose-600 dark:text-rose-400">
-          {error}
-        </p>
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{error}</span>
+        </div>
       ) : null}
 
       <button
         type="submit"
         disabled={loading}
-        className="h-11 w-full rounded-xl bg-indigo-600 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+        className="viewora-btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold shadow-sm disabled:opacity-60"
       >
-        {loading ? 'Creating account…' : 'Create Free Viewora Account'}
+        {loading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Creating workspace…
+          </>
+        ) : (
+          <>
+            Create Free Viewora Account
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </>
+        )}
       </button>
 
-      <p className="text-center text-xs text-slate-600 dark:text-slate-400">
+      <p className="text-center text-xs text-[#64748B] dark:text-[#94A3B8]">
         Already registered?{' '}
         <Link
-          href={`/${locale}/auth/login`}
-          className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+          href={loginHref}
+          className="font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
         >
           Sign in
         </Link>

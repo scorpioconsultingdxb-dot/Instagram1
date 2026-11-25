@@ -12,6 +12,7 @@ import {
   LifeBuoy,
   Lock,
   Pencil,
+  Plug,
   Plus,
   Search,
   Shield,
@@ -38,12 +39,14 @@ import type { FunnelEventName } from '@/lib/analytics/funnel';
 import type { ExperimentDefinition } from '@/lib/experiments/ab';
 import type { DatabaseHealthResult } from '@/lib/db/prisma';
 import type { BackupDirectorySummary } from '@/lib/admin/backup-status';
+import type { IntegrationCenterSnapshot } from '@/lib/integrations/types';
 import { ConfirmDialog, StatusBanner } from '@/components/layout/PageShell';
 
 export type AdminTab =
   | 'users'
   | 'plans'
   | 'entitlements'
+  | 'integrations'
   | 'support'
   | 'cms'
   | 'notifications'
@@ -62,6 +65,7 @@ export interface AdminConsoleProps {
   providerHealth: ProviderHealth[];
   databaseHealth?: DatabaseHealthResult;
   backupSummary?: BackupDirectorySummary;
+  integrationCenter?: IntegrationCenterSnapshot;
   apiUsage: ApiUsageMetric[];
   searchAnalytics: SearchAnalyticsMetric[];
   conversionAnalytics: {
@@ -130,6 +134,7 @@ export function AdminConsole({
   providerHealth,
   databaseHealth,
   backupSummary,
+  integrationCenter,
   apiUsage,
   searchAnalytics,
   conversionAnalytics,
@@ -244,6 +249,7 @@ export function AdminConsole({
     { id: 'users', label: 'Customers', icon: Users },
     { id: 'plans', label: 'Plans', icon: CreditCard },
     { id: 'entitlements', label: 'Entitlements', icon: Sliders },
+    { id: 'integrations', label: 'Integration Center', icon: Plug },
     { id: 'support', label: 'Support', icon: LifeBuoy },
     { id: 'cms', label: 'Content CMS', icon: FileText },
     { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -1546,6 +1552,161 @@ export function AdminConsole({
                 </div>
               ))}
             </div>
+          </div>
+        ) : null}
+
+        {tab === 'integrations' ? (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-white">
+                  Super Admin External API Integration Center (Phase 5 Readiness)
+                </h2>
+                <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
+                  Centralized governance for official, licensed, AI, and email providers. Every external provider remains disabled by default until explicitly enabled via server feature flag and configured credentials. Raw secrets are never exposed here.
+                </p>
+              </div>
+              {integrationCenter ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold uppercase text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]">
+                    {integrationCenter.allPaidProvidersDisabled
+                      ? 'All Paid APIs Disabled'
+                      : `${integrationCenter.costControl.paidProvidersActiveCount} External Active`}
+                  </span>
+                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                    Payments Locked: False
+                  </span>
+                </div>
+              ) : null}
+            </div>
+
+            {integrationCenter ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-4 text-xs tabular-nums">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-[#263047] dark:bg-[#0F172A]">
+                    <p className="text-[10px] font-semibold uppercase text-[#64748B]">Daily Spend / Cap</p>
+                    <p className="mt-1 font-display text-base font-extrabold text-[#0F172A] dark:text-white">
+                      ${integrationCenter.costControl.dailySpentUsd.toFixed(2)} / ${integrationCenter.costControl.dailyCapUsd.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-[#263047] dark:bg-[#0F172A]">
+                    <p className="text-[10px] font-semibold uppercase text-[#64748B]">Monthly Spend / Cap</p>
+                    <p className="mt-1 font-display text-base font-extrabold text-[#0F172A] dark:text-white">
+                      ${integrationCenter.costControl.monthlySpentUsd.toFixed(2)} / ${integrationCenter.costControl.monthlyCapUsd.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-[#263047] dark:bg-[#0F172A]">
+                    <p className="text-[10px] font-semibold uppercase text-[#64748B]">Global Kill Switch</p>
+                    <p className="mt-1 font-display text-base font-extrabold text-[#0F172A] dark:text-white">
+                      {integrationCenter.costControl.globalKillSwitchActive ? 'ACTIVE' : 'Standby'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-[#263047] dark:bg-[#0F172A]">
+                    <p className="text-[10px] font-semibold uppercase text-[#64748B]">Registered Adapters</p>
+                    <p className="mt-1 font-display text-base font-extrabold text-[#0F172A] dark:text-white">
+                      {integrationCenter.providers.length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {integrationCenter.providers.map((prov) => (
+                    <div
+                      key={prov.id}
+                      className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-bold text-[#0F172A] dark:text-white">{prov.name}</h3>
+                            <span className="rounded bg-slate-200 px-2 py-0.5 font-mono text-[10px] dark:bg-[#192337]">
+                              {prov.id}
+                            </span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase ${
+                                prov.effectiveState === 'enabled_ready'
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]'
+                                  : prov.effectiveState === 'active_demo'
+                                    ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200'
+                                    : prov.effectiveState === 'circuit_open'
+                                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-200'
+                                      : 'bg-slate-200 text-slate-700 dark:bg-[#192337] dark:text-slate-300'
+                              }`}
+                            >
+                              {prov.effectiveState.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">{prov.description}</p>
+                        </div>
+                        <span className="font-mono text-[10px] uppercase text-[#64748B]">
+                          Circuit: {prov.circuitState}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3 text-[11px]">
+                        <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-[#263047] dark:bg-[#131C2E]">
+                          <p className="font-semibold text-[#0F172A] dark:text-white">Flag &amp; Credentials</p>
+                          <p className="mt-0.5 font-mono text-[10px] text-[#64748B]">
+                            {prov.flagEnvVar}: {prov.flagEnabled ? 'true' : 'false'}
+                          </p>
+                          <p className="mt-0.5 text-[10px] text-[#64748B]">
+                            {prov.credentialsConfigured
+                              ? 'Server credentials present'
+                              : `Missing: ${prov.missingEnvVars.join(', ')}`}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-[#263047] dark:bg-[#131C2E]">
+                          <p className="font-semibold text-[#0F172A] dark:text-white">Resilience &amp; Cache Policy</p>
+                          <p className="mt-0.5 font-mono text-[10px] text-[#64748B]">
+                            Timeout: {prov.policy.timeoutMs}ms · Retries: {prov.policy.maxRetries} · Rate: {prov.policy.maxRequestsPerMinute}/min · TTL: {prov.policy.cacheTtlSeconds}s
+                          </p>
+                          <p className="mt-0.5 text-[10px] text-[#64748B]">
+                            Calls: {prov.usage.totalCalls} · Cache hits: {prov.usage.cacheHits} · Errors: {prov.usage.errors}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-[#263047] dark:bg-[#131C2E]">
+                          <p className="font-semibold text-[#0F172A] dark:text-white">Licensing &amp; Privacy Guard</p>
+                          <p className="mt-0.5 text-[10px] text-[#64748B]">{prov.commercialModel}</p>
+                          <p className="mt-0.5 font-semibold text-emerald-700 dark:text-[#34D399]">
+                            Private accounts: BLOCKED · IG passwords: NEVER COLLECTED
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                  <h3 className="font-bold text-[#0F172A] dark:text-white">
+                    Recent Redacted External API Logs ({integrationCenter.recentLogs.length})
+                  </h3>
+                  <p className="mt-0.5 text-[11px] text-[#64748B]">
+                    All tokens, API keys, emails, and database URLs are scrubbed before logging.
+                  </p>
+                  {integrationCenter.recentLogs.length === 0 ? (
+                    <p className="mt-2 text-[11px] text-[#64748B]">
+                      No outbound external API calls recorded in this process (all paid providers disabled).
+                    </p>
+                  ) : (
+                    <div className="mt-2 space-y-1.5 font-mono text-[10px]">
+                      {integrationCenter.recentLogs.slice(0, 10).map((log) => (
+                        <div
+                          key={log.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 dark:border-[#263047] dark:bg-[#131C2E]"
+                        >
+                          <span>
+                            [{log.providerId}] {log.operation} → <strong>{log.outcome}</strong> ({log.latencyMs}ms) — {log.redactedMessage}
+                          </span>
+                          <span className="text-[#64748B]">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-[#64748B]">Integration Center telemetry unavailable.</p>
+            )}
           </div>
         ) : null}
 

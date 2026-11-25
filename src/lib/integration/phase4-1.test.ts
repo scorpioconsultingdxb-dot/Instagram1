@@ -213,4 +213,89 @@ describe('Phase 4.1 Hardened Media Storage Validation & Real Binary PDF Export',
     expect(csv).toContain("'=SUM(1,2) Quarterly Client Benchmark");
     expect(csv).not.toContain('STRICTLY PRIVATE INTERNAL NOTE');
   });
+
+  it('renders multilingual WinAnsi diacritics (pt-BR, es, de, fr) and produces exact standard-reader PDF xref byte offsets', () => {
+    const now = new Date().toISOString();
+    const sections = createDefaultSections('executive_summary').map((s) =>
+      s.kind === 'custom_text'
+        ? {
+            ...s,
+            customText:
+              'PT: Relatório de Engajamento — Ação & Evolução. ES: Análisis de Campaña Española ¿Qué funciona? DE: Überblick & Größe — Fußzeile. FR: Stratégie Créateur — Résumé €100.',
+          }
+        : s
+    );
+
+    const doc: CustomReportDocument = {
+      id: 'crpt-i18n-pdf-1',
+      ownerId: 'owner-1',
+      reportType: 'executive_summary',
+      title: 'Relatório Multilíngue — Überblick & Résumé',
+      description: 'Análise estratégica multi-idioma (pt-BR / es / de / fr / en).',
+      status: 'ready',
+      usernames: ['studio.meridian'],
+      sections,
+      branding: {
+        enabled: false,
+        agencyName: '',
+        clientName: '',
+        accentHex: '#7957FF',
+        headerNote: '',
+      },
+      version: 1,
+      versionHistory: [],
+      generationMode: 'Template-Generated',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const pdfBuf = buildReportPdfBuffer(doc, [makeSampleProfile('studio.meridian')], '2026-11-26T00:00:00.000Z');
+    const pdfStr = pdfBuf.toString('latin1');
+
+    // Verify WinAnsi octal escapes for accented chars across all 4 non-English locales + Euro sign
+    expect(pdfStr).toContain('\\363'); // ó (Relatório)
+    expect(pdfStr).toContain('\\347'); // ç (Ação)
+    expect(pdfStr).toContain('\\343'); // ã (Ação)
+    expect(pdfStr).toContain('\\361'); // ñ (Campaña)
+    expect(pdfStr).toContain('\\334'); // Ü (Überblick)
+    expect(pdfStr).toContain('\\337'); // ß (Größe / Fußzeile)
+    expect(pdfStr).toContain('\\351'); // é (Stratégie / Résumé)
+    expect(pdfStr).toContain('\\200'); // € (WinAnsi 0x80)
+
+    // Strict PDF 1.4 structural reader check: startxref & every xref entry offset must match exact object byte positions
+    const startXrefMatch = pdfStr.match(/startxref\n(\d+)\n%%EOF\s*$/);
+    expect(startXrefMatch).not.toBeNull();
+    const xrefPos = Number(startXrefMatch![1]);
+    expect(pdfBuf.subarray(xrefPos, xrefPos + 5).toString('latin1')).toBe('xref\n');
+
+    const xrefSection = pdfStr.slice(xrefPos);
+    const entryLines = xrefSection
+      .split('\n')
+      .filter((l) => /^\d{10} \d{5} n $/.test(l));
+    expect(entryLines.length).toBeGreaterThanOrEqual(6);
+
+    entryLines.forEach((line, idx) => {
+      const objId = idx + 1;
+      const byteOffset = Number(line.slice(0, 10));
+      const expectedPrefix = `${objId} 0 obj\n`;
+      expect(pdfBuf.subarray(byteOffset, byteOffset + expectedPrefix.length).toString('latin1')).toBe(
+        expectedPrefix
+      );
+    });
+
+    // Safe WebP VP8X oversized dimension decoding rejection
+    const bombWebp = Buffer.alloc(30);
+    bombWebp.write('RIFF', 0, 'ascii');
+    bombWebp.writeUInt32LE(22, 4);
+    bombWebp.write('WEBP', 8, 'ascii');
+    bombWebp.write('VP8X', 12, 'ascii');
+    const dim = 10000 - 1;
+    bombWebp[24] = dim & 0xff;
+    bombWebp[25] = (dim >> 8) & 0xff;
+    bombWebp[26] = (dim >> 16) & 0xff;
+    bombWebp[27] = dim & 0xff;
+    bombWebp[28] = (dim >> 8) & 0xff;
+    bombWebp[29] = (dim >> 16) & 0xff;
+    expect(validateImageBuffer(bombWebp, 'image/webp').ok).toBe(false);
+  });
 });

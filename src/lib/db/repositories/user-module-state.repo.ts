@@ -161,6 +161,75 @@ export async function saveDbUserMedia(
   );
 }
 
+export async function saveDbUserMediaWithQuota(
+  userId: string,
+  kind: 'avatar' | 'cover',
+  record: DbStoredMediaRecord,
+  maxTotalBytes: number,
+  client: PrismaClient = getPrismaClient()
+): Promise<
+  | { ok: true; totalBytes: number }
+  | { ok: false; code: 'QUOTA_EXCEEDED'; usedBytes: number; limitBytes: number }
+> {
+  return withUserRlsContext(
+    { userId, role: 'user' },
+    async (tx) => {
+      // Serialize concurrent avatar + cover uploads for the same user inside PostgreSQL
+      if (typeof (tx as { $executeRaw?: unknown }).$executeRaw === 'function') {
+        const lockKey = `viewora:media_quota:${userId}`;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      }
+
+      const pref = await tx.userPreference.findUnique({
+        where: { userId },
+        select: { notificationPreferences: true },
+      });
+      const root = extractRecord(pref?.notificationPreferences);
+      const media = extractRecord(root._media);
+
+      let otherBytes = 0;
+      for (const k of ['avatar', 'cover'] as const) {
+        if (k === kind) continue;
+        const item = media[k];
+        if (item && typeof item === 'object') {
+          const size = Number((item as Partial<DbStoredMediaRecord>).sizeBytes ?? 0);
+          if (Number.isFinite(size) && size > 0) otherBytes += size;
+        }
+      }
+
+      const nextTotalBytes = otherBytes + record.sizeBytes;
+      if (nextTotalBytes > maxTotalBytes) {
+        return {
+          ok: false,
+          code: 'QUOTA_EXCEEDED',
+          usedBytes: otherBytes,
+          limitBytes: maxTotalBytes,
+        };
+      }
+
+      const nextNotificationPrefs = {
+        ...root,
+        _media: {
+          ...media,
+          [kind]: record,
+        },
+      } as unknown as Prisma.InputJsonValue;
+
+      await tx.userPreference.upsert({
+        where: { userId },
+        update: { notificationPreferences: nextNotificationPrefs },
+        create: {
+          userId,
+          notificationPreferences: nextNotificationPrefs,
+        },
+      });
+
+      return { ok: true, totalBytes: nextTotalBytes };
+    },
+    client
+  );
+}
+
 export async function readDbUserMediaQuotaBytes(
   userId: string,
   excludeKind?: 'avatar' | 'cover',

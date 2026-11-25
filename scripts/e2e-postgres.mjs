@@ -598,6 +598,8 @@ async function main() {
     const adminCheck = await cdp.eval(`(async () => {
       const ov = await fetch('/api/admin/overview');
       const ovJson = await ov.json();
+      const intRes = await fetch('/api/admin/integrations');
+      const intJson = await intRes.json();
       const lockPay = await fetch('/api/admin/actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -623,6 +625,9 @@ async function main() {
         overviewStatus: ov.status,
         hasDbHealth: ovJson?.databaseHealth?.status === 'healthy',
         hasBackupSummary: Boolean(ovJson?.backupSummary),
+        integrationsStatus: intRes.status,
+        allPaidDisabled: intJson?.integrationCenter?.allPaidProvidersDisabled === true,
+        providerCount: (intJson?.integrationCenter?.providers || []).length,
         lockPayStatus: lockPay.status,
         pdfStatus: pdfRes.status,
         pdfContentType: pdfRes.headers.get('content-type') || '',
@@ -632,6 +637,7 @@ async function main() {
       };
     })()`);
     assert(adminCheck.overviewStatus === 200 && adminCheck.hasDbHealth && adminCheck.hasBackupSummary, `Admin overview failed: ${JSON.stringify(adminCheck)}`);
+    assert(adminCheck.integrationsStatus === 200 && adminCheck.allPaidDisabled && adminCheck.providerCount === 7, `Admin Integration Center API check failed: ${JSON.stringify(adminCheck)}`);
     assert(adminCheck.lockPayStatus === 403, `Expected 403 on locked payments_enabled, got ${adminCheck.lockPayStatus}`);
     assert(
       adminCheck.pdfStatus === 200 &&
@@ -641,6 +647,13 @@ async function main() {
       `Live binary PDF export verification failed: ${JSON.stringify(adminCheck)}`
     );
     report.screenshots.push(await cdp.screenshot('pg_e2e_admin_1440px.png'));
+    // Switch to Super Admin Integration Center tab and capture screenshot
+    await cdp.eval(`(() => {
+      const btn = Array.from(document.querySelectorAll('button[role="tab"]')).find(b => b.textContent && b.textContent.includes('Integration Center'));
+      if (btn) btn.click();
+    })()`);
+    await sleep(500);
+    report.screenshots.push(await cdp.screenshot('phase5_integration_center_1440px.png'));
     await cdp.setViewport(390, 844);
     await cdp.goto(`${BASE_URL}/en/admin`, 1100);
     const adminMobOverflow = await cdp.eval(`document.documentElement.scrollWidth > window.innerWidth`);

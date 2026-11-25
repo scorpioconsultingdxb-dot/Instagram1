@@ -1,4 +1,4 @@
-import { getEnv } from '@/lib/env';
+import { checkProviderCredentials, isProviderEffectivelyEnabled } from '@/lib/integrations';
 import type {
   InstagramDataProvider,
   ProviderHealth,
@@ -10,7 +10,7 @@ import type {
 /**
  * Permitted Public Datasets Provider.
  * Queries an explicitly permitted public benchmark / opt-in directory dataset
- * when PUBLIC_DATASET_ENDPOINT_URL is configured.
+ * when `PROVIDER_PUBLIC_DATASET_ENABLED=true` and `PUBLIC_DATASET_ENDPOINT_URL` is configured.
  */
 export class PermittedPublicDatasetProvider implements InstagramDataProvider {
   readonly id = 'permitted_public_dataset';
@@ -18,23 +18,24 @@ export class PermittedPublicDatasetProvider implements InstagramDataProvider {
   readonly label = 'Permitted Public Dataset';
 
   isConfigured(): boolean {
-    const env = getEnv();
-    return Boolean(env.PUBLIC_DATASET_ENDPOINT_URL);
+    return isProviderEffectivelyEnabled('permitted_public_dataset');
   }
 
   async checkHealth(): Promise<ProviderHealth> {
     const checkedAt = new Date().toISOString();
-    const configured = this.isConfigured();
+    const cred = checkProviderCredentials('permitted_public_dataset');
     return {
       providerId: this.id,
       providerKind: this.kind,
       providerLabel: this.label,
-      configured,
-      status: configured ? 'healthy' : 'disabled',
-      latencyMs: configured ? 0 : null,
-      message: configured
-        ? 'Permitted public dataset endpoint configured.'
-        : 'No external public dataset endpoint configured.',
+      configured: cred.credentialsConfigured,
+      status: cred.effectivelyEnabled ? 'healthy' : 'disabled',
+      latencyMs: cred.effectivelyEnabled ? 0 : null,
+      message: !cred.flagEnabled
+        ? 'Disabled by feature flag (PROVIDER_PUBLIC_DATASET_ENABLED=false).'
+        : cred.credentialsConfigured
+          ? 'Permitted public dataset endpoint configured.'
+          : 'No external public dataset endpoint configured.',
       checkedAt,
     };
   }

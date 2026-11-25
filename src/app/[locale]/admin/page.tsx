@@ -23,6 +23,7 @@ import { defaultJobQueue } from '@/lib/jobs/queue';
 import { loadReferralOverview } from '@/lib/referrals/service';
 import { checkDatabaseHealth } from '@/lib/db/prisma';
 import { getBackupDirectorySummary } from '@/lib/admin/backup-status';
+import { defaultApiGateway } from '@/lib/integrations';
 import { AdminConsole } from '@/components/admin/AdminConsole';
 
 export const dynamic = 'force-dynamic';
@@ -114,6 +115,7 @@ export default async function AdminPage({
       providerHealth={providerHealth}
       databaseHealth={databaseHealth}
       backupSummary={getBackupDirectorySummary()}
+      integrationCenter={defaultApiGateway.getIntegrationCenterSnapshot()}
       apiUsage={getApiUsageMetrics()}
       searchAnalytics={getSearchAnalyticsMetrics()}
       conversionAnalytics={conversionAnalytics}

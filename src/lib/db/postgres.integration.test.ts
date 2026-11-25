@@ -23,6 +23,7 @@ import {
   readDbUserMediaQuotaBytes,
   readDbUserModuleState,
   saveDbUserMedia,
+  saveDbUserMediaWithQuota,
   deleteDbUserMedia,
   updateDbUserModuleState,
 } from '@/lib/db/repositories/user-module-state.repo';
@@ -934,6 +935,42 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     expect(await readDbUserMediaQuotaBytes(r1.user.id, undefined, appClient)).toBe(370_000);
     expect(await readDbUserMediaQuotaBytes(r1.user.id, 'avatar', appClient)).toBe(250_000);
     expect(await readDbUserMediaQuotaBytes(r1.user.id, 'cover', appClient)).toBe(120_000);
+
+    // 2b. Concurrent atomic media quota enforcement (pg_advisory_xact_lock):
+    // Two simultaneous 1.8 MB uploads (avatar + cover) against a 3 MB total quota -> strictly 1 succeeds, 1 rejects QUOTA_EXCEEDED!
+    const quotaLimit = 3 * 1024 * 1024;
+    const [mediaRaceA, mediaRaceB] = await Promise.all([
+      saveDbUserMediaWithQuota(
+        r2.user.id,
+        'avatar',
+        {
+          contentType: 'image/png',
+          extension: 'png',
+          sizeBytes: 1_800_000,
+          sha256: 'race-a',
+          base64: 'AAAA',
+          storedAt: new Date().toISOString(),
+        },
+        quotaLimit,
+        appClient
+      ),
+      saveDbUserMediaWithQuota(
+        r2.user.id,
+        'cover',
+        {
+          contentType: 'image/png',
+          extension: 'png',
+          sizeBytes: 1_800_000,
+          sha256: 'race-b',
+          base64: 'BBBB',
+          storedAt: new Date().toISOString(),
+        },
+        quotaLimit,
+        appClient
+      ),
+    ]);
+    expect([mediaRaceA, mediaRaceB].filter((m) => m.ok)).toHaveLength(1);
+    expect([mediaRaceA, mediaRaceB].filter((m) => !m.ok && m.code === 'QUOTA_EXCEEDED')).toHaveLength(1);
 
     // 3. Concurrent advisory-locked Last-Super-Admin protection
     // Ensure only these two super_admins exist in isolated viewora_test during the race check

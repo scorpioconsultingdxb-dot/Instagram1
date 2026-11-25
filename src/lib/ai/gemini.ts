@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { getEnv } from '@/lib/env';
+import { isProviderEffectivelyEnabled } from '@/lib/integrations';
 import type { DataClass, PublicProfileData } from '@/lib/providers/types';
 import { generateStructuredProfileInsights } from '@/lib/reports/export';
 
@@ -137,8 +138,9 @@ export async function generateAiProfileReport(params: {
 
   const env = getEnv();
   const budgetCheck = canSpendAiBudget(0.005);
+  const geminiEnabled = isProviderEffectivelyEnabled('gemini_ai');
 
-  if (env.GEMINI_API_KEY && budgetCheck.allowed && params.dataClass !== 'demo') {
+  if (geminiEnabled && env.GEMINI_API_KEY && budgetCheck.allowed && params.dataClass !== 'demo') {
     const prompt = buildSafeAiPrompt(params.reportType, params.profile);
     try {
       const controller = new AbortController();

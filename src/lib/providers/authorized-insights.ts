@@ -1,4 +1,4 @@
-import { getEnv } from '@/lib/env';
+import { checkProviderCredentials, isProviderEffectivelyEnabled } from '@/lib/integrations';
 import type {
   InstagramDataProvider,
   ProviderHealth,
@@ -12,6 +12,7 @@ import type {
  * Authorized Connected-Account Insights Provider.
  * Used when a Viewora user explicitly connects their own Instagram Business
  * or Creator account via Meta OAuth to view first-party insights & stories.
+ * Disabled by default until `PROVIDER_AUTHORIZED_INSIGHTS_ENABLED=true`.
  */
 export class AuthorizedInsightsProvider implements InstagramDataProvider {
   readonly id = 'authorized_insights';
@@ -19,23 +20,24 @@ export class AuthorizedInsightsProvider implements InstagramDataProvider {
   readonly label = 'Authorized Connected-Account Insights';
 
   isConfigured(): boolean {
-    const env = getEnv();
-    return Boolean(env.META_APP_ID && env.META_APP_SECRET);
+    return isProviderEffectivelyEnabled('authorized_insights');
   }
 
   async checkHealth(): Promise<ProviderHealth> {
     const checkedAt = new Date().toISOString();
-    const configured = this.isConfigured();
+    const cred = checkProviderCredentials('authorized_insights');
     return {
       providerId: this.id,
       providerKind: this.kind,
       providerLabel: this.label,
-      configured,
-      status: configured ? 'healthy' : 'disabled',
-      latencyMs: configured ? 0 : null,
-      message: configured
-        ? 'Meta OAuth app credentials configured for connected-account insights.'
-        : 'Meta OAuth credentials are not configured.',
+      configured: cred.credentialsConfigured,
+      status: cred.effectivelyEnabled ? 'healthy' : 'disabled',
+      latencyMs: cred.effectivelyEnabled ? 0 : null,
+      message: !cred.flagEnabled
+        ? 'Disabled by feature flag (PROVIDER_AUTHORIZED_INSIGHTS_ENABLED=false).'
+        : cred.credentialsConfigured
+          ? 'Meta OAuth app credentials configured for connected-account insights.'
+          : `Meta OAuth credentials missing (${cred.missingEnvVars.join(', ')}).`,
       checkedAt,
     };
   }

@@ -18,27 +18,77 @@ interface PdfLine {
   colorRgb?: [number, number, number];
 }
 
-function toAsciiPdfSafe(input: string): string {
+// WinAnsiEncoding (Windows-1252) special codepoints in 0x80..0x9F range
+const WIN_ANSI_EXTRAS: Record<number, number> = {
+  0x20ac: 0x80, // €
+  0x201a: 0x82, // ‚
+  0x0192: 0x83, // ƒ
+  0x201e: 0x84, // „
+  0x2026: 0x85, // …
+  0x2020: 0x86, // †
+  0x2021: 0x87, // ‡
+  0x02c6: 0x88, // ˆ
+  0x2030: 0x89, // ‰
+  0x0160: 0x8a, // Š
+  0x2039: 0x8b, // ‹
+  0x0152: 0x8c, // Œ
+  0x017d: 0x8e, // Ž
+  0x2018: 0x91, // ‘
+  0x2019: 0x92, // ’
+  0x201c: 0x93, // “
+  0x201d: 0x94, // ”
+  0x2022: 0x95, // •
+  0x2013: 0x96, // –
+  0x2014: 0x97, // —
+  0x02dc: 0x98, // ˜
+  0x2122: 0x99, // ™
+  0x0161: 0x9a, // š
+  0x203a: 0x9b, // ›
+  0x0153: 0x9c, // œ
+  0x017e: 0x9e, // ž
+  0x0178: 0x9f, // Ÿ
+};
+
+function normalizePdfUnicode(input: string): string {
   return input
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[\u2013\u2014]/g, '-')
-    .replace(/\u2026/g, '...')
-    .replace(/\u00B7/g, '|')
     .replace(/\u0394/g, 'Delta')
     .replace(/\u2192/g, '->')
-    .replace(/[^\x20-\x7E]/g, ' ');
+    .replace(/\u00B7/g, '|');
 }
 
+/**
+ * Encodes UTF-16 strings into standard PDF 1.4 WinAnsiEncoding literal strings.
+ * Preserves full Western European multilingual character sets for all 5 Viewora locales
+ * (en, pt-BR, es, de, fr: á à â ã ä ç é è ê ë í ñ ó ò ô õ ö ú ü ß € ¿ ¡ etc.)
+ * using standard PDF octal escapes (`\NNN`) so Adobe Acrobat, Chrome PDFium, Edge,
+ * macOS Preview, and Firefox PDF.js render diacritics accurately.
+ */
 function escapePdfLiteral(input: string): string {
-  return toAsciiPdfSafe(input)
-    .replace(/\\/g, '\\\\')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)');
+  const normalized = normalizePdfUnicode(input);
+  let out = '';
+  for (let i = 0; i < normalized.length; i += 1) {
+    const cp = normalized.charCodeAt(i);
+    if (cp === 0x5c) {
+      out += '\\\\';
+    } else if (cp === 0x28) {
+      out += '\\(';
+    } else if (cp === 0x29) {
+      out += '\\)';
+    } else if (cp >= 0x20 && cp <= 0x7e) {
+      out += normalized[i]!;
+    } else if (cp >= 0xa0 && cp <= 0xff) {
+      out += `\\${cp.toString(8).padStart(3, '0')}`;
+    } else if (cp in WIN_ANSI_EXTRAS) {
+      out += `\\${WIN_ANSI_EXTRAS[cp]!.toString(8).padStart(3, '0')}`;
+    } else {
+      out += ' ';
+    }
+  }
+  return out;
 }
 
 function wrapText(text: string, maxChars: number): string[] {
-  const clean = toAsciiPdfSafe(text).replace(/\s+/g, ' ').trim();
+  const clean = normalizePdfUnicode(text).replace(/\s+/g, ' ').trim();
   if (!clean) return [];
   const words = clean.split(' ');
   const out: string[] = [];

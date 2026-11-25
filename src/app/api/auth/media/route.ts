@@ -12,8 +12,7 @@ import { getAccountProfilePrefs, saveAccountProfilePrefs } from '@/lib/auth/prof
 import {
   deleteDbUserMedia,
   readDbUserMedia,
-  readDbUserMediaQuotaBytes,
-  saveDbUserMedia,
+  saveDbUserMediaWithQuota,
 } from '@/lib/db/repositories/user-module-state.repo';
 
 const ALLOWED_KINDS = new Set(['avatar', 'cover'] as const);
@@ -121,9 +120,22 @@ export async function POST(request: NextRequest) {
 
   if (isDatabaseConfigured()) {
     try {
-      const otherBytes = await readDbUserMediaQuotaBytes(user.id, kind);
-      const nextTotalBytes = otherBytes + buffer.byteLength;
-      if (nextTotalBytes > MAX_CUSTOMER_MEDIA_TOTAL_BYTES) {
+      const storageKey = `pg:${user.id}/media/${kind}-${Date.now()}.${validation.extension}`;
+      const quotaResult = await saveDbUserMediaWithQuota(
+        user.id,
+        kind,
+        {
+          contentType: validation.contentType,
+          extension: validation.extension,
+          sizeBytes: buffer.byteLength,
+          sha256,
+          base64: buffer.toString('base64'),
+          storedAt: new Date().toISOString(),
+        },
+        MAX_CUSTOMER_MEDIA_TOTAL_BYTES
+      );
+
+      if (!quotaResult.ok) {
         return NextResponse.json(
           {
             ok: false,
@@ -132,16 +144,6 @@ export async function POST(request: NextRequest) {
           { status: 413 }
         );
       }
-
-      const storageKey = `pg:${user.id}/media/${kind}-${Date.now()}.${validation.extension}`;
-      await saveDbUserMedia(user.id, kind, {
-        contentType: validation.contentType,
-        extension: validation.extension,
-        sizeBytes: buffer.byteLength,
-        sha256,
-        base64: buffer.toString('base64'),
-        storedAt: new Date().toISOString(),
-      });
 
       const patch =
         kind === 'avatar'
@@ -162,7 +164,7 @@ export async function POST(request: NextRequest) {
         width: validation.width,
         height: validation.height,
         contentType: validation.contentType,
-        quotaUsedBytes: nextTotalBytes,
+        quotaUsedBytes: quotaResult.totalBytes,
         quotaLimitBytes: MAX_CUSTOMER_MEDIA_TOTAL_BYTES,
         storage: 'postgresql',
       });

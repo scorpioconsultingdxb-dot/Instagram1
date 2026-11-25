@@ -1,21 +1,28 @@
-# Viewora — Production Readiness Assessment (Updated Phase 4.1)
+# Viewora — Production Readiness Assessment (Updated Stage 41 — Phase 5 Preparation)
 
 **Date:** 2026-11-26  
-**Overall Verdict:** **READY FOR PHASE 5 STAGING & EXTERNAL API INTEGRATION — NOT YET COMMERCIAL PUBLIC LAUNCH READY** (pending external Phase 5 staging deployment, managed backups/HTTPS/monitoring, manual screen-reader QA, and approved external provider activations).
+**Overall Verdict:** **READY FOR PHASE 5 STAGING DEPLOYMENT & OWNER-APPROVED API ACTIVATION — NOT YET PUBLIC COMMERCIAL LAUNCH READY** (pending owner provider approvals, hosted staging infrastructure, distributed rate-limit/cache backing, hosted Lighthouse/CWV, and manual screen-reader sign-off).
 
-## 1. Completed Pre-Staging Gates (Verified Green)
+## 1. Verified Readiness Baseline
 
-- **Zero Production Dependency Vulnerabilities:** `npm audit --omit=dev` = **0 critical, 0 high, 0 moderate, 0 low**.
-- **Independent PostgreSQL Architecture (Zero Supabase):** 58 tables, 74 FKs, 147 indexes, 23 RLS policies, 5 forward migrations (`viewora` & `viewora_test`), restricted `NOBYPASSRLS` runtime roles.
-- **Database-Enforced Security Controls:** Append-only `audit_logs` enforced via PostgreSQL privilege revocation + `BEFORE UPDATE OR DELETE` trigger (`ERRCODE 42501`); concurrent Last-Super-Admin guard via `pg_advisory_xact_lock`; strict cross-tenant & private-note RLS isolation; revocable database sessions.
-- **Commercial Feature Completeness (Local Scope):** 5 locales, 12 free tools, Personal Digital HQ 3.0 with hardened media validation & 3 MB quota, Dashboard 3.0 with drag-and-drop/keyboard widget ordering & owner-scoped global search, Research Pro with templates & CSV importer, Report Studio 3.0 with real `%PDF-1.4` + formula-safe CSV + Markdown, Retention/Feedback UI, and Enterprise Super Admin 3.0.
-- **Permanent Restrictions Enforced:** `PAYMENTS_ENABLED=false`, `NEXT_PUBLIC_PAYMENTS_ENABLED=false`, `DEMO_MODE_ENABLED=false` in production, zero Supabase, zero unauthorized external API calls, permanent `Scorpio Marketing Agency` Super Admin preserved cleanly.
-- **Automated Quality Gates:** `tsc` 0 errors, `eslint` 0 errors/warnings, `vitest` 89/89 passing, live PG `test:db` 7/7 passing, `next build` 304 static pages, live PG E2E 7/7 milestones (0 console/page errors), Scenario B 78/78 routes HTTP 200.
+- **Zero Production Vulnerabilities:** `npm audit --omit=dev` = **0 critical, 0 high, 0 moderate, 0 low**.
+- **Independent PostgreSQL 14.25 (PG 14–16 Compatible, Zero Supabase):** 58 tables, 74 FKs, 147 indexes, 23 RLS policies, 5 forward migrations (`viewora` & `viewora_test`), restricted `NOBYPASSRLS` runtime roles.
+- **Database-Enforced Security & Concurrency:** Append-only `audit_logs` enforced via `REVOKE` + `BEFORE UPDATE OR DELETE` trigger (`ERRCODE 42501`); concurrent `pg_advisory_xact_lock` guards for Last-Super-Admin protection AND per-customer 3 MB media quota enforcement.
+- **Stage 41 API Integration Readiness Framework:** Centralized `ExternalApiGateway` with default-off dual-key feature flags (`PROVIDER_*_ENABLED=false`), server-side credential checks, placeholder rejection, timeouts, bounded retries, circuit breakers, rate limits, TTL caching, Zod validation, daily/monthly USD caps, secret/PII log redaction, customer `daily_searches` quota enforcement, and RBAC-protected Super Admin Integration Center (`/api/admin/integrations`).
+- **Multilingual Standards-Compliant PDF & Export Verification:** WinAnsiEncoding octal support for all 5 locales (`en`, `pt-BR`, `es`, `de`, `fr`), verified exact byte-level `xref` / `startxref` / `%%EOF` structure, formula-safe CSV, zero private-note leakage, and server-side entitlement gating (`403` Free / `200` Agency).
+- **Automated Quality Gates (All Green):**
+  - `tsc --noEmit`: **0 errors**
+  - `eslint .`: **0 errors, 0 warnings**
+  - `vitest run`: **20/20 suites · 92/92 tests passed**
+  - `test:db` (Live PG `viewora_test`): **7/7 tests passed**
+  - `next build`: **305/305 static pages generated**
+  - `test:e2e:pg` (Live PG `viewora_test`): **7/7 milestones · 15 screenshots · 0 consoleErrors · 0 pageErrors**
+  - Operational `viewora` baseline: **100% untouched** (`Scorpio Marketing Agency` `super_admin`/`agency`, `users: 1`, `support_tickets: 0`, `audit_logs: 6`).
 
-## 2. Mandatory Gates Remaining Before Public Commercial Launch (Phase 5)
+## 2. Remaining Gates Before Commercial Public Launch
 
-1. **Hosted Infrastructure & PostgreSQL 16 Staging Deployment:** Provision managed PostgreSQL 16 (with PgBouncer + automated daily encrypted backups + verified Linux `pg_dump`/`pg_restore` drills outside workstation Windows App Control restrictions), HTTPS/TLS termination, and real DNS.
-2. **External Provider Integration (When Authorized in Phase 5):** Meta Graph API Business Discovery OAuth/tokens, Gemini API keys, transactional email (SMTP/Resend) + external cron scheduler invoking `/api/jobs/run` (`CRON_SECRET`), and object storage (S3/R2/GCS) for high-volume media.
-3. **Hosted Performance & Manual Accessibility Sign-Off:** Run hosted Lighthouse + RUM Core Web Vitals on staging HTTPS URL, plus manual NVDA/VoiceOver/JAWS screen-reader pass.
-4. **Dev Toolchain Upgrade:** Plan controlled `vitest` v3 → v5 upgrade to clear the 3 dev-only test-runner advisories.
-5. **Payment Activation (Only Upon Explicit Owner Authorization):** Stripe webhook/checkout activation remains intentionally disabled until formally approved.
+1. Owner decisions & approvals for external API providers, commercial data licenses, Gemini AI budget, and sending domain ([PHASE_5_READINESS_REPORT.md](file:///c:/Users/Scorpio/Videos/Instagram/PHASE_5_READINESS_REPORT.md)).
+2. Managed PostgreSQL 16 staging deployment, automated Linux backup/restore drills (outside workstation Windows App Control), and Redis-backed multi-instance rate limits/caches.
+3. Hosted staging Lighthouse + field RUM CWV + manual NVDA/VoiceOver/JAWS screen-reader sign-off.
+4. Dev-only `vitest` v3 → v5 upgrade.
+5. Explicit owner authorization before enabling Stripe billing (`PAYMENTS_ENABLED=false` locked).

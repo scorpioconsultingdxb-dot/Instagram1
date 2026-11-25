@@ -1,5 +1,13 @@
 # Viewora — Changelog
 
+## [Phase 5 Preparation — Stage 41: External API Integration Readiness & Phase 4.1 Verification] — 2026-11-26
+### Added
+- **Centralized External API Integration Framework (`src/lib/integrations/`):** Typed provider contracts (`types.ts`), 7-provider capability & commercial licensing catalog (`catalog.ts`), dual-key server credential/flag guard + secret/PII redactor (`credentials.ts`), and `ExternalApiGateway` (`gateway.ts`) enforcing default-off flags, timeouts, bounded retries, circuit breakers, rate limits, TTL caching, in-flight deduplication, Zod payload validation, USD cost caps, kill switches, and redacted request logs.
+- **Provider & AI Governance Wiring:** Wired `ExternalApiGateway` and explicit default-off `PROVIDER_*_ENABLED=false` flags across Meta Official, Authorized Insights, Licensed Third-Party, Permitted Public Dataset, and Gemini AI adapters; enforced authenticated customer `daily_searches` membership limits in `/api/search`.
+- **Super Admin Integration Center:** Added RBAC-protected `GET /api/admin/integrations` and the **Integration Center** tab inside `AdminConsole` showing strictly non-secret readiness, circuit states, resilience/cache policies, USD spend vs. caps, compliance guards, and redacted logs.
+- **Phase 4.1 Outstanding Hardening:** Implemented atomic PostgreSQL `saveDbUserMediaWithQuota()` (`pg_advisory_xact_lock`) preventing concurrent avatar/cover quota races; upgraded PDF export (`src/lib/reports/pdf.ts`) with full WinAnsiEncoding multilingual octal escapes (`pt-BR`, `es`, `de`, `fr`, `en`) and byte-exact `xref` structural verification.
+- **Documentation & Verification:** Added `API_INTEGRATION_ARCHITECTURE.md`, `API_PROVIDER_COMPARISON.md`, `API_CONFIGURATION_GUIDE.md`, `API_SECURITY_REPORT.md`, `API_COST_CONTROL_REPORT.md`, `DATA_PROVENANCE_POLICY.md`, and `PHASE_5_READINESS_REPORT.md`; verified 20/20 unit suites (92/92 tests), 7/7 live PG tests, 305 static pages, 7/7 live PG E2E milestones (15 screenshots, 0 errors), and untouched operational `viewora` baseline.
+
 ## [Phase 4.1 — Stages 40.1–40.10: Security Hardening, Real PDF Export & Commercial Quality] — 2026-11-26
 ### Security & Database Governance
 - **Stage 40.1 (Zero Production Advisories):** Remediated all 7 production vulnerabilities (`6 High, 1 Moderate → 0 Total` in `npm audit --omit=dev`) via compatible `zod@^4.6.7` upgrade and targeted SemVer overrides (`postcss@^8.5.33`, `effect@^3.22.5`, `deepmerge-ts@^8.0.2`).

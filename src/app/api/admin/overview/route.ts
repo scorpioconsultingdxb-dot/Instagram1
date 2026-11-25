@@ -19,6 +19,7 @@ import { defaultJobQueue } from '@/lib/jobs/queue';
 import { loadReferralOverview } from '@/lib/referrals/service';
 import { checkDatabaseHealth } from '@/lib/db/prisma';
 import { getBackupDirectorySummary } from '@/lib/admin/backup-status';
+import { defaultApiGateway } from '@/lib/integrations';
 
 export async function GET() {
   try {
@@ -70,6 +71,7 @@ export async function GET() {
       jobQueueSummary: defaultJobQueue.getSummary(),
       storageUsage: getLocalStorageUsageSummary(),
       backupSummary: getBackupDirectorySummary(),
+      integrationCenter: defaultApiGateway.getIntegrationCenterSnapshot(),
       referralOverview,
     });
   } catch {

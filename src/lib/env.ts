@@ -41,6 +41,20 @@ const envSchema = z.object({
   NEXT_PUBLIC_PAYMENTS_ENABLED: z.string().optional().default('false'),
   STRIPE_SECRET_KEY: z.string().optional().or(z.literal('')),
   STRIPE_WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
+  // Stage 41 — Explicit per-provider enable flags (ALL strictly default false until owner approves)
+  PROVIDER_META_ENABLED: z.string().optional().default('false'),
+  PROVIDER_AUTHORIZED_INSIGHTS_ENABLED: z.string().optional().default('false'),
+  PROVIDER_LICENSED_THIRD_PARTY_ENABLED: z.string().optional().default('false'),
+  PROVIDER_PUBLIC_DATASET_ENABLED: z.string().optional().default('false'),
+  PROVIDER_GEMINI_ENABLED: z.string().optional().default('false'),
+  PROVIDER_RESEND_ENABLED: z.string().optional().default('false'),
+  // Stage 41 — Centralized provider runtime controls
+  PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(8000),
+  PROVIDER_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(2),
+  PROVIDER_CACHE_TTL_SECONDS: z.coerce.number().int().min(0).max(86400).default(900),
+  PROVIDER_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).max(600).default(30),
+  API_DAILY_COST_CAP_USD: z.coerce.number().min(0).default(15),
+  API_MONTHLY_COST_CAP_USD: z.coerce.number().min(0).default(200),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
@@ -88,6 +102,18 @@ export function getEnv(): AppEnv {
     NEXT_PUBLIC_PAYMENTS_ENABLED: process.env.NEXT_PUBLIC_PAYMENTS_ENABLED || 'false',
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
+    PROVIDER_META_ENABLED: process.env.PROVIDER_META_ENABLED ?? 'false',
+    PROVIDER_AUTHORIZED_INSIGHTS_ENABLED: process.env.PROVIDER_AUTHORIZED_INSIGHTS_ENABLED ?? 'false',
+    PROVIDER_LICENSED_THIRD_PARTY_ENABLED: process.env.PROVIDER_LICENSED_THIRD_PARTY_ENABLED ?? 'false',
+    PROVIDER_PUBLIC_DATASET_ENABLED: process.env.PROVIDER_PUBLIC_DATASET_ENABLED ?? 'false',
+    PROVIDER_GEMINI_ENABLED: process.env.PROVIDER_GEMINI_ENABLED ?? 'false',
+    PROVIDER_RESEND_ENABLED: process.env.PROVIDER_RESEND_ENABLED ?? 'false',
+    PROVIDER_TIMEOUT_MS: process.env.PROVIDER_TIMEOUT_MS || 8000,
+    PROVIDER_MAX_RETRIES: process.env.PROVIDER_MAX_RETRIES || 2,
+    PROVIDER_CACHE_TTL_SECONDS: process.env.PROVIDER_CACHE_TTL_SECONDS || 900,
+    PROVIDER_RATE_LIMIT_PER_MIN: process.env.PROVIDER_RATE_LIMIT_PER_MIN || 30,
+    API_DAILY_COST_CAP_USD: process.env.API_DAILY_COST_CAP_USD || 15,
+    API_MONTHLY_COST_CAP_USD: process.env.API_MONTHLY_COST_CAP_USD || 200,
   });
 
   if (!parsed.success) {

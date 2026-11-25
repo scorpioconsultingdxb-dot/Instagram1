@@ -13,6 +13,7 @@ import type {
   PlanDefinition,
 } from '@/lib/entitlements/types';
 import { calculateIntervalPrice, FEATURE_LABELS, formatUsdCents } from '@/lib/entitlements/catalog';
+import { formatQuotaLimit } from '@/lib/entitlements/helpers';
 import { MembershipBadge } from '@/components/ui/Primitives';
 
 export function PricingExperience({
@@ -211,9 +212,7 @@ export function PricingExperience({
                     <Check className="h-3.5 w-3.5 shrink-0 text-[#34D399]" aria-hidden="true" />
                     <span>
                       <strong className="tabular-nums">
-                        {plan.entitlements.daily_searches.numericLimit === null
-                          ? '∞'
-                          : plan.entitlements.daily_searches.numericLimit}
+                        {formatQuotaLimit(plan.entitlements.daily_searches)}
                       </strong>{' '}
                       {t.dailySearches}
                     </span>
@@ -222,11 +221,10 @@ export function PricingExperience({
                     <Check className="h-3.5 w-3.5 shrink-0 text-[#34D399]" aria-hidden="true" />
                     <span>
                       <strong className="tabular-nums">
-                        {plan.entitlements.tracked_profiles.numericLimit === null
-                          ? '∞'
-                          : plan.entitlements.tracked_profiles.numericLimit}
+                        {formatQuotaLimit(plan.entitlements.tracked_profiles)}
                       </strong>{' '}
-                      {plan.entitlements.tracked_profiles.numericLimit === 1
+                      {plan.entitlements.tracked_profiles.enabled &&
+                      plan.entitlements.tracked_profiles.numericLimit === 1
                         ? t.savedProfileSingular
                         : t.savedProfilePlural}
                     </span>

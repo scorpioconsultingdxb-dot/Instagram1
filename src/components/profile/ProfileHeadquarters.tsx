@@ -28,7 +28,7 @@ import type { Dictionary } from '@/i18n/types';
 import { getDictionary } from '@/i18n/get-dictionary';
 import type { SessionUser } from '@/lib/auth/session';
 import type { ResolvedEntitlements } from '@/lib/entitlements/types';
-import { hasEntitlement } from '@/lib/entitlements/helpers';
+import { formatQuotaLimit, hasEntitlement } from '@/lib/entitlements/helpers';
 import type { PersonalProfilePrefs, PersonalShortcut } from '@/lib/auth/profile-prefs';
 import type { WorkspaceUsageStats } from '@/lib/dashboard/store';
 import { useTheme, type AccentPreset, type ThemePreference } from '@/components/theme/ThemeProvider';
@@ -114,11 +114,11 @@ const SHORTCUT_CATALOG: Array<{ label: string; href: string }> = [
   { label: 'Pricing & Entitlements', href: '/pricing' },
 ];
 
-function formatMemberSince(iso?: string): string {
+function formatMemberSince(iso: string | undefined, locale: Locale): string {
   if (!iso) return 'Active Member';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'Active Member';
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(d);
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric' }).format(d);
 }
 
 export function ProfileHeadquarters({
@@ -199,9 +199,11 @@ export function ProfileHeadquarters({
     avatarPreset === 'custom-emoji' && avatarEmoji.trim() ? avatarEmoji.trim() : initials || 'VW';
 
   const canAgencyBranding = hasEntitlement(entitlements, 'agency_dashboard');
-  const trackedLimit = entitlements.rules.tracked_profiles.numericLimit ?? 1;
-  const aiLimit = entitlements.rules.ai_profile_reports.numericLimit ?? 0;
-  const seatsLimit = entitlements.rules.team_seats.numericLimit ?? 1;
+  const trackedLimit = formatQuotaLimit(entitlements.rules.tracked_profiles);
+  const aiLimit = formatQuotaLimit(entitlements.rules.ai_profile_reports);
+  const seatsLimit = formatQuotaLimit(entitlements.rules.team_seats);
+  const workspacesLimit = formatQuotaLimit(entitlements.rules.workspaces);
+  const historyDaysLimit = formatQuotaLimit(entitlements.rules.historical_analytics_days);
 
   const persistProfile = async () => {
     setErrorNotice(null);
@@ -354,7 +356,7 @@ export function ProfileHeadquarters({
                 </p>
                 <p className="mt-1 font-mono text-[11px] text-[#64748B] dark:text-[#94A3B8]">
                   {user.email} · {tp.workspaceLabel}: {workspaceName} · {tp.memberSince}{' '}
-                  {formatMemberSince(user.createdAt)}
+                  {formatMemberSince(user.createdAt, locale)}
                 </p>
               </div>
             </div>
@@ -476,7 +478,7 @@ export function ProfileHeadquarters({
                   <li>
                     • {tp.memberSince}:{' '}
                     <strong className="text-[#0F172A] dark:text-white">
-                      {formatMemberSince(user.createdAt)}
+                      {formatMemberSince(user.createdAt, locale)}
                     </strong>
                   </li>
                   <li>
@@ -852,7 +854,7 @@ export function ProfileHeadquarters({
               </p>
               <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
                 Allocated seats: <strong>{seatsLimit}</strong> · Workspaces:{' '}
-                <strong>{entitlements.rules.workspaces.numericLimit ?? 1}</strong>.
+                <strong>{workspacesLimit}</strong>.
               </p>
             </div>
 
@@ -934,7 +936,7 @@ export function ProfileHeadquarters({
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
                 <span className="text-[#64748B]">Historical Lookback</span>
                 <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-[#0F172A] dark:text-white">
-                  {entitlements.rules.historical_analytics_days.numericLimit || 0} days
+                  {historyDaysLimit === '∞' ? 'Unlimited' : `${historyDaysLimit} days`}
                 </p>
               </div>
             </div>

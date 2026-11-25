@@ -44,7 +44,7 @@ export function SavedProfilesModule({
   locale: Locale;
   dict: Dictionary;
   workspace: UserWorkspaceState;
-  trackedLimit: number;
+  trackedLimit: number | string;
   initialHandle?: string;
   onWorkspaceChange: (next: UserWorkspaceState) => void;
   onInspectProfile: (username: string) => void;

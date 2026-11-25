@@ -127,6 +127,74 @@ function buildMockSupabase() {
             created_at: '2026-11-25T00:00:00.000Z',
             updated_at: '2026-11-25T00:00:00.000Z',
           };
+        case 'comparison_projects':
+          return {
+            id: 'cmp-uuid-1',
+            name: 'DB Competitor Set',
+            description: 'DB comparison description',
+            usernames: ['viewora.studio', 'aurora.coffee'],
+            notes: 'DB comparison notes',
+            created_at: '2026-11-25T00:00:00.000Z',
+            updated_at: '2026-11-25T00:00:00.000Z',
+          };
+        case 'profile_snapshots':
+          return {
+            saved_profile_id: 'sp-uuid-1',
+            data_class: 'cached',
+            raw_metadata: {
+              profile: {
+                username: 'viewora.studio',
+                displayName: 'Viewora Studio',
+                bio: 'Snapshot bio',
+                category: 'SaaS',
+                externalUrl: null,
+                isVerified: false,
+                isBusinessAccount: true,
+                isPrivate: false,
+                avatarInitials: 'VS',
+                avatarAccent: '#7957FF',
+                followersCount: 12000,
+                followingCount: 300,
+                postsCount: 84,
+                estimatedEngagementRate: 4.5,
+                postingCadencePerWeek: 3,
+                recentPosts: [],
+                historicalTrend: [],
+              },
+            },
+            captured_at: '2026-11-25T00:00:00.000Z',
+          };
+        case 'profiles':
+          return {
+            id: '00000000-0000-0000-0000-000000000010',
+            email: 'dbuser@viewora.demo',
+            full_name: 'DB Customer',
+            role: 'user',
+            segment: 'business',
+            onboarding_completed: true,
+            email_preferences: {},
+            dashboard_settings: {},
+            created_at: '2026-11-25T00:00:00.000Z',
+            updated_at: '2026-11-25T00:00:00.000Z',
+          };
+        case 'subscriptions':
+          return {
+            id: 'sub-uuid-1',
+            user_id: '00000000-0000-0000-0000-000000000010',
+            billing_interval: 'annual',
+            plans: { code: 'pro' },
+            created_at: '2026-11-25T00:00:00.000Z',
+          };
+        case 'broadcast_notifications':
+          return {
+            id: 'bc-uuid-1',
+            title: 'DB Broadcast',
+            body: 'Body text',
+            category: 'system',
+            target_segment: 'all',
+            is_active: true,
+            created_at: '2026-11-25T00:00:00.000Z',
+          };
         case 'notifications':
           return {
             id: 'notif-uuid-1',
@@ -179,6 +247,7 @@ vi.mock('@/lib/supabase/server', () => ({
   createSupabaseAdminClient: () => buildMockSupabase(),
 }));
 
+import { formatQuotaLimit } from '@/lib/entitlements/helpers';
 import {
   loadConfiguredPlans,
   persistConfiguredPlan,
@@ -191,17 +260,21 @@ import {
   loadFeatureFlags,
   loadSupportTickets,
   persistAuditLog,
+  persistBroadcastCreate,
   persistCmsContentUpdate,
   persistFeatureFlagToggle,
   persistSupportTicketCreate,
   persistSupportTicketUpdate,
 } from '@/lib/admin/store';
 import { loadFunnelSummary, persistFunnelEvent } from '@/lib/analytics/funnel';
+import { loadAdminUsers, persistAdminUserUpdate } from '@/lib/auth/session';
 import {
   loadUserWorkspaceState,
   persistCreateComparison,
+  persistCreateWorkspace,
   persistMarkNotificationRead,
   persistSavedProfile,
+  persistUpdateComparison,
   type SavedProfileRecord,
 } from '@/lib/dashboard/store';
 
@@ -288,7 +361,7 @@ describe('Database-backed persistence alignment (Supabase Postgres + local JSON 
       message: 'Details here',
       priority: 'high',
     });
-    expect(createdTkt.id).toBe('tkt-uuid-1');
+    expect(createdTkt?.id).toBe('tkt-uuid-1');
     const tickets = await loadSupportTickets();
     expect(tickets[0]!.id).toBe('tkt-uuid-1');
     const updTkt = await persistSupportTicketUpdate('tkt-uuid-1', { status: 'resolved' });
@@ -373,5 +446,72 @@ describe('Database-backed persistence alignment (Supabase Postgres + local JSON 
     mockState.failNextTable = 'notifications';
     const failRes = await persistMarkNotificationRead('user-uuid-1', 'notif-uuid-1', false);
     expect(failRes.ok).toBe(false);
+  });
+
+  it('preserves comparison notes/description, snapshot data_class, workspace_members RLS rows, admin user DB updates, and rejects silent DB write fallbacks', async () => {
+    // 1. formatQuotaLimit handles unlimited, numeric, and disabled rules cleanly
+    expect(formatQuotaLimit({ enabled: true, numericLimit: null })).toBe('∞');
+    expect(formatQuotaLimit({ enabled: false, numericLimit: null })).toBe('0');
+    expect(formatQuotaLimit({ enabled: true, numericLimit: 5 })).toBe('5');
+    expect(formatQuotaLimit({ enabled: false, numericLimit: 5 })).toBe('0');
+
+    mockState.supabaseConfigured = true;
+
+    // 2. Snapshot data_class ('cached') and comparison_projects description/notes round-trip
+    const ws = await loadUserWorkspaceState('user-uuid-1');
+    expect(ws.savedProfiles[0]?.dataClass).toBe('cached');
+    expect(ws.comparisons[0]?.description).toBe('DB comparison description');
+    expect(ws.comparisons[0]?.notes).toBe('DB comparison notes');
+
+    // 3. Updating ONLY comparison notes writes to comparison_projects without touching competitor_sets with empty {}
+    mockState.touchedTables = [];
+    const noteUpd = await persistUpdateComparison('user-uuid-1', {
+      id: 'cmp-uuid-1',
+      notes: 'Updated strategic takeaway',
+    });
+    expect(noteUpd.ok).toBe(true);
+    expect(mockState.touchedTables).toContain('comparison_projects');
+
+    // 4. Creating a workspace also upserts workspace_members for RLS
+    mockState.touchedTables = [];
+    const wsCreate = await persistCreateWorkspace('user-uuid-1', 'Agency Client B');
+    expect(wsCreate.ok).toBe(true);
+    expect(mockState.touchedTables).toEqual(
+      expect.arrayContaining(['workspaces', 'workspace_members', 'profiles'])
+    );
+
+    // 5. Admin user listing & role/plan updates route through profiles, plans, subscriptions
+    mockState.touchedTables = [];
+    const adminUsers = await loadAdminUsers();
+    expect(adminUsers[0]?.email).toBe('dbuser@viewora.demo');
+    expect(adminUsers[0]?.planCode).toBe('pro');
+    const userUpd = await persistAdminUserUpdate('00000000-0000-0000-0000-000000000010', {
+      role: 'analyst',
+      planCode: 'premium',
+    });
+    expect(userUpd.ok).toBe(true);
+    expect(mockState.touchedTables).toEqual(
+      expect.arrayContaining(['profiles', 'plans', 'subscriptions'])
+    );
+
+    // 6. Support ticket & broadcast creation return null on DB write failure instead of silent local fallback
+    mockState.failNextTable = 'support_tickets';
+    const failedTicket = await persistSupportTicketCreate({
+      email: 'fail@viewora.demo',
+      subject: 'Should fail',
+      message: 'DB outage simulation',
+      priority: 'normal',
+    });
+    expect(failedTicket).toBeNull();
+
+    mockState.failNextTable = 'broadcast_notifications';
+    const failedBroadcast = await persistBroadcastCreate({
+      title: 'Should fail',
+      body: 'DB outage simulation',
+      category: 'system',
+      targetSegment: 'all',
+      isActive: true,
+    });
+    expect(failedBroadcast).toBeNull();
   });
 });

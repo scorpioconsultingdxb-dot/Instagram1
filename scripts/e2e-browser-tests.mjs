@@ -289,7 +289,21 @@ async function runTests() {
         );
       }
     }
-    report.passed.push('Five-language routes (/en, /pt-BR, /es, /de, /fr) and localized Pricing/Tools/Auth journeys verified');
+    // Verify longer German/French strings do not overflow 375px mobile viewports
+    await cdp.setViewport(375, 812);
+    for (const mobilePath of ['/de/pricing', '/de/tools', '/de/login', '/fr/register']) {
+      await cdp.goto(`${BASE_URL}${mobilePath}`, 800);
+      const m = await cdp.eval(`({
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth
+      })`);
+      assert(
+        m.innerWidth <= 376 && m.scrollWidth <= 376,
+        `Mobile 375px horizontal overflow on localized route ${mobilePath}: inner=${m.innerWidth}, scroll=${m.scrollWidth}`
+      );
+    }
+    await cdp.setViewport(1440, 900);
+    report.passed.push('Five-language routes (/en, /pt-BR, /es, /de, /fr), localized Pricing/Tools/Auth journeys, and 375px German/French mobile wrapping verified');
 
     // 3. Free Tools Directory & Engagement Calculator + Story Viewer honesty
     await cdp.goto(`${BASE_URL}/en/tools`, 1000);
@@ -440,7 +454,7 @@ async function runTests() {
     assert(!hqText.includes('Member since Nov 2026'), 'Hardcoded Member since Nov 2026 still present');
     report.screenshots.push(await cdp.screenshot('final_profile_hq_1440px.png'));
 
-    // Verify localized authenticated Customer Dashboard & Profile HQ rendering
+    // Verify localized authenticated Customer Dashboard & Profile HQ rendering (1440px + 375px)
     await cdp.goto(`${BASE_URL}/pt-BR/dashboard`, 1100);
     const ptDashText = await cdp.eval(`document.body.innerText`);
     assert(ptDashText.includes('Perfis Salvos'), 'Localized /pt-BR/dashboard missing Perfis Salvos');
@@ -450,7 +464,20 @@ async function runTests() {
       deHqText.includes('Persönliches Digital-HQ'),
       'Localized /de/dashboard/profile missing Persönliches Digital-HQ'
     );
-    report.passed.push('Personal Digital HQ persistence, genuine usage stats, and localized authenticated routes verified');
+    await cdp.setViewport(375, 812);
+    for (const authMobilePath of ['/de/dashboard', '/de/dashboard/profile']) {
+      await cdp.goto(`${BASE_URL}${authMobilePath}`, 900);
+      const m = await cdp.eval(`({
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth
+      })`);
+      assert(
+        m.innerWidth <= 376 && m.scrollWidth <= 376,
+        `Mobile 375px horizontal overflow on localized auth route ${authMobilePath}: inner=${m.innerWidth}, scroll=${m.scrollWidth}`
+      );
+    }
+    await cdp.setViewport(1440, 900);
+    report.passed.push('Personal Digital HQ persistence, genuine usage stats, and localized authenticated routes (desktop + 375px mobile) verified');
 
     // 7. Admin Console RBAC & Persistence
     const adminLogin = await cdp.eval(`(async () => {
@@ -508,7 +535,7 @@ async function runTests() {
       `Expected ai_insights_enabled flag enforcement (503 then 200), got ${JSON.stringify(aiFlagRuntimeTest)}`
     );
 
-    // Verify inline Admin Entitlement numeric limit editing in UI + persistence across reload
+    // Verify empty input validation in inline editor rejects blank quota instead of parsing as 0
     await cdp.goto(`${BASE_URL}/en/admin/entitlements`, 1200);
     const openedEdit = await cdp.eval(`(() => {
       const btn = document.querySelector('button[aria-label="Edit limit for Starter tracked_profiles"]');
@@ -518,6 +545,24 @@ async function runTests() {
     })()`);
     assert(openedEdit, 'Edit limit button for Starter tracked_profiles not found in Admin Entitlements UI');
     await sleep(250);
+    const rejectedBlank = await cdp.eval(`(() => {
+      const input = document.querySelector('input[aria-label="Numeric limit for Starter tracked_profiles"]');
+      if (!input) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const saveBtn = Array.from(input.closest('td').querySelectorAll('button')).find(b => b.innerText.trim() === 'Save');
+      if (!saveBtn) return false;
+      saveBtn.click();
+      return true;
+    })()`);
+    assert(rejectedBlank, 'Could not trigger blank input validation check');
+    await sleep(300);
+    const blankErrorShown = await cdp.eval(
+      `document.body.innerText.includes('Quota limit must be a whole number')`
+    );
+    assert(blankErrorShown, 'Empty quota input did not display validation error');
+
     const savedInlineLimit = await cdp.eval(`(() => {
       const input = document.querySelector('input[aria-label="Numeric limit for Starter tracked_profiles"]');
       if (!input) return false;
@@ -556,6 +601,28 @@ async function runTests() {
       return res.status;
     })()`);
     assert(extraKeyRes === 200, `Expected 200 updating follower_trends unlimited limit, got ${extraKeyRes}`);
+
+    // Verify Unlimited (null) entitlement on Agency renders "∞" cleanly in Dashboard (never "null" or "/ 1")
+    const agencyUnlimitedRes = await cdp.eval(`(async () => {
+      const res = await fetch('/api/admin/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'update_entitlement',
+          planCode: 'agency',
+          featureKey: 'tracked_profiles',
+          enabled: true,
+          numericLimit: null
+        })
+      });
+      return res.status;
+    })()`);
+    assert(agencyUnlimitedRes === 200, `Expected 200 setting Agency tracked_profiles to unlimited`);
+    await cdp.goto(`${BASE_URL}/en/dashboard`, 1100);
+    const agencyDashText = await cdp.eval(`document.body.innerText`);
+    assert(agencyDashText.includes('/ ∞'), 'Expected Unlimited tracked_profiles to display "/ ∞" on Dashboard');
+    assert(!agencyDashText.includes('null/mo') && !agencyDashText.includes('nulld'), 'Literal "null" leaked into Dashboard quota hints');
+    await cdp.goto(`${BASE_URL}/en/admin/entitlements`, 1000);
 
     report.screenshots.push(await cdp.screenshot('final_admin_1440px.png'));
     report.passed.push('Admin Console rendering, RBAC, inline entitlement limit editing, locked payments_enabled guard, and runtime feature-flag enforcement verified');

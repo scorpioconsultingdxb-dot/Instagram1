@@ -1,5 +1,5 @@
 import { isSupabaseConfigured } from '@/lib/env';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 import type { DataClass, PublicProfileData } from '@/lib/providers/types';
 import type { AiReportOutput } from '@/lib/ai/gemini';
@@ -243,6 +243,29 @@ export function recordExportHistory(
 // and profiles.dashboard_settings.
 // ============================================================================
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function asUuidOrNull(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return UUID_REGEX.test(value) ? value : null;
+}
+
+async function ensureWorkspaceMemberRow(
+  supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>,
+  workspaceId: string,
+  userId: string
+): Promise<void> {
+  const writer = createSupabaseAdminClient() ?? supabase;
+  await writer.from('workspace_members').upsert(
+    {
+      workspace_id: workspaceId,
+      user_id: userId,
+      member_role: 'owner',
+    },
+    { onConflict: 'workspace_id,user_id' }
+  );
+}
+
 async function ensureDefaultDbWorkspace(
   supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>,
   userId: string,
@@ -272,7 +295,28 @@ async function ensureDefaultDbWorkspace(
     .single();
 
   if (error || !created) return null;
+  await ensureWorkspaceMemberRow(supabase, String(created.id), userId);
   return { id: String(created.id), name: String(created.name) };
+}
+
+async function resolveTargetDbWorkspace(
+  supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>,
+  userId: string,
+  targetName: string | undefined,
+  defaultName: string
+): Promise<{ id: string; name: string } | null> {
+  if (targetName) {
+    const { data: rows } = await supabase
+      .from('workspaces')
+      .select('id, name')
+      .eq('owner_id', userId)
+      .eq('name', targetName)
+      .limit(1);
+    if (rows && rows.length > 0) {
+      return { id: String(rows[0]!.id), name: String(rows[0]!.name) };
+    }
+  }
+  return ensureDefaultDbWorkspace(supabase, userId, defaultName);
 }
 
 function fallbackPublicProfileFromRow(row: Record<string, unknown>): PublicProfileData {
@@ -324,7 +368,8 @@ export async function loadUserWorkspaceState(
       wsRes,
       foldersRes,
       savedRes,
-      compRes,
+      compProjectsRes,
+      compSetsRes,
       notifRes,
       reportsRes,
       exportsRes,
@@ -345,6 +390,11 @@ export async function loadUserWorkspaceState(
         .select(
           'id, workspace_id, username, display_name, category, is_demo, data_source, last_synced_at, notes, tags, folder_id, created_at, updated_at'
         )
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('comparison_projects')
+        .select('id, name, description, usernames, notes, created_at, updated_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false }),
       supabase
@@ -391,12 +441,12 @@ export async function loadUserWorkspaceState(
     }));
 
     const savedRows = (savedRes.data as Array<Record<string, unknown>> | null) ?? [];
-    const snapshotMap = new Map<string, PublicProfileData>();
+    const snapshotMap = new Map<string, { profile: PublicProfileData; dataClass?: DataClass }>();
     if (savedRows.length > 0) {
       const ids = savedRows.map((r) => String(r.id));
       const { data: snaps } = await supabase
         .from('profile_snapshots')
-        .select('saved_profile_id, raw_metadata, captured_at')
+        .select('saved_profile_id, data_class, raw_metadata, captured_at')
         .in('saved_profile_id', ids)
         .order('captured_at', { ascending: false });
       for (const s of (snaps as Array<Record<string, unknown>> | null) ?? []) {
@@ -404,7 +454,14 @@ export async function loadUserWorkspaceState(
         if (!snapshotMap.has(spId) && s.raw_metadata && typeof s.raw_metadata === 'object') {
           const meta = s.raw_metadata as Record<string, unknown>;
           if (meta.profile && typeof meta.profile === 'object') {
-            snapshotMap.set(spId, meta.profile as PublicProfileData);
+            const dc = s.data_class as DataClass | undefined;
+            snapshotMap.set(spId, {
+              profile: meta.profile as PublicProfileData,
+              dataClass:
+                dc === 'live' || dc === 'cached' || dc === 'estimate' || dc === 'demo'
+                  ? dc
+                  : undefined,
+            });
           }
         }
       }
@@ -413,11 +470,12 @@ export async function loadUserWorkspaceState(
     const savedProfiles: SavedProfileRecord[] = savedRows.map((r) => {
       const id = String(r.id);
       const isDemo = Boolean(r.is_demo);
+      const snap = snapshotMap.get(id);
       return {
         id,
         username: String(r.username),
-        profile: snapshotMap.get(id) ?? fallbackPublicProfileFromRow(r),
-        dataClass: (isDemo ? 'demo' : 'live') as DataClass,
+        profile: snap?.profile ?? fallbackPublicProfileFromRow(r),
+        dataClass: snap?.dataClass ?? ((isDemo ? 'demo' : 'live') as DataClass),
         providerLabel: String(r.data_source ?? 'demo_fixture'),
         workspace: wsNameById.get(String(r.workspace_id)) ?? defWs.name,
         folderId: (r.folder_id as string | null) ?? null,
@@ -428,17 +486,42 @@ export async function loadUserWorkspaceState(
       };
     });
 
-    const comparisons: ComparisonProjectRecord[] = (
-      (compRes.data as Array<Record<string, unknown>> | null) ?? []
-    ).map((c) => ({
-      id: String(c.id),
-      name: String(c.name),
-      description: '',
-      usernames: Array.isArray(c.usernames) ? (c.usernames as string[]) : [],
-      notes: '',
-      createdAt: String(c.created_at ?? new Date().toISOString()),
-      updatedAt: String(c.updated_at ?? new Date().toISOString()),
-    }));
+    const projectRows =
+      !compProjectsRes.error && Array.isArray(compProjectsRes.data)
+        ? (compProjectsRes.data as Array<Record<string, unknown>>)
+        : [];
+    const legacySetRows =
+      !compSetsRes.error && Array.isArray(compSetsRes.data)
+        ? (compSetsRes.data as Array<Record<string, unknown>>)
+        : [];
+    const seenCompIds = new Set<string>();
+    const comparisons: ComparisonProjectRecord[] = [];
+    for (const c of projectRows) {
+      const id = String(c.id);
+      seenCompIds.add(id);
+      comparisons.push({
+        id,
+        name: String(c.name ?? ''),
+        description: String(c.description ?? ''),
+        usernames: Array.isArray(c.usernames) ? (c.usernames as string[]) : [],
+        notes: String(c.notes ?? ''),
+        createdAt: String(c.created_at ?? new Date().toISOString()),
+        updatedAt: String(c.updated_at ?? new Date().toISOString()),
+      });
+    }
+    for (const c of legacySetRows) {
+      const id = String(c.id);
+      if (seenCompIds.has(id)) continue;
+      comparisons.push({
+        id,
+        name: String(c.name ?? ''),
+        description: '',
+        usernames: Array.isArray(c.usernames) ? (c.usernames as string[]) : [],
+        notes: '',
+        createdAt: String(c.created_at ?? new Date().toISOString()),
+        updatedAt: String(c.updated_at ?? new Date().toISOString()),
+      });
+    }
 
     const notifications: WorkspaceNotificationRecord[] = (
       (notifRes.data as Array<Record<string, unknown>> | null) ?? []
@@ -546,15 +629,21 @@ export async function persistSavedProfile(
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { ok: false, error: 'Database client unavailable.' };
-  const defWs = await ensureDefaultDbWorkspace(supabase, userId, defaultWorkspace);
-  if (!defWs) return { ok: false, error: 'Unable to resolve workspace in database.' };
+  const targetWs = await resolveTargetDbWorkspace(
+    supabase,
+    userId,
+    record.workspace,
+    defaultWorkspace
+  );
+  if (!targetWs) return { ok: false, error: 'Unable to resolve workspace in database.' };
 
+  const normalizedUsername = record.username.toLowerCase();
   const { data: inserted, error } = await supabase
     .from('saved_profiles')
     .insert({
-      workspace_id: defWs.id,
+      workspace_id: targetWs.id,
       user_id: userId,
-      username: record.username,
+      username: normalizedUsername,
       display_name: record.profile.displayName,
       category: record.profile.category,
       is_demo: record.dataClass === 'demo',
@@ -562,7 +651,7 @@ export async function persistSavedProfile(
       last_synced_at: record.savedAt,
       notes: record.privateNote,
       tags: record.tags,
-      folder_id: record.folderId,
+      folder_id: asUuidOrNull(record.folderId),
     })
     .select('id')
     .single();
@@ -571,9 +660,11 @@ export async function persistSavedProfile(
     return { ok: false, error: error?.message ?? 'Failed to save profile to database.' };
   }
 
-  await supabase.from('profile_snapshots').insert({
+  // Migration 2 RLS restricts profile_snapshots writes to admin/service role
+  const snapshotWriter = createSupabaseAdminClient() ?? supabase;
+  await snapshotWriter.from('profile_snapshots').insert({
     saved_profile_id: String(inserted.id),
-    username: record.username,
+    username: normalizedUsername,
     data_class: record.dataClass,
     provider_id: record.providerLabel,
     followers_count: record.profile.followersCount ?? null,
@@ -586,8 +677,8 @@ export async function persistSavedProfile(
 
   const workspace = await loadUserWorkspaceState(userId, defaultWorkspace);
   const savedProfile =
-    workspace.savedProfiles.find((p) => p.username.toLowerCase() === record.username.toLowerCase()) ??
-    { ...record, id: String(inserted.id) };
+    workspace.savedProfiles.find((p) => p.username.toLowerCase() === normalizedUsername) ??
+    { ...record, id: String(inserted.id), username: normalizedUsername };
   return { ok: true, workspace, savedProfile };
 }
 
@@ -622,15 +713,19 @@ export async function persistProfileMetaUpdate(
   if (!supabase) return { ok: false, error: 'Database client unavailable.' };
 
   const dbPatch: Record<string, unknown> = {};
-  if (patch.folderId !== undefined) dbPatch.folder_id = patch.folderId;
+  if (patch.folderId !== undefined) dbPatch.folder_id = asUuidOrNull(patch.folderId);
   if (patch.privateNote !== undefined) dbPatch.notes = patch.privateNote;
   if (patch.tags !== undefined) dbPatch.tags = patch.tags;
+
+  if (Object.keys(dbPatch).length === 0) {
+    return { ok: true, workspace: await loadUserWorkspaceState(userId, defaultWorkspace) };
+  }
 
   const { error } = await supabase
     .from('saved_profiles')
     .update(dbPatch)
     .eq('user_id', userId)
-    .eq('username', patch.username);
+    .eq('username', patch.username.toLowerCase());
 
   if (error) return { ok: false, error: error.message };
   return { ok: true, workspace: await loadUserWorkspaceState(userId, defaultWorkspace) };
@@ -661,7 +756,7 @@ export async function persistRemoveProfile(
     .from('saved_profiles')
     .delete()
     .eq('user_id', userId)
-    .eq('username', username);
+    .eq('username', username.toLowerCase());
   if (error) return { ok: false, error: error.message };
   return { ok: true, workspace: await loadUserWorkspaceState(userId, defaultWorkspace) };
 }
@@ -763,20 +858,36 @@ export async function persistCreateComparison(
   if (!defWs) return { ok: false, error: 'Unable to resolve workspace in database.' };
 
   const { data, error } = await supabase
-    .from('competitor_sets')
+    .from('comparison_projects')
     .insert({
       workspace_id: defWs.id,
       user_id: userId,
       name: project.name,
+      description: project.description,
       usernames: project.usernames,
+      notes: project.notes,
     })
-    .select('id, name, usernames, created_at, updated_at')
+    .select('id, name, description, usernames, notes, created_at, updated_at')
     .single();
 
-  if (error || !data) return { ok: false, error: error?.message ?? 'Failed to save comparison.' };
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? 'Failed to save comparison.' };
+  }
+
+  // Keep migration 1 competitor_sets aligned with the same comparison ID
+  await supabase.from('competitor_sets').insert({
+    id: String(data.id),
+    workspace_id: defWs.id,
+    user_id: userId,
+    name: project.name,
+    usernames: project.usernames,
+  });
+
   const created: ComparisonProjectRecord = {
     ...project,
     id: String(data.id),
+    description: String(data.description ?? project.description),
+    notes: String(data.notes ?? project.notes),
     createdAt: String(data.created_at ?? project.createdAt),
     updatedAt: String(data.updated_at ?? project.updatedAt),
   };
@@ -818,17 +929,39 @@ export async function persistUpdateComparison(
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { ok: false, error: 'Database client unavailable.' };
-  const dbPatch: Record<string, unknown> = {};
-  if (patch.name !== undefined) dbPatch.name = patch.name;
-  if (patch.usernames !== undefined) {
-    dbPatch.usernames = Array.from(new Set(patch.usernames.map((u) => u.toLowerCase())));
+
+  const normalizedUsernames =
+    patch.usernames !== undefined
+      ? Array.from(new Set(patch.usernames.map((u) => u.toLowerCase())))
+      : undefined;
+
+  const projectPatch: Record<string, unknown> = {};
+  if (patch.name !== undefined) projectPatch.name = patch.name;
+  if (patch.notes !== undefined) projectPatch.notes = patch.notes;
+  if (normalizedUsernames !== undefined) projectPatch.usernames = normalizedUsernames;
+
+  if (Object.keys(projectPatch).length === 0) {
+    return { ok: true, workspace: await loadUserWorkspaceState(userId, defaultWorkspace) };
   }
+
   const { error } = await supabase
-    .from('competitor_sets')
-    .update(dbPatch)
+    .from('comparison_projects')
+    .update(projectPatch)
     .eq('user_id', userId)
     .eq('id', patch.id);
   if (error) return { ok: false, error: error.message };
+
+  const setPatch: Record<string, unknown> = {};
+  if (patch.name !== undefined) setPatch.name = patch.name;
+  if (normalizedUsernames !== undefined) setPatch.usernames = normalizedUsernames;
+  if (Object.keys(setPatch).length > 0) {
+    await supabase
+      .from('competitor_sets')
+      .update(setPatch)
+      .eq('user_id', userId)
+      .eq('id', patch.id);
+  }
+
   return { ok: true, workspace: await loadUserWorkspaceState(userId, defaultWorkspace) };
 }
 
@@ -848,12 +981,13 @@ export async function persistDeleteComparison(
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { ok: false, error: 'Database client unavailable.' };
-  const { error } = await supabase
-    .from('competitor_sets')
-    .delete()
-    .eq('user_id', userId)
-    .eq('id', id);
-  if (error) return { ok: false, error: error.message };
+  const [projDel, setDel] = await Promise.all([
+    supabase.from('comparison_projects').delete().eq('user_id', userId).eq('id', id),
+    supabase.from('competitor_sets').delete().eq('user_id', userId).eq('id', id),
+  ]);
+  if (projDel.error && setDel.error) {
+    return { ok: false, error: projDel.error.message };
+  }
   return { ok: true, workspace: await loadUserWorkspaceState(userId, defaultWorkspace) };
 }
 
@@ -934,14 +1068,26 @@ export async function persistCreateWorkspace(
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { ok: false, error: 'Database client unavailable.' };
   const slug = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 32)}-${Date.now().toString(36)}`;
-  const { error } = await supabase.from('workspaces').insert({
-    owner_id: userId,
-    name,
-    slug,
-    is_default: false,
-  });
-  if (error) return { ok: false, error: error.message };
-  await persistDashboardSettings(userId, { activeWorkspace: name }, defaultWorkspace);
+  const { data: createdWs, error } = await supabase
+    .from('workspaces')
+    .insert({
+      owner_id: userId,
+      name,
+      slug,
+      is_default: false,
+    })
+    .select('id')
+    .single();
+  if (error || !createdWs) {
+    return { ok: false, error: error?.message ?? 'Failed to create workspace.' };
+  }
+  await ensureWorkspaceMemberRow(supabase, String(createdWs.id), userId);
+  const settingsRes = await persistDashboardSettings(
+    userId,
+    { activeWorkspace: name },
+    defaultWorkspace
+  );
+  if (!settingsRes.ok) return settingsRes;
   return { ok: true, workspace: await loadUserWorkspaceState(userId, defaultWorkspace) };
 }
 

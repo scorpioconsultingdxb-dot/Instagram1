@@ -472,6 +472,13 @@ export function getSearchAnalyticsMetrics(): SearchAnalyticsMetric[] {
 // Database-Backed Async Admin Persistence (Supabase Postgres + Local Fallback)
 // ============================================================================
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function asUuidOrNull(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return UUID_REGEX.test(value) ? value : null;
+}
+
 async function getSupabaseForAdmin() {
   return createSupabaseAdminClient() ?? (await createSupabaseServerClient());
 }
@@ -543,7 +550,8 @@ export async function persistFeatureFlagToggle(
   }
 
   const updatePayload: Record<string, unknown> = { enabled };
-  if (updatedBy) updatePayload.updated_by = updatedBy;
+  const safeUpdatedBy = asUuidOrNull(updatedBy);
+  if (safeUpdatedBy) updatePayload.updated_by = safeUpdatedBy;
 
   const { data: updated, error: updateErr } = await supabase
     .from('feature_flags')
@@ -608,7 +616,8 @@ export async function persistCmsContentUpdate(
   if (typeof patch.title === 'string') dbPatch.title = patch.title;
   if (typeof patch.body === 'string') dbPatch.body = patch.body;
   if (typeof patch.isPublished === 'boolean') dbPatch.is_published = patch.isPublished;
-  if (updatedBy) dbPatch.updated_by = updatedBy;
+  const safeUpdatedBy = asUuidOrNull(updatedBy);
+  if (safeUpdatedBy) dbPatch.updated_by = safeUpdatedBy;
 
   const { data, error } = await supabase
     .from('cms_content')
@@ -660,17 +669,17 @@ export async function persistSupportTicketCreate(
   ticket: Omit<SupportTicketRecord, 'id' | 'createdAt' | 'status' | 'adminNotes'> & {
     userId?: string | null;
   }
-): Promise<SupportTicketRecord> {
+): Promise<SupportTicketRecord | null> {
   if (!isSupabaseConfigured()) {
     return createSupportTicket(ticket);
   }
   const supabase = await getSupabaseForAdmin();
-  if (!supabase) return createSupportTicket(ticket);
+  if (!supabase) return null;
 
   const { data, error } = await supabase
     .from('support_tickets')
     .insert({
-      user_id: ticket.userId ?? null,
+      user_id: asUuidOrNull(ticket.userId),
       email: ticket.email,
       subject: ticket.subject,
       message: ticket.message,
@@ -682,7 +691,7 @@ export async function persistSupportTicketCreate(
     .single();
 
   if (error || !data) {
-    return createSupportTicket(ticket);
+    return null;
   }
   return {
     id: String(data.id),
@@ -766,12 +775,12 @@ export async function loadActiveBroadcastNotifications(
 
 export async function persistBroadcastCreate(
   input: Omit<BroadcastNotificationRecord, 'id' | 'createdAt'> & { createdBy?: string }
-): Promise<BroadcastNotificationRecord> {
+): Promise<BroadcastNotificationRecord | null> {
   if (!isSupabaseConfigured()) {
     return createBroadcastNotification(input);
   }
   const supabase = await getSupabaseForAdmin();
-  if (!supabase) return createBroadcastNotification(input);
+  if (!supabase) return null;
 
   const { data, error } = await supabase
     .from('broadcast_notifications')
@@ -781,12 +790,12 @@ export async function persistBroadcastCreate(
       category: input.category,
       target_segment: input.targetSegment,
       is_active: input.isActive,
-      created_by: input.createdBy ?? null,
+      created_by: asUuidOrNull(input.createdBy),
     })
     .select('id, title, body, category, target_segment, is_active, created_at')
     .single();
 
-  if (error || !data) return createBroadcastNotification(input);
+  if (error || !data) return null;
   return {
     id: String(data.id),
     title: String(data.title),
@@ -869,11 +878,10 @@ export async function persistAuditLog(
   const supabase = await getSupabaseForAdmin();
   if (!supabase) return recordAuditLog(entry);
 
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const { data, error } = await supabase
     .from('audit_logs')
     .insert({
-      actor_id: uuidRegex.test(entry.actorId) ? entry.actorId : null,
+      actor_id: asUuidOrNull(entry.actorId),
       action: entry.action,
       target_type: entry.targetType,
       target_id: entry.targetId,

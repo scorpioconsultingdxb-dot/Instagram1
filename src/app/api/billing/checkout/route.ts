@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getCurrentSessionUser } from '@/lib/auth/session';
 import { createStripeCheckoutSession } from '@/lib/billing/stripe';
-import { recordFunnelEvent } from '@/lib/analytics/funnel';
+import { persistFunnelEvent } from '@/lib/analytics/funnel';
 
 const checkoutSchema = z.object({
   planCode: z.enum(['free', 'starter', 'premium', 'pro', 'agency']),
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
   const user = await getCurrentSessionUser();
 
-  recordFunnelEvent({
+  await persistFunnelEvent({
     eventName: 'upgrade_intent',
     locale: parsed.data.locale,
     sessionId: user?.id ?? 'visitor',

@@ -49,6 +49,13 @@ export async function POST(request: NextRequest) {
     priority: parsed.data.priority,
   });
 
+  if (!ticket) {
+    return NextResponse.json(
+      { ok: false, error: 'Failed to persist support ticket. Please try again.' },
+      { status: 500 }
+    );
+  }
+
   await persistAuditLog({
     actorId: user.id,
     actorEmail: user.email,

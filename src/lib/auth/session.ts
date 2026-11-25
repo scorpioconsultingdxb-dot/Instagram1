@@ -1,7 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { cookies } from 'next/headers';
 import { isDemoModeEnabled, isSupabaseConfigured } from '@/lib/env';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
 import type {
   BillingInterval,
@@ -325,6 +325,141 @@ export function sanitizeRedirectPath(
     return fallback;
   }
   return trimmed;
+}
+
+export async function loadAdminUsers(): Promise<SessionUser[]> {
+  if (!isSupabaseConfigured()) {
+    return listLocalDemoUsers();
+  }
+  try {
+    const supabase = createSupabaseAdminClient() ?? (await createSupabaseServerClient());
+    if (!supabase) return listLocalDemoUsers();
+
+    const [{ data: profiles, error: profErr }, { data: subs }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, email, full_name, role, segment, onboarding_completed, email_preferences, created_at')
+        .order('created_at', { ascending: false })
+        .limit(200),
+      supabase
+        .from('subscriptions')
+        .select('user_id, billing_interval, created_at, plans(code)')
+        .order('created_at', { ascending: false }),
+    ]);
+
+    if (profErr || !profiles) return listLocalDemoUsers();
+
+    const latestSubByUser = new Map<
+      string,
+      { planCode: PlanCode; billingInterval: BillingInterval }
+    >();
+    for (const s of (subs as Array<Record<string, unknown>> | null) ?? []) {
+      const uid = String(s.user_id ?? '');
+      if (!uid || latestSubByUser.has(uid)) continue;
+      const planObj = s.plans as { code?: PlanCode } | null;
+      latestSubByUser.set(uid, {
+        planCode: planObj?.code ?? 'free',
+        billingInterval: (s.billing_interval as BillingInterval | null) ?? 'monthly',
+      });
+    }
+
+    return (profiles as Array<Record<string, unknown>>).map((row) => {
+      const id = String(row.id);
+      const sub = latestSubByUser.get(id);
+      const prefs = (row.email_preferences as Partial<EmailPreferences> | null) ?? {};
+      return {
+        id,
+        email: String(row.email ?? ''),
+        fullName: String(row.full_name ?? row.email ?? 'Viewora User'),
+        role: (row.role as UserRole | null) ?? 'user',
+        segment: (row.segment as CustomerSegment | null) ?? 'personal',
+        planCode: sub?.planCode ?? 'free',
+        billingInterval: sub?.billingInterval ?? 'monthly',
+        onboardingCompleted: Boolean(row.onboarding_completed),
+        emailPreferences: {
+          productUpdates: Boolean(prefs.productUpdates),
+          weeklyDigest: Boolean(prefs.weeklyDigest),
+          trackingAlerts: prefs.trackingAlerts ?? true,
+          marketing: Boolean(prefs.marketing),
+        },
+        createdAt: String(row.created_at ?? new Date().toISOString()),
+        authMode: 'supabase',
+      };
+    });
+  } catch {
+    return listLocalDemoUsers();
+  }
+}
+
+export async function loadAdminUserById(userId: string): Promise<SessionUser | null> {
+  if (!isSupabaseConfigured()) {
+    return getLocalUserById(userId);
+  }
+  const users = await loadAdminUsers();
+  return users.find((u) => u.id === userId) ?? null;
+}
+
+export async function persistAdminUserUpdate(
+  userId: string,
+  patch: { role?: UserRole; planCode?: PlanCode }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isSupabaseConfigured()) {
+    if (patch.role && !updateLocalUserRole(userId, patch.role)) {
+      return { ok: false, error: 'Target user not found.' };
+    }
+    if (patch.planCode && !updateLocalUserPlan(userId, patch.planCode)) {
+      return { ok: false, error: 'Target user not found.' };
+    }
+    return { ok: true };
+  }
+
+  const supabase = createSupabaseAdminClient() ?? (await createSupabaseServerClient());
+  if (!supabase) return { ok: false, error: 'Database client unavailable.' };
+
+  if (patch.role) {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: patch.role })
+      .eq('id', userId);
+    if (error) return { ok: false, error: error.message };
+  }
+
+  if (patch.planCode) {
+    const { data: planRow, error: planErr } = await supabase
+      .from('plans')
+      .select('id')
+      .eq('code', patch.planCode)
+      .maybeSingle();
+    if (planErr || !planRow) {
+      return { ok: false, error: `Plan "${patch.planCode}" not found in database.` };
+    }
+    const { data: existingSub } = await supabase
+      .from('subscriptions')
+      .select('id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingSub?.id) {
+      const { error: subErr } = await supabase
+        .from('subscriptions')
+        .update({ plan_id: String(planRow.id) })
+        .eq('id', String(existingSub.id));
+      if (subErr) return { ok: false, error: subErr.message };
+    } else {
+      const { error: subErr } = await supabase.from('subscriptions').insert({
+        user_id: userId,
+        plan_id: String(planRow.id),
+        billing_interval: 'monthly',
+        status: 'active',
+        payment_provider: 'disabled',
+      });
+      if (subErr) return { ok: false, error: subErr.message };
+    }
+  }
+
+  return { ok: true };
 }
 
 export { LOCAL_SESSION_COOKIE };

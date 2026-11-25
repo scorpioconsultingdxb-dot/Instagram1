@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft, ShieldAlert } from 'lucide-react';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
-import { getCurrentSessionUser, isAdminRole, listLocalDemoUsers } from '@/lib/auth/session';
+import { getCurrentSessionUser, isAdminRole, loadAdminUsers } from '@/lib/auth/session';
 import { loadConfiguredPlans } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { PROVIDER_EVALUATION_MATRIX } from '@/lib/providers/resilience';
@@ -193,6 +193,7 @@ export default async function AdminSectionPage({
   }
 
   const [
+    initialUsers,
     providerHealth,
     initialPlans,
     conversionAnalytics,
@@ -202,6 +203,7 @@ export default async function AdminSectionPage({
     initialAuditLogs,
     initialFlags,
   ] = await Promise.all([
+    loadAdminUsers(),
     defaultProviderRegistry.checkAllHealth(),
     loadConfiguredPlans(),
     loadFunnelSummary(),
@@ -215,7 +217,7 @@ export default async function AdminSectionPage({
     <AdminConsole
       actor={user}
       initialTab={SECTION_TO_ADMIN_TAB[section] ?? 'users'}
-      initialUsers={listLocalDemoUsers()}
+      initialUsers={initialUsers}
       initialPlans={initialPlans}
       providerHealth={providerHealth}
       apiUsage={getApiUsageMetrics()}

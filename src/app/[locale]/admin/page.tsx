@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { ShieldAlert } from 'lucide-react';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
 import { buildPageMetadata } from '@/lib/seo/metadata';
-import { getCurrentSessionUser, isAdminRole, listLocalDemoUsers } from '@/lib/auth/session';
+import { getCurrentSessionUser, isAdminRole, loadAdminUsers } from '@/lib/auth/session';
 import { loadConfiguredPlans } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import {
@@ -75,6 +75,7 @@ export default async function AdminPage({
   }
 
   const [
+    initialUsers,
     providerHealth,
     conversionAnalytics,
     initialPlans,
@@ -84,6 +85,7 @@ export default async function AdminPage({
     initialAuditLogs,
     initialFlags,
   ] = await Promise.all([
+    loadAdminUsers(),
     defaultProviderRegistry.checkAllHealth(),
     loadFunnelSummary(),
     loadConfiguredPlans(),
@@ -98,7 +100,7 @@ export default async function AdminPage({
     <AdminConsole
       actor={user}
       initialTab="users"
-      initialUsers={listLocalDemoUsers()}
+      initialUsers={initialUsers}
       initialPlans={initialPlans}
       providerHealth={providerHealth}
       apiUsage={getApiUsageMetrics()}

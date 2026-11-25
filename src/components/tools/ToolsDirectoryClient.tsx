@@ -62,13 +62,16 @@ export function ToolsDirectoryClient({
     return FREE_TOOLS.filter((tool) => {
       if (category !== 'All' && tool.category !== category) return false;
       if (!q) return true;
+      const localizedCat = categoryLabel(tool.category).toLowerCase();
       return (
         tool.name.toLowerCase().includes(q) ||
         tool.shortDescription.toLowerCase().includes(q) ||
-        tool.category.toLowerCase().includes(q)
+        tool.category.toLowerCase().includes(q) ||
+        localizedCat.includes(q)
       );
     });
-  }, [category, query]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, query, locale]);
 
   return (
     <div className="space-y-6">

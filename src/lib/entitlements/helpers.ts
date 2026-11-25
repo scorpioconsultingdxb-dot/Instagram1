@@ -25,6 +25,14 @@ export class EntitlementDeniedError extends Error {
   }
 }
 
+export function formatQuotaLimit(rule: {
+  enabled: boolean;
+  numericLimit: number | null;
+}): string {
+  if (!rule.enabled) return '0';
+  return rule.numericLimit === null ? '∞' : String(rule.numericLimit);
+}
+
 export function assertEntitlement(
   resolved: ResolvedEntitlements,
   featureKey: FeatureKey,

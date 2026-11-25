@@ -9,7 +9,7 @@ import {
   loadFeatureFlags,
   loadSupportTickets,
 } from '@/lib/admin/store';
-import { listLocalDemoUsers } from '@/lib/auth/session';
+import { loadAdminUsers } from '@/lib/auth/session';
 import { loadConfiguredPlans } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { loadFunnelSummary } from '@/lib/analytics/funnel';
@@ -20,6 +20,7 @@ export async function GET() {
   if (!guard.ok) return guard.response;
 
   const [
+    users,
     providerHealth,
     plans,
     conversionAnalytics,
@@ -29,6 +30,7 @@ export async function GET() {
     auditLogs,
     featureFlags,
   ] = await Promise.all([
+    loadAdminUsers(),
     defaultProviderRegistry.checkAllHealth(),
     loadConfiguredPlans(),
     loadFunnelSummary(),
@@ -42,7 +44,7 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     actor: { email: guard.user.email, role: guard.user.role },
-    users: listLocalDemoUsers(),
+    users,
     plans,
     providerHealth,
     apiUsage: getApiUsageMetrics(),

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { normalizeInstagramInput } from '@/lib/instagram/normalize';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { getCurrentSessionUser } from '@/lib/auth/session';
-import { isFeatureFlagEnabled, recordSearchMetric } from '@/lib/admin/store';
+import { loadIsFeatureFlagEnabled, recordSearchMetric } from '@/lib/admin/store';
 
 const ANON_SEARCH_COOKIE = 'viewora_anon_searches';
 const FREE_ANON_SEARCH_LIMIT = 1;
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 
   const startedAt = Date.now();
   const result = await defaultProviderRegistry.lookupPublicProfile(normalized.username, {
-    allowDemoFallback: isFeatureFlagEnabled('demo_provider_enabled'),
+    allowDemoFallback: await loadIsFeatureFlagEnabled('demo_provider_enabled'),
   });
   const latencyMs = Date.now() - startedAt;
 

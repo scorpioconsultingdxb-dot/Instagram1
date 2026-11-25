@@ -9,7 +9,10 @@ import {
   persistFeatureFlagToggle,
   persistSupportTicketUpdate,
 } from '@/lib/admin/store';
-import { getLocalUserById, updateLocalUserPlan, updateLocalUserRole } from '@/lib/auth/session';
+import {
+  loadAdminUserById,
+  persistAdminUserUpdate,
+} from '@/lib/auth/session';
 import {
   persistConfiguredPlan,
   persistPlanEntitlement,
@@ -61,7 +64,7 @@ const adminActionSchema = z.discriminatedUnion('type', [
     planCode: z.enum(['free', 'starter', 'premium', 'pro', 'agency']),
     featureKey: featureKeySchema,
     enabled: z.boolean(),
-    numericLimit: z.number().int().min(0).nullable(),
+    numericLimit: z.number().int().min(0).max(100_000).nullable(),
   }),
   z.object({
     type: z.literal('toggle_flag'),
@@ -125,7 +128,7 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    const targetUser = getLocalUserById(action.userId);
+    const targetUser = await loadAdminUserById(action.userId);
     if (!targetUser) {
       return NextResponse.json({ ok: false, error: 'Target user not found.' }, { status: 404 });
     }
@@ -142,9 +145,14 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      updateLocalUserRole(action.userId, action.role);
     }
-    if (action.planCode) updateLocalUserPlan(action.userId, action.planCode);
+    const updateRes = await persistAdminUserUpdate(action.userId, {
+      role: action.role,
+      planCode: action.planCode,
+    });
+    if (!updateRes.ok) {
+      return NextResponse.json({ ok: false, error: updateRes.error }, { status: 500 });
+    }
     const audit = await persistAuditLog({
       actorId: actor.id,
       actorEmail: actor.email,
@@ -276,6 +284,12 @@ export async function POST(request: NextRequest) {
       isActive: true,
       createdBy: actor.id,
     });
+    if (!broadcast) {
+      return NextResponse.json(
+        { ok: false, error: 'Failed to persist announcement to database.' },
+        { status: 500 }
+      );
+    }
     const audit = await persistAuditLog({
       actorId: actor.id,
       actorEmail: actor.email,

@@ -108,6 +108,7 @@ export function AdminConsole({
   } | null>(null);
   const [entDraftLimit, setEntDraftLimit] = useState('');
   const [entDraftUnlimited, setEntDraftUnlimited] = useState(false);
+  const [entSaving, setEntSaving] = useState(false);
   const [cmsItems, setCmsItems] = useState(initialCms);
   const [editingCmsId, setEditingCmsId] = useState<string | null>(null);
   const [cmsDraftTitle, setCmsDraftTitle] = useState('');
@@ -554,15 +555,19 @@ export function AdminConsole({
                     {plans.map((plan) => {
                       const rule = plan.entitlements[key];
                       const baselineRule = INITIAL_PLANS.find((p) => p.code === plan.code)?.entitlements[key];
-                      const isBooleanFeature = baselineRule?.numericLimit === null;
+                      const isBooleanFeature = INITIAL_PLANS.every(
+                        (p) => p.entitlements[key].numericLimit === null
+                      );
                       const isEditingThis =
                         editingEnt?.planCode === plan.code && editingEnt?.featureKey === key;
 
                       const saveEntitlementLimit = async () => {
+                        if (entSaving) return;
                         let parsedLimit: number | null = null;
                         if (!entDraftUnlimited) {
-                          const num = Number(entDraftLimit.trim());
-                          if (!Number.isInteger(num) || num < 0 || num > 100_000) {
+                          const trimmed = entDraftLimit.trim();
+                          const num = Number(trimmed);
+                          if (!trimmed || !Number.isInteger(num) || num < 0 || num > 100_000) {
                             setBanner({
                               tone: 'error',
                               message:
@@ -573,33 +578,38 @@ export function AdminConsole({
                           parsedLimit = num;
                         }
                         const nextEnabled = entDraftUnlimited ? true : parsedLimit !== 0;
-                        const res = await runAction(
-                          {
-                            type: 'update_entitlement',
-                            planCode: plan.code,
-                            featureKey: key,
-                            enabled: nextEnabled,
-                            numericLimit: parsedLimit,
-                          },
-                          `Updated ${key} on ${plan.name} → ${
-                            nextEnabled ? (parsedLimit === null ? 'Unlimited (∞)' : parsedLimit) : 'Off'
-                          }.`
-                        );
-                        if (res.ok) {
-                          setPlans((prev) =>
-                            prev.map((item) =>
-                              item.code === plan.code
-                                ? {
-                                    ...item,
-                                    entitlements: {
-                                      ...item.entitlements,
-                                      [key]: { enabled: nextEnabled, numericLimit: parsedLimit },
-                                    },
-                                  }
-                                : item
-                            )
+                        setEntSaving(true);
+                        try {
+                          const res = await runAction(
+                            {
+                              type: 'update_entitlement',
+                              planCode: plan.code,
+                              featureKey: key,
+                              enabled: nextEnabled,
+                              numericLimit: parsedLimit,
+                            },
+                            `Updated ${key} on ${plan.name} → ${
+                              nextEnabled ? (parsedLimit === null ? 'Unlimited (∞)' : parsedLimit) : 'Off'
+                            }.`
                           );
-                          setEditingEnt(null);
+                          if (res.ok) {
+                            setPlans((prev) =>
+                              prev.map((item) =>
+                                item.code === plan.code
+                                  ? {
+                                      ...item,
+                                      entitlements: {
+                                        ...item.entitlements,
+                                        [key]: { enabled: nextEnabled, numericLimit: parsedLimit },
+                                      },
+                                    }
+                                  : item
+                              )
+                            );
+                            setEditingEnt(null);
+                          }
+                        } finally {
+                          setEntSaving(false);
                         }
                       };
 
@@ -640,10 +650,11 @@ export function AdminConsole({
                               <div className="flex items-center gap-1">
                                 <button
                                   type="button"
+                                  disabled={entSaving}
                                   onClick={() => void saveEntitlementLimit()}
-                                  className="viewora-btn-primary flex-1 rounded-md px-2 py-1 text-[10px] font-semibold"
+                                  className="viewora-btn-primary flex-1 rounded-md px-2 py-1 text-[10px] font-semibold disabled:opacity-60"
                                 >
-                                  Save
+                                  {entSaving ? 'Saving…' : 'Save'}
                                 </button>
                                 <button
                                   type="button"

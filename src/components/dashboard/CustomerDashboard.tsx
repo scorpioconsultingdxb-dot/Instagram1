@@ -33,7 +33,7 @@ import type { SessionUser } from '@/lib/auth/session';
 import type { PersonalProfilePrefs } from '@/lib/auth/profile-prefs';
 import type { FeatureKey, ResolvedEntitlements } from '@/lib/entitlements/types';
 import { FEATURE_LABELS } from '@/lib/entitlements/catalog';
-import { hasEntitlement } from '@/lib/entitlements/helpers';
+import { formatQuotaLimit, hasEntitlement } from '@/lib/entitlements/helpers';
 import type { SavedProfileRecord, UserWorkspaceState } from '@/lib/dashboard/store';
 import type { BroadcastNotificationRecord } from '@/lib/admin/store';
 import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';
@@ -127,7 +127,10 @@ export function CustomerDashboard({
 
   const isViewingDemoOverlay = demoPreviewMode && workspace.savedProfiles.length === 0;
 
-  const trackedLimit = entitlements.rules.tracked_profiles.numericLimit ?? 1;
+  const trackedLimitLabel = formatQuotaLimit(entitlements.rules.tracked_profiles);
+  const aiLimitLabel = formatQuotaLimit(entitlements.rules.ai_profile_reports);
+  const historyDaysLabel = formatQuotaLimit(entitlements.rules.historical_analytics_days);
+  const seatsLimitLabel = formatQuotaLimit(entitlements.rules.team_seats);
   const canHistory = hasEntitlement(entitlements, 'historical_analytics_days');
   const canCompetitors = hasEntitlement(entitlements, 'competitor_monitoring');
   const canAi = hasEntitlement(entitlements, 'ai_profile_reports');
@@ -610,7 +613,7 @@ export function CustomerDashboard({
               <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
                 <MetricCard
                   label="Saved Profiles"
-                  value={`${workspace.savedProfiles.length} / ${trackedLimit}`}
+                  value={`${workspace.savedProfiles.length} / ${trackedLimitLabel}`}
                   hint={`${workspace.folders.length} research folder${workspace.folders.length === 1 ? '' : 's'}`}
                 />
                 <MetricCard
@@ -618,7 +621,7 @@ export function CustomerDashboard({
                   value={`${workspace.reports.length}`}
                   hint={
                     canAi
-                      ? `Plan quota: ${entitlements.rules.ai_profile_reports.numericLimit}/mo`
+                      ? `Plan quota: ${aiLimitLabel}/mo`
                       : 'Upgrade for AI Studio'
                   }
                 />
@@ -627,14 +630,14 @@ export function CustomerDashboard({
                   value={`${workspace.comparisons.length}`}
                   hint={
                     canHistory
-                      ? `${entitlements.rules.historical_analytics_days.numericLimit}d history lookback`
+                      ? `${historyDaysLabel === '∞' ? 'Unlimited' : `${historyDaysLabel}d`} history lookback`
                       : 'Starter+ unlocks history'
                   }
                 />
                 <MetricCard
                   label="Recorded Exports"
                   value={`${workspace.exports.length}`}
-                  hint={`${entitlements.rules.team_seats.numericLimit ?? 1} seat${(entitlements.rules.team_seats.numericLimit ?? 1) === 1 ? '' : 's'} · ${workspace.settings.activeWorkspace}`}
+                  hint={`${seatsLimitLabel} seat${seatsLimitLabel === '1' ? '' : 's'} · ${workspace.settings.activeWorkspace}`}
                 />
               </div>
 
@@ -691,7 +694,7 @@ export function CustomerDashboard({
               locale={locale}
               dict={dict}
               workspace={workspace}
-              trackedLimit={trackedLimit}
+              trackedLimit={trackedLimitLabel}
               initialHandle={initialSavedHandle}
               onWorkspaceChange={(next) => {
                 setWorkspace(next);

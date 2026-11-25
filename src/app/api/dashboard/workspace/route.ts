@@ -157,7 +157,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (!hasEntitlement(entitlements, 'tracked_profiles', current.savedProfiles.length)) {
-      const limit = entitlements.rules.tracked_profiles.numericLimit ?? 1;
+      const rule = entitlements.rules.tracked_profiles;
+      const limit = rule.enabled ? (rule.numericLimit ?? 0) : 0;
       return NextResponse.json(
         {
           ok: false,

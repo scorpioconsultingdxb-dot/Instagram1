@@ -42,12 +42,12 @@ export async function POST(request: NextRequest) {
   deleteUserWorkspaceState(user.id);
 
   await persistAuditLog({
-    actorId: user.id,
+    actorId: 'system',
     actorEmail: user.email,
     action: 'user.account.deleted',
     targetType: 'user',
     targetId: user.id,
-    diff: { selfServiceDeletion: true },
+    diff: { selfServiceDeletion: true, deletedUserId: user.id },
   });
 
   const response = NextResponse.json({

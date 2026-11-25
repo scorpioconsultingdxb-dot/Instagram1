@@ -181,37 +181,8 @@ export function resolveEntitlements(params: {
   };
 }
 
-export function hasEntitlement(
-  resolved: ResolvedEntitlements,
-  featureKey: FeatureKey,
-  currentUsage?: number
-): boolean {
-  const rule = resolved.rules[featureKey];
-  if (!rule || !rule.enabled) return false;
-  if (typeof currentUsage === 'number' && rule.numericLimit !== null) {
-    return currentUsage < rule.numericLimit;
-  }
-  return true;
-}
-
-export class EntitlementDeniedError extends Error {
-  readonly featureKey: FeatureKey;
-  readonly planCode: PlanCode;
-
-  constructor(featureKey: FeatureKey, planCode: PlanCode) {
-    super(`Feature "${featureKey}" is not enabled on your current "${planCode}" plan.`);
-    this.name = 'EntitlementDeniedError';
-    this.featureKey = featureKey;
-    this.planCode = planCode;
-  }
-}
-
-export function assertEntitlement(
-  resolved: ResolvedEntitlements,
-  featureKey: FeatureKey,
-  currentUsage?: number
-): void {
-  if (!hasEntitlement(resolved, featureKey, currentUsage)) {
-    throw new EntitlementDeniedError(featureKey, resolved.planCode);
-  }
-}
+export {
+  assertEntitlement,
+  EntitlementDeniedError,
+  hasEntitlement,
+} from './helpers';

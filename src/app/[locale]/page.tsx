@@ -40,7 +40,7 @@ export async function generateMetadata({
   return buildPageMetadata({
     locale: safeLocale,
     path: '',
-    title: `${dict.brand.name} — ${dict.brand.tagline}`,
+    title: dict.brand.tagline,
     description: dict.home.heroSubtitle,
   });
 }

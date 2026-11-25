@@ -43,7 +43,8 @@
   --shadow-elevated: 0 8px 30px -8px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.04);
 }
 
-.dark {
+.dark,
+html.dark {
   color-scheme: dark;
   --surface-canvas: #080d19;
   --surface-card: #131c2e;
@@ -91,7 +92,7 @@
     font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
     background-color: var(--surface-canvas);
     color: var(--text-primary);
-    @apply overflow-x-clip antialiased transition-colors duration-150;
+    @apply overflow-x-clip antialiased;
   }
 
   h1,

@@ -26,7 +26,7 @@ import { useState } from 'react';
 import { LOCALE_METADATA, SUPPORTED_LOCALES, type Locale } from '@/i18n/config';
 import type { SessionUser } from '@/lib/auth/session';
 import type { ResolvedEntitlements } from '@/lib/entitlements/types';
-import { hasEntitlement } from '@/lib/entitlements/service';
+import { hasEntitlement } from '@/lib/entitlements/helpers';
 import type { PersonalProfilePrefs, PersonalShortcut } from '@/lib/auth/profile-prefs';
 import type { WorkspaceUsageStats } from '@/lib/dashboard/store';
 import { useTheme, type AccentPreset, type ThemePreference } from '@/components/theme/ThemeProvider';
@@ -314,15 +314,15 @@ export function ProfileHeadquarters({
           </div>
         </div>
 
-        <div className="px-6 pb-6">
+        <div className="relative z-10 px-6 pb-6">
           <div className="-mt-12 flex flex-wrap items-end justify-between gap-4">
             <div className="flex flex-wrap items-end gap-4">
               <div
-                className={`flex h-24 w-24 items-center justify-center rounded-3xl border-4 border-white bg-gradient-to-br font-display text-2xl font-extrabold text-white shadow-lg dark:border-[#131C2E] ${AVATAR_STYLES[avatarPreset].gradient}`}
+                className={`relative z-10 flex h-24 w-24 shrink-0 items-center justify-center rounded-3xl border-4 border-white bg-gradient-to-br font-display text-2xl font-extrabold text-white shadow-lg dark:border-[#131C2E] ${AVATAR_STYLES[avatarPreset].gradient}`}
               >
                 {avatarDisplay}
               </div>
-              <div className="pb-1">
+              <div className="pt-14 pb-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="font-display text-2xl font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
                     {fullName}

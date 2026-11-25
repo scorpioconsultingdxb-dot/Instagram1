@@ -33,7 +33,7 @@ import type { SessionUser } from '@/lib/auth/session';
 import type { PersonalProfilePrefs } from '@/lib/auth/profile-prefs';
 import type { FeatureKey, ResolvedEntitlements } from '@/lib/entitlements/types';
 import { FEATURE_LABELS } from '@/lib/entitlements/catalog';
-import { hasEntitlement } from '@/lib/entitlements/service';
+import { hasEntitlement } from '@/lib/entitlements/helpers';
 import type { SavedProfileRecord, UserWorkspaceState } from '@/lib/dashboard/store';
 import type { BroadcastNotificationRecord } from '@/lib/admin/store';
 import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';

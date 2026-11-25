@@ -301,15 +301,17 @@ export function AnalyticsVisualizations({
                     <div
                       key={pt.date}
                       title={`${pt.date}: ${pt.engagementRate}% ER · ${pt.posts} posts`}
-                      className="group flex flex-1 flex-col items-center gap-1.5"
+                      className="group flex h-full flex-1 flex-col items-center justify-end gap-1.5"
                     >
                       <span className="font-mono text-[10px] font-bold tabular-nums text-[#0F172A] dark:text-[#F8FAFC]">
                         {pt.engagementRate}%
                       </span>
-                      <div
-                        className="w-full max-w-11 rounded-t-xl bg-gradient-to-t from-[#7957FF] to-[#22D3EE] opacity-85 transition group-hover:opacity-100"
-                        style={{ height: `${hPct}%` }}
-                      />
+                      <div className="flex h-32 w-full items-end justify-center">
+                        <div
+                          className="w-full max-w-11 rounded-t-xl bg-gradient-to-t from-[#7957FF] to-[#22D3EE] opacity-90 transition group-hover:opacity-100"
+                          style={{ height: `${hPct}%` }}
+                        />
+                      </div>
                       <span className="font-mono text-[10px] text-[#64748B] dark:text-[#94A3B8]">
                         {pt.date.slice(5)}
                       </span>

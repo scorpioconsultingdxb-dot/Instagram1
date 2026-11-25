@@ -80,7 +80,7 @@ export function SiteHeader({
   };
 
   const navLinkClass = (active: boolean) =>
-    `whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-medium transition ${
+    `whitespace-nowrap rounded-lg px-2 py-2 text-[13px] xl:px-2.5 xl:text-sm font-medium transition ${
       active
         ? 'bg-violet-50 font-semibold text-[#6941EF] dark:bg-[#192337] dark:text-[#A99AFF]'
         : 'text-[#64748B] hover:bg-slate-100 hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:bg-[#131C2E] dark:hover:text-[#F8FAFC]'
@@ -170,7 +170,7 @@ export function SiteHeader({
           </div>
 
           {/* Solutions Dropdown */}
-          <div className="relative">
+          <div className="relative hidden xl:block">
             <button
               type="button"
               aria-expanded={openMenu === 'solutions'}
@@ -244,7 +244,7 @@ export function SiteHeader({
           <Link
             href={`/${locale}/data-transparency`}
             aria-current={isActive(`/${locale}/data-transparency`) ? 'page' : undefined}
-            className={navLinkClass(isActive(`/${locale}/data-transparency`))}
+            className={`hidden xl:inline-flex ${navLinkClass(isActive(`/${locale}/data-transparency`))}`}
           >
             {dict.footer.dataTransparency}
           </Link>
@@ -258,16 +258,16 @@ export function SiteHeader({
         </nav>
 
         {/* Right Controls */}
-        <div className="hidden shrink-0 items-center gap-2 lg:flex">
+        <div className="hidden shrink-0 items-center gap-1.5 xl:gap-2 lg:flex">
           <button
             type="button"
             onClick={triggerCommandPalette}
             aria-label="Open command palette (Ctrl+K)"
-            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-[#64748B] transition hover:border-[#7957FF]/50 hover:text-[#0F172A] dark:border-[#263047] dark:bg-[#131C2E] dark:text-[#94A3B8] dark:hover:text-[#F8FAFC]"
+            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-[#64748B] transition hover:border-[#7957FF]/50 hover:text-[#0F172A] dark:border-[#263047] dark:bg-[#131C2E] dark:text-[#94A3B8] dark:hover:text-[#F8FAFC]"
           >
             <Search className="h-3.5 w-3.5" aria-hidden="true" />
             <span className="hidden 2xl:inline">Quick jump</span>
-            <kbd className="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-500 dark:border-[#263047] dark:bg-[#080D19] dark:text-slate-400">
+            <kbd className="hidden items-center gap-0.5 rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-500 xl:inline-flex dark:border-[#263047] dark:bg-[#080D19] dark:text-slate-400">
               <Command className="h-2.5 w-2.5" aria-hidden="true" />K
             </kbd>
           </button>

@@ -1,4 +1,5 @@
 import { getPlanByCode, INITIAL_PLANS } from './catalog';
+import { readJsonStore, writeJsonStore } from '@/lib/storage/persistence';
 import type {
   BillingInterval,
   EntitlementOverride,
@@ -9,19 +10,47 @@ import type {
   ResolvedEntitlements,
 } from './types';
 
-// In-memory configurable runtime store (synced/overridden by Admin Dashboard & Supabase)
-const runtimePlans: PlanDefinition[] = INITIAL_PLANS.map((plan) => ({
-  ...plan,
-  billingOptions: plan.billingOptions.map((o) => ({ ...o })),
-  entitlements: Object.fromEntries(
-    Object.entries(plan.entitlements).map(([k, v]) => [k, { ...v }])
-  ) as PlanDefinition['entitlements'],
-}));
+const PLANS_STORE = 'plans-config.json';
+const OVERRIDES_STORE = 'user-overrides.json';
 
-const runtimeUserOverrides = new Map<string, EntitlementOverride[]>();
+function cloneInitialPlans(): PlanDefinition[] {
+  return INITIAL_PLANS.map((plan) => ({
+    ...plan,
+    billingOptions: plan.billingOptions.map((o) => ({ ...o })),
+    entitlements: Object.fromEntries(
+      Object.entries(plan.entitlements).map(([k, v]) => [k, { ...v }])
+    ) as PlanDefinition['entitlements'],
+  }));
+}
+
+function loadPlans(): PlanDefinition[] {
+  const stored = readJsonStore<PlanDefinition[]>(PLANS_STORE, () => cloneInitialPlans());
+  if (!Array.isArray(stored) || stored.length !== INITIAL_PLANS.length) {
+    return cloneInitialPlans();
+  }
+  return stored;
+}
+
+function savePlans(plans: PlanDefinition[]): void {
+  writeJsonStore(PLANS_STORE, plans);
+}
+
+function loadOverrides(): Record<string, EntitlementOverride[]> {
+  return readJsonStore<Record<string, EntitlementOverride[]>>(OVERRIDES_STORE, () => ({}));
+}
+
+function saveOverrides(overrides: Record<string, EntitlementOverride[]>): void {
+  writeJsonStore(OVERRIDES_STORE, overrides);
+}
 
 export function getConfiguredPlans(): PlanDefinition[] {
-  return runtimePlans;
+  return loadPlans();
+}
+
+export function resetConfiguredPlansToDefaults(): PlanDefinition[] {
+  const fresh = cloneInitialPlans();
+  savePlans(fresh);
+  return fresh;
 }
 
 export function updateConfiguredPlan(
@@ -31,7 +60,8 @@ export function updateConfiguredPlan(
     annualDiscount?: number;
   }
 ): PlanDefinition | null {
-  const target = runtimePlans.find((p) => p.code === planCode);
+  const plans = loadPlans();
+  const target = plans.find((p) => p.code === planCode);
   if (!target) return null;
 
   if (typeof patch.monthlyPriceCents === 'number' && patch.monthlyPriceCents >= 0) {
@@ -52,6 +82,7 @@ export function updateConfiguredPlan(
     if (a) a.discountPercent = Math.max(0, Math.min(90, patch.annualDiscount));
   }
 
+  savePlans(plans);
   return target;
 }
 
@@ -61,9 +92,11 @@ export function updatePlanEntitlement(
   enabled: boolean,
   numericLimit: number | null
 ): boolean {
-  const target = runtimePlans.find((p) => p.code === planCode);
+  const plans = loadPlans();
+  const target = plans.find((p) => p.code === planCode);
   if (!target) return false;
   target.entitlements[featureKey] = { enabled, numericLimit };
+  savePlans(plans);
   return true;
 }
 
@@ -71,14 +104,17 @@ export function setUserEntitlementOverride(
   userId: string,
   override: EntitlementOverride
 ): void {
-  const existing = runtimeUserOverrides.get(userId) ?? [];
+  const all = loadOverrides();
+  const existing = all[userId] ?? [];
   const filtered = existing.filter((o) => o.featureKey !== override.featureKey);
   filtered.push(override);
-  runtimeUserOverrides.set(userId, filtered);
+  all[userId] = filtered;
+  saveOverrides(all);
 }
 
 export function getUserEntitlementOverrides(userId: string): EntitlementOverride[] {
-  return runtimeUserOverrides.get(userId) ?? [];
+  const all = loadOverrides();
+  return all[userId] ?? [];
 }
 
 /**
@@ -93,7 +129,7 @@ export function resolveEntitlements(params: {
   disabledFeatureFlags?: FeatureKey[];
   plans?: PlanDefinition[];
 }): ResolvedEntitlements {
-  const plans = params.plans ?? runtimePlans;
+  const plans = params.plans ?? loadPlans();
   const plan = getPlanByCode(params.planCode, plans);
   const now = Date.now();
 

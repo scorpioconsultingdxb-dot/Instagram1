@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
 import { buildPageMetadata } from '@/lib/seo/metadata';
 import { getConfiguredPlans } from '@/lib/entitlements/service';
+import { getCurrentSessionUser } from '@/lib/auth/session';
 import { isPaymentsEnabled } from '@/lib/env';
 import { PricingExperience } from '@/components/pricing/PricingExperience';
 
@@ -18,9 +19,9 @@ export async function generateMetadata({
   return buildPageMetadata({
     locale: safeLocale,
     path: '/pricing',
-    title: 'Pricing Plans (Demo) — Viewora',
+    title: 'Pricing Plans (Demo)',
     description:
-      'Compare Viewora Free, Starter, Premium, Pro, and Agency plans with transparent monthly, quarterly, and annual billing options.',
+      'Compare Viewora Free, Starter, Premium, Pro, and Agency plans with transparent monthly, quarterly (15% off), and annual (30% off) billing options.',
   });
 }
 
@@ -33,16 +34,20 @@ export default async function PricingPage({
   const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
   const plans = getConfiguredPlans().filter((p) => p.isActive);
   const paymentsEnabled = isPaymentsEnabled();
+  const user = await getCurrentSessionUser();
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-2xl text-center">
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
+        <span className="inline-block rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-bold text-[#6941EF] dark:border-violet-800/60 dark:bg-violet-950/60 dark:text-[#A99AFF]">
+          5 Synchronized Membership Tiers · Payments Disabled
+        </span>
+        <h1 className="mt-4 font-display text-3xl font-extrabold tracking-tight text-[#0F172A] sm:text-4xl dark:text-[#F8FAFC]">
           Simple, Transparent Plans
         </h1>
-        <p className="mt-3 text-base text-slate-600 dark:text-slate-300">
+        <p className="mt-3 text-base leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
           Start free with public profile lookups and 12 analytics &amp; planning tools. Explore
-          clear, entitlement-driven tiers for Personal, Business, and Agency workflows.
+          entitlement-driven tiers for Personal, Business, and Agency workflows.
         </p>
       </div>
 
@@ -51,6 +56,7 @@ export default async function PricingPage({
           locale={safeLocale}
           plans={plans}
           paymentsEnabled={paymentsEnabled}
+          currentPlanCode={user?.planCode ?? null}
         />
       </div>
     </div>

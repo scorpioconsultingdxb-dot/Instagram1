@@ -42,10 +42,13 @@ import { deriveLocalUserId, sanitizeRedirectPath } from '@/lib/auth/session';
 describe('Durable Persistence, Personal HQ, Workspace, Plans & Admin RBAC', () => {
   let tempDir: string;
   const prevDir = process.env.VIEWORA_DATA_DIR;
+  const prevDatabaseUrl = process.env.DATABASE_URL;
 
   beforeAll(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'viewora-test-data-'));
     process.env.VIEWORA_DATA_DIR = tempDir;
+    // Isolate local file-store unit tests from ambient PostgreSQL DATABASE_URL (PostgreSQL is tested in test:db)
+    delete process.env.DATABASE_URL;
   });
 
   afterAll(() => {
@@ -53,6 +56,11 @@ describe('Durable Persistence, Personal HQ, Workspace, Plans & Admin RBAC', () =
       delete process.env.VIEWORA_DATA_DIR;
     } else {
       process.env.VIEWORA_DATA_DIR = prevDir;
+    }
+    if (prevDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = prevDatabaseUrl;
     }
     fs.rmSync(tempDir, { recursive: true, force: true });
   });

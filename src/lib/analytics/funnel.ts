@@ -1,3 +1,5 @@
+import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
+
 export type FunnelEventName =
   | 'search_performed'
   | 'results_viewed'
@@ -15,9 +17,12 @@ export interface FunnelEventRecord {
   userId: string | null;
   properties: Record<string, string | number | boolean>;
   createdAt: string;
+  isSample?: boolean;
 }
 
-const seedEvents: FunnelEventRecord[] = [
+const FUNNEL_STORE = 'funnel-events.json';
+
+const SAMPLE_BASELINE_EVENTS: FunnelEventRecord[] = [
   {
     id: 'evt-seed-1',
     eventName: 'search_performed',
@@ -26,6 +31,7 @@ const seedEvents: FunnelEventRecord[] = [
     userId: null,
     properties: { handle: 'viewora.studio', demo: true },
     createdAt: '2026-11-23T10:00:00.000Z',
+    isSample: true,
   },
   {
     id: 'evt-seed-2',
@@ -35,6 +41,7 @@ const seedEvents: FunnelEventRecord[] = [
     userId: null,
     properties: { handle: 'viewora.studio', dataClass: 'demo' },
     createdAt: '2026-11-23T10:00:05.000Z',
+    isSample: true,
   },
   {
     id: 'evt-seed-3',
@@ -44,6 +51,7 @@ const seedEvents: FunnelEventRecord[] = [
     userId: null,
     properties: { handle: 'viewora.studio' },
     createdAt: '2026-11-23T10:00:20.000Z',
+    isSample: true,
   },
   {
     id: 'evt-seed-4',
@@ -53,6 +61,7 @@ const seedEvents: FunnelEventRecord[] = [
     userId: 'demo-user-business',
     properties: { segment: 'business' },
     createdAt: '2026-11-23T10:02:10.000Z',
+    isSample: true,
   },
   {
     id: 'evt-seed-5',
@@ -62,10 +71,13 @@ const seedEvents: FunnelEventRecord[] = [
     userId: 'demo-user-business',
     properties: { planCode: 'premium', interval: 'annual' },
     createdAt: '2026-11-23T10:05:00.000Z',
+    isSample: true,
   },
 ];
 
-const funnelLog: FunnelEventRecord[] = [...seedEvents];
+function loadRecordedFunnelEvents(): FunnelEventRecord[] {
+  return readJsonStore<FunnelEventRecord[]>(FUNNEL_STORE, () => []);
+}
 
 export function recordFunnelEvent(input: {
   eventName: FunnelEventName;
@@ -82,11 +94,13 @@ export function recordFunnelEvent(input: {
     userId: input.userId ?? null,
     properties: input.properties ?? {},
     createdAt: new Date().toISOString(),
+    isSample: false,
   };
-  funnelLog.unshift(record);
-  if (funnelLog.length > 500) {
-    funnelLog.pop();
-  }
+  updateJsonStore<FunnelEventRecord[]>(
+    FUNNEL_STORE,
+    () => [],
+    (current) => [record, ...current].slice(0, 500)
+  );
   return record;
 }
 
@@ -95,7 +109,12 @@ export function getFunnelSummary(): {
   searchToSignupRate: number;
   signupToUpgradeIntentRate: number;
   recent: FunnelEventRecord[];
+  isSample: boolean;
 } {
+  const recorded = loadRecordedFunnelEvents();
+  const isSample = recorded.length === 0;
+  const source = isSample ? SAMPLE_BASELINE_EVENTS : recorded;
+
   const counts: Record<FunnelEventName, number> = {
     search_performed: 0,
     results_viewed: 0,
@@ -106,8 +125,10 @@ export function getFunnelSummary(): {
     upgrade_intent: 0,
   };
 
-  for (const evt of funnelLog) {
-    counts[evt.eventName] += 1;
+  for (const evt of source) {
+    if (evt.eventName in counts) {
+      counts[evt.eventName] += 1;
+    }
   }
 
   const searchToSignupRate =
@@ -124,6 +145,7 @@ export function getFunnelSummary(): {
     counts,
     searchToSignupRate,
     signupToUpgradeIntentRate,
-    recent: funnelLog.slice(0, 20),
+    recent: source.slice(0, 20),
+    isSample,
   };
 }

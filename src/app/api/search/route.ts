@@ -2,8 +2,8 @@ import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 import { normalizeInstagramInput } from '@/lib/instagram/normalize';
 import { defaultProviderRegistry } from '@/lib/providers';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { recordSearchMetric } from '@/lib/admin/store';
+import { getCurrentSessionUser } from '@/lib/auth/session';
+import { isFeatureFlagEnabled, recordSearchMetric } from '@/lib/admin/store';
 
 const ANON_SEARCH_COOKIE = 'viewora_anon_searches';
 const FREE_ANON_SEARCH_LIMIT = 1;
@@ -26,13 +26,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Check if user is authenticated via Supabase
-  let isAuthenticated = false;
-  const supabase = await createSupabaseServerClient();
-  if (supabase) {
-    const { data } = await supabase.auth.getUser();
-    isAuthenticated = Boolean(data.user);
-  }
+  // Check if user is authenticated (supports both Supabase Auth and isolated local demo sessions)
+  const sessionUser = await getCurrentSessionUser();
+  const isAuthenticated = Boolean(sessionUser);
 
   const cookieStore = await cookies();
   const previousCount = Number(cookieStore.get(ANON_SEARCH_COOKIE)?.value ?? '0') || 0;
@@ -55,7 +51,7 @@ export async function GET(request: NextRequest) {
 
   const startedAt = Date.now();
   const result = await defaultProviderRegistry.lookupPublicProfile(normalized.username, {
-    allowDemoFallback: true,
+    allowDemoFallback: isFeatureFlagEnabled('demo_provider_enabled'),
   });
   const latencyMs = Date.now() - startedAt;
 

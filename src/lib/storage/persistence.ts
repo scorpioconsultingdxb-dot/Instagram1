@@ -33,7 +33,39 @@ export function writeJsonStore<T>(storeName: string, data: T): void {
   const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
   const serialized = JSON.stringify(data, null, 2);
   fs.writeFileSync(tmpPath, serialized, 'utf-8');
-  fs.renameSync(tmpPath, filePath);
+  try {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        fs.renameSync(tmpPath, filePath);
+        return;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException | null)?.code;
+        lastError = err;
+        if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') {
+          throw err;
+        }
+        // Fallback overwrite on final retry for Windows transient file-handle contention
+        if (attempt === 3) {
+          fs.writeFileSync(filePath, serialized, 'utf-8');
+          try {
+            fs.unlinkSync(tmpPath);
+          } catch {
+            // ignore cleanup failure
+          }
+          return;
+        }
+      }
+    }
+    throw lastError;
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {
+      // ignore cleanup failure
+    }
+    throw err;
+  }
 }
 
 export function updateJsonStore<T>(

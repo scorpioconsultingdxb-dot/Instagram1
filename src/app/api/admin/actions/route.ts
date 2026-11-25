@@ -9,12 +9,25 @@ import {
   updateCmsContent,
   updateSupportTicket,
 } from '@/lib/admin/store';
-import { updateLocalUserPlan, updateLocalUserRole } from '@/lib/auth/session';
+import { getLocalUserById, updateLocalUserPlan, updateLocalUserRole } from '@/lib/auth/session';
 import {
   updateConfiguredPlan,
   updatePlanEntitlement,
 } from '@/lib/entitlements/service';
 import type { FeatureKey } from '@/lib/entitlements/types';
+
+const featureKeySchema = z.enum([
+  'daily_searches',
+  'tracked_profiles',
+  'historical_analytics_days',
+  'competitor_monitoring',
+  'ai_profile_reports',
+  'pdf_export',
+  'csv_export',
+  'team_seats',
+  'workspaces',
+  'agency_dashboard',
+]);
 
 const adminActionSchema = z.discriminatedUnion('type', [
   z.object({
@@ -43,7 +56,7 @@ const adminActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('update_entitlement'),
     planCode: z.enum(['free', 'starter', 'premium', 'pro', 'agency']),
-    featureKey: z.string().min(1),
+    featureKey: featureKeySchema,
     enabled: z.boolean(),
     numericLimit: z.number().int().min(0).nullable(),
   }),
@@ -109,7 +122,25 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    if (action.role) updateLocalUserRole(action.userId, action.role);
+    const targetUser = getLocalUserById(action.userId);
+    if (!targetUser) {
+      return NextResponse.json({ ok: false, error: 'Target user not found.' }, { status: 404 });
+    }
+    if (action.role) {
+      if (actor.role !== 'super_admin' && (action.role === 'super_admin' || targetUser.role === 'super_admin')) {
+        return NextResponse.json(
+          { ok: false, error: 'Only a Super Admin can assign or modify the super_admin role.' },
+          { status: 403 }
+        );
+      }
+      if (targetUser.id === actor.id && action.role !== actor.role) {
+        return NextResponse.json(
+          { ok: false, error: 'Administrators cannot demote or reassign their own role.' },
+          { status: 400 }
+        );
+      }
+      updateLocalUserRole(action.userId, action.role);
+    }
     if (action.planCode) updateLocalUserPlan(action.userId, action.planCode);
     const audit = recordAuditLog({
       actorId: actor.id,

@@ -9,6 +9,7 @@ import {
   updateUserWorkspaceState,
   type SavedProfileRecord,
 } from '@/lib/dashboard/store';
+import { isFeatureFlagEnabled } from '@/lib/admin/store';
 
 const workspaceActionSchema = z.discriminatedUnion('type', [
   z.object({
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
     }
 
     const lookup = await defaultProviderRegistry.lookupPublicProfile(normalized.username, {
-      allowDemoFallback: action.allowDemoFallback,
+      allowDemoFallback: action.allowDemoFallback && isFeatureFlagEnabled('demo_provider_enabled'),
     });
 
     if (!lookup.data) {
@@ -189,6 +190,16 @@ export async function POST(request: NextRequest) {
     if (!target) {
       return NextResponse.json({ ok: false, error: 'Saved profile not found.' }, { status: 404 });
     }
+    if (
+      action.folderId !== undefined &&
+      action.folderId !== null &&
+      !current.folders.some((f) => f.id === action.folderId)
+    ) {
+      return NextResponse.json(
+        { ok: false, error: 'Target research folder does not exist in your workspace.' },
+        { status: 400 }
+      );
+    }
     const next = updateUserWorkspaceState(
       user.id,
       (ws) => ({
@@ -212,6 +223,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'remove_profile') {
+    const current = getUserWorkspaceState(user.id, defaultWs);
+    if (!current.savedProfiles.some((p) => p.username.toLowerCase() === action.username.toLowerCase())) {
+      return NextResponse.json({ ok: false, error: 'Saved profile not found.' }, { status: 404 });
+    }
     const next = updateUserWorkspaceState(
       user.id,
       (ws) => ({
@@ -251,6 +266,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'delete_folder') {
+    const current = getUserWorkspaceState(user.id, defaultWs);
+    if (!current.folders.some((f) => f.id === action.folderId)) {
+      return NextResponse.json({ ok: false, error: 'Research folder not found.' }, { status: 404 });
+    }
     const next = updateUserWorkspaceState(
       user.id,
       (ws) => ({
@@ -296,6 +315,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'update_comparison') {
+    const current = getUserWorkspaceState(user.id, defaultWs);
+    if (!current.comparisons.some((c) => c.id === action.id)) {
+      return NextResponse.json({ ok: false, error: 'Comparison project not found.' }, { status: 404 });
+    }
     const next = updateUserWorkspaceState(
       user.id,
       (ws) => ({
@@ -320,6 +343,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'delete_comparison') {
+    const current = getUserWorkspaceState(user.id, defaultWs);
+    if (!current.comparisons.some((c) => c.id === action.id)) {
+      return NextResponse.json({ ok: false, error: 'Comparison project not found.' }, { status: 404 });
+    }
     const next = updateUserWorkspaceState(
       user.id,
       (ws) => ({
@@ -384,6 +411,16 @@ export async function POST(request: NextRequest) {
   }
 
   // update_settings
+  const currentForSettings = getUserWorkspaceState(user.id, defaultWs);
+  if (
+    action.activeWorkspace !== undefined &&
+    !currentForSettings.workspaces.includes(action.activeWorkspace)
+  ) {
+    return NextResponse.json(
+      { ok: false, error: `Workspace "${action.activeWorkspace}" does not exist.` },
+      { status: 400 }
+    );
+  }
   const next = updateUserWorkspaceState(
     user.id,
     (ws) => ({

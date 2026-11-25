@@ -179,6 +179,19 @@ export function updateUserWorkspaceState(
   return nextState;
 }
 
+export function deleteUserWorkspaceState(userId: string): void {
+  updateJsonStore<Record<string, UserWorkspaceState>>(
+    WORKSPACE_STORE,
+    () => ({}),
+    (all) => {
+      if (!(userId in all)) return all;
+      const next = { ...all };
+      delete next[userId];
+      return next;
+    }
+  );
+}
+
 export function getWorkspaceUsageStats(userId: string): WorkspaceUsageStats {
   const ws = getUserWorkspaceState(userId);
   return {

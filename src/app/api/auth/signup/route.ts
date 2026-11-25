@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { isDemoModeEnabled, isSupabaseConfigured } from '@/lib/env';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
+  deriveLocalUserId,
   encodeSignedSessionCookie,
+  listLocalDemoUsers,
   LOCAL_SESSION_COOKIE,
   upsertLocalUser,
 } from '@/lib/auth/session';
@@ -99,8 +101,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const existingUser = listLocalDemoUsers().find((u) => u.email.toLowerCase() === email);
+  if (existingUser) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'An account with this email already exists. Please sign in instead.',
+      },
+      { status: 409 }
+    );
+  }
+
   const newUser = upsertLocalUser({
-    id: `local-${Buffer.from(email).toString('hex').slice(0, 12)}`,
+    id: deriveLocalUserId(email),
     email,
     fullName: parsed.data.fullName.trim(),
     role: 'user',

@@ -8,6 +8,8 @@ import {
 import { defaultProviderRegistry } from '@/lib/providers';
 import { buildProfileCsvExport } from '@/lib/reports/export';
 import { recordExportHistory } from '@/lib/dashboard/store';
+import { normalizeInstagramInput } from '@/lib/instagram/normalize';
+import { isFeatureFlagEnabled } from '@/lib/admin/store';
 
 function escapeHtml(value: string): string {
   return value
@@ -25,9 +27,12 @@ export async function GET(request: NextRequest) {
   }
 
   const format = request.nextUrl.searchParams.get('format') === 'pdf' ? 'pdf' : 'csv';
-  const username = (request.nextUrl.searchParams.get('username') ?? 'viewora.studio')
-    .trim()
-    .toLowerCase();
+  const rawUsername = request.nextUrl.searchParams.get('username') ?? 'viewora.studio';
+  const normalized = normalizeInstagramInput(rawUsername);
+  if (!normalized.ok) {
+    return NextResponse.json({ ok: false, error: normalized.message }, { status: 400 });
+  }
+  const username = normalized.username;
 
   const entitlements = resolveEntitlements({
     planCode: user.planCode,
@@ -53,7 +58,7 @@ export async function GET(request: NextRequest) {
   }
 
   const lookup = await defaultProviderRegistry.lookupPublicProfile(username, {
-    allowDemoFallback: true,
+    allowDemoFallback: isFeatureFlagEnabled('demo_provider_enabled'),
   });
 
   if (!lookup.data) {
@@ -76,11 +81,13 @@ export async function GET(request: NextRequest) {
       providerLabel: lookup.meta.providerLabel,
     });
 
+    const safeFileHandle = lookup.data.username.replace(/[^a-zA-Z0-9._-]/g, '_');
     return new NextResponse(csv, {
       status: 200,
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="viewora-${lookup.data.username}-${lookup.meta.dataClass}.csv"`,
+        'Content-Disposition': `attachment; filename="viewora-${safeFileHandle}-${lookup.meta.dataClass}.csv"`,
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   }
@@ -148,6 +155,7 @@ export async function GET(request: NextRequest) {
     status: 200,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
+      'X-Content-Type-Options': 'nosniff',
     },
   });
 }

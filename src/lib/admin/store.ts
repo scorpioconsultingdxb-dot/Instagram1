@@ -228,6 +228,12 @@ export function listFeatureFlags(): FeatureFlagRecord[] {
   return loadAdminState().featureFlags;
 }
 
+export function isFeatureFlagEnabled(key: string): boolean {
+  if (key === 'payments_enabled') return false;
+  const flag = listFeatureFlags().find((f) => f.key === key);
+  return flag ? flag.enabled : true;
+}
+
 export function toggleFeatureFlag(
   key: string,
   enabled: boolean
@@ -258,6 +264,11 @@ export function toggleFeatureFlag(
 
 export function listCmsContent(): CmsContentRecord[] {
   return loadAdminState().cmsItems;
+}
+
+export function getPublishedCmsBySlug(slug: string, locale: string): CmsContentRecord | null {
+  const items = listCmsContent().filter((c) => c.slug === slug && c.isPublished);
+  return items.find((c) => c.locale === locale) ?? items.find((c) => c.locale === 'en') ?? null;
 }
 
 export function updateCmsContent(

@@ -31,7 +31,7 @@ export const profilePatchSchema = z.object({
   themePreference: z.enum(['light', 'dark', 'system']).optional(),
   accentPreset: z.enum(['violet', 'cyan', 'emerald', 'indigo']).optional(),
   timezone: z.string().trim().min(2).max(60).optional(),
-  defaultDateRange: z.enum(['7d', '30d', '90d']).optional(),
+  defaultDateRange: z.enum(['7d', '30d', '90d', 'all']).optional(),
   dashboardDensity: z.enum(['comfortable', 'compact']).optional(),
   sidebarDefaultCollapsed: z.boolean().optional(),
   workspaceName: z.string().trim().min(2).max(80).optional(),
@@ -155,10 +155,9 @@ export async function getAccountProfilePrefs(userId: string): Promise<PersonalPr
               ? data.sidebar_default_collapsed
               : defaults.sidebarDefaultCollapsed,
           workspaceName: (data.workspace_name as string | null) ?? defaults.workspaceName,
-          personalShortcuts:
-            shortcutsParsed.success && shortcutsParsed.data.length > 0
-              ? shortcutsParsed.data
-              : defaults.personalShortcuts,
+          personalShortcuts: shortcutsParsed.success
+            ? shortcutsParsed.data
+            : defaults.personalShortcuts,
           updatedAt: (data.updated_at as string | null) ?? new Date().toISOString(),
         };
       }
@@ -216,6 +215,19 @@ export async function saveAccountProfilePrefs(
       error: err instanceof Error ? err.message : 'Unable to persist preferences to local storage.',
     };
   }
+}
+
+export function deleteAccountProfilePrefs(userId: string): void {
+  updateJsonStore<Record<string, PersonalProfilePrefs>>(
+    PREFS_STORE,
+    () => ({}),
+    (current) => {
+      if (!(userId in current)) return current;
+      const next = { ...current };
+      delete next[userId];
+      return next;
+    }
+  );
 }
 
 // Synchronous backwards-compatible wrappers for legacy callers

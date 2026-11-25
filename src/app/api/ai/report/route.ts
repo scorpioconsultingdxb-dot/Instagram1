@@ -8,7 +8,8 @@ import {
 } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { generateAiProfileReport } from '@/lib/ai/gemini';
-import { recordSavedAiReport } from '@/lib/dashboard/store';
+import { getUserWorkspaceState, recordSavedAiReport } from '@/lib/dashboard/store';
+import { isFeatureFlagEnabled } from '@/lib/admin/store';
 
 const requestSchema = z.object({
   username: z.string().min(1).max(60),
@@ -23,12 +24,23 @@ const requestSchema = z.object({
       'weekly_executive_summary',
     ])
     .default('profile_performance'),
+  dateRange: z.enum(['30d', '90d', '180d']).optional(),
 });
 
 export async function POST(request: NextRequest) {
   const user = await getCurrentSessionUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
+  }
+
+  if (!isFeatureFlagEnabled('ai_insights_enabled')) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'AI Intelligence Studio is currently disabled by administrator feature flag.',
+      },
+      { status: 503 }
+    );
   }
 
   const body = await request.json().catch(() => null);
@@ -43,8 +55,12 @@ export async function POST(request: NextRequest) {
     userId: user.id,
   });
 
+  const ws = getUserWorkspaceState(user.id);
+  const currentMonthPrefix = new Date().toISOString().slice(0, 7);
+  const reportsThisMonth = ws.reports.filter((r) => r.savedAt.startsWith(currentMonthPrefix)).length;
+
   try {
-    assertEntitlement(entitlements, 'ai_profile_reports');
+    assertEntitlement(entitlements, 'ai_profile_reports', reportsThisMonth);
   } catch (err) {
     if (err instanceof EntitlementDeniedError) {
       return NextResponse.json({ ok: false, error: err.message }, { status: 403 });
@@ -53,16 +69,24 @@ export async function POST(request: NextRequest) {
   }
 
   const lookup = await defaultProviderRegistry.lookupPublicProfile(parsed.data.username, {
-    allowDemoFallback: true,
+    allowDemoFallback: isFeatureFlagEnabled('demo_provider_enabled'),
   });
 
   if (!lookup.data) {
     return NextResponse.json({ ok: false, error: lookup.meta.notice }, { status: 404 });
   }
 
+  const trend = lookup.data.historicalTrend;
+  const scopedTrend =
+    parsed.data.dateRange === '30d'
+      ? trend.slice(-2)
+      : parsed.data.dateRange === '90d'
+        ? trend.slice(-4)
+        : trend;
+
   const report = await generateAiProfileReport({
     reportType: parsed.data.reportType,
-    profile: lookup.data,
+    profile: { ...lookup.data, historicalTrend: scopedTrend },
     dataClass: lookup.meta.dataClass,
     providerLabel: lookup.meta.providerLabel,
   });

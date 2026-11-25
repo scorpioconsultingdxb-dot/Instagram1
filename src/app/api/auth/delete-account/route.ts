@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getCurrentSessionUser, LOCAL_SESSION_COOKIE } from '@/lib/auth/session';
+import { deleteLocalUser, getCurrentSessionUser, LOCAL_SESSION_COOKIE } from '@/lib/auth/session';
+import { deleteAccountProfilePrefs } from '@/lib/auth/profile-prefs';
+import { deleteUserWorkspaceState } from '@/lib/dashboard/store';
 import { recordAuditLog } from '@/lib/admin/store';
 import { isSupabaseConfigured } from '@/lib/env';
 import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
@@ -31,7 +33,13 @@ export async function POST(request: NextRequest) {
     }
     const supabase = await createSupabaseServerClient();
     await supabase?.auth.signOut();
+  } else {
+    deleteLocalUser(user.id);
   }
+
+  // Always purge local persistent preferences and private workspace records for this account
+  deleteAccountProfilePrefs(user.id);
+  deleteUserWorkspaceState(user.id);
 
   recordAuditLog({
     actorId: user.id,

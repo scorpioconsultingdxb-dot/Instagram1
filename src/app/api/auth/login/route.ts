@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { isDemoModeEnabled, isSupabaseConfigured } from '@/lib/env';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
+  deriveLocalUserId,
   encodeSignedSessionCookie,
   listLocalDemoUsers,
   LOCAL_SESSION_COOKIE,
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
   const user =
     existing ??
     upsertLocalUser({
-      id: `local-${Buffer.from(email).toString('hex').slice(0, 12)}`,
+      id: deriveLocalUserId(email),
       email,
       fullName: email.split('@')[0] ?? 'Viewora User',
       role: 'user',

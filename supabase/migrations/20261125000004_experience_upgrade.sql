@@ -20,7 +20,7 @@ alter table public.profiles
     check (accent_preset in ('violet', 'cyan', 'emerald', 'indigo')),
   add column if not exists timezone text not null default 'UTC',
   add column if not exists default_date_range text not null default '30d'
-    check (default_date_range in ('7d', '30d', '90d')),
+    check (default_date_range in ('7d', '30d', '90d', 'all')),
   add column if not exists dashboard_density text not null default 'comfortable'
     check (dashboard_density in ('comfortable', 'compact')),
   add column if not exists sidebar_default_collapsed boolean not null default false,

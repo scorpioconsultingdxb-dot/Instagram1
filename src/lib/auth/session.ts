@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { cookies } from 'next/headers';
 import { isDemoModeEnabled, isSupabaseConfigured } from '@/lib/env';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -116,6 +116,12 @@ function loadUsersRecord(): Record<string, SessionUser> {
   return readJsonStore<Record<string, SessionUser>>(USERS_STORE, () =>
     Object.fromEntries(DEFAULT_LOCAL_USERS.map((u) => [u.email.toLowerCase(), { ...u }]))
   );
+}
+
+export function deriveLocalUserId(email: string): string {
+  const normalized = email.trim().toLowerCase();
+  const digest = createHash('sha256').update(normalized).digest('hex').slice(0, 16);
+  return `local-${digest}`;
 }
 
 export function listLocalDemoUsers(): SessionUser[] {

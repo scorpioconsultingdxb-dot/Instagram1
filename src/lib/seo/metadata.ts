@@ -32,15 +32,17 @@ export function buildPageMetadata(params: {
   const { locale, path = '', title, description, noIndex = false } = params;
   const canonical = buildLocalizedUrl(locale, path);
 
+  const normalizedTitle = title.replace(/\s*[—|-]\s*Viewora\s*$/i, '').trim() || 'Viewora';
+
   return {
-    title,
+    title: normalizedTitle === 'Viewora' ? { absolute: 'Viewora' } : normalizedTitle,
     description,
     alternates: {
       canonical,
       languages: buildHreflangAlternates(path),
     },
     openGraph: {
-      title,
+      title: normalizedTitle === 'Viewora' ? 'Viewora' : `${normalizedTitle} | Viewora`,
       description,
       url: canonical,
       siteName: 'Viewora',
@@ -49,7 +51,7 @@ export function buildPageMetadata(params: {
     },
     twitter: {
       card: 'summary_large_image',
-      title,
+      title: normalizedTitle === 'Viewora' ? 'Viewora' : `${normalizedTitle} | Viewora`,
       description,
     },
     robots: noIndex

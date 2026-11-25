@@ -2,6 +2,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { isDatabaseConfigured, isDemoModeEnabled } from '@/lib/env';
 import {
+  assertValidProductionAuthConfig,
+  AuthConfigurationError,
+  isAllowedCsrfOrigin,
+} from '@/lib/auth/secret';
+import {
   buildSessionCookieOptions,
   deriveLocalUserId,
   encodeSignedSessionCookie,
@@ -27,6 +32,25 @@ const loginSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAllowedCsrfOrigin(request)) {
+    return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
+  try {
+    assertValidProductionAuthConfig();
+  } catch (err) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          err instanceof AuthConfigurationError
+            ? 'Authentication service is not configured securely.'
+            : 'Authentication configuration error.',
+      },
+      { status: 503 }
+    );
+  }
+
   const ip = extractClientIp(request.headers);
   const ipLimit = checkAuthRateLimit({ scope: 'login', identifier: `ip:${ip}`, maxAttempts: 20 });
   if (!ipLimit.allowed) {
@@ -62,7 +86,6 @@ export async function POST(request: NextRequest) {
     try {
       const user = await verifyDbUserCredentials(email, parsed.data.password);
       if (!user) {
-        // Generic error prevents account enumeration
         return NextResponse.json({ ok: false, error: 'Invalid email or password.' }, { status: 401 });
       }
 
@@ -89,19 +112,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Server-controlled Demo Mode guard: never allow local demo auth when DEMO_MODE_ENABLED=false
+  // Strictly isolated non-production Demo Mode (impossible when NODE_ENV === 'production')
   if (!isDemoModeEnabled()) {
     return NextResponse.json(
       {
         ok: false,
         error:
-          'Authentication requires a configured PostgreSQL DATABASE_URL. Demo authentication is disabled by default (DEMO_MODE_ENABLED=false).',
+          'Authentication requires a reachable PostgreSQL database (DATABASE_URL). Service temporarily unavailable.',
       },
       { status: 503 }
     );
   }
 
-  // Isolated Demo Mode (only when explicitly enabled via DEMO_MODE_ENABLED=true without PostgreSQL)
   const existing = listLocalDemoUsers().find((u) => u.email.toLowerCase() === email);
   const user =
     existing ??

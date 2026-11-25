@@ -16,45 +16,52 @@ import { loadFunnelSummary } from '@/lib/analytics/funnel';
 import { DEFAULT_EXPERIMENTS } from '@/lib/experiments/ab';
 
 export async function GET() {
-  const guard = await requireAdminApi();
-  if (!guard.ok) return guard.response;
+  try {
+    const guard = await requireAdminApi();
+    if (!guard.ok) return guard.response;
 
-  const [
-    users,
-    providerHealth,
-    plans,
-    conversionAnalytics,
-    cmsContent,
-    supportTickets,
-    broadcastNotifications,
-    auditLogs,
-    featureFlags,
-  ] = await Promise.all([
-    loadAdminUsers(),
-    defaultProviderRegistry.checkAllHealth(),
-    loadConfiguredPlans(),
-    loadFunnelSummary(),
-    loadCmsContent(),
-    loadSupportTickets(),
-    loadBroadcastNotifications(),
-    loadAuditLogs(),
-    loadFeatureFlags(),
-  ]);
+    const [
+      users,
+      providerHealth,
+      plans,
+      conversionAnalytics,
+      cmsContent,
+      supportTickets,
+      broadcastNotifications,
+      auditLogs,
+      featureFlags,
+    ] = await Promise.all([
+      loadAdminUsers(),
+      defaultProviderRegistry.checkAllHealth(),
+      loadConfiguredPlans(),
+      loadFunnelSummary(),
+      loadCmsContent(),
+      loadSupportTickets({ userId: guard.user.id, role: guard.user.role }),
+      loadBroadcastNotifications(),
+      loadAuditLogs(),
+      loadFeatureFlags(),
+    ]);
 
-  return NextResponse.json({
-    ok: true,
-    actor: { email: guard.user.email, role: guard.user.role },
-    users,
-    plans,
-    providerHealth,
-    apiUsage: getApiUsageMetrics(),
-    searchAnalytics: getSearchAnalyticsMetrics(),
-    conversionAnalytics,
-    experiments: DEFAULT_EXPERIMENTS,
-    cmsContent,
-    supportTickets,
-    broadcastNotifications,
-    auditLogs,
-    featureFlags,
-  });
+    return NextResponse.json({
+      ok: true,
+      actor: { email: guard.user.email, role: guard.user.role },
+      users,
+      plans,
+      providerHealth,
+      apiUsage: getApiUsageMetrics(),
+      searchAnalytics: getSearchAnalyticsMetrics(),
+      conversionAnalytics,
+      experiments: DEFAULT_EXPERIMENTS,
+      cmsContent,
+      supportTickets,
+      broadcastNotifications,
+      auditLogs,
+      featureFlags,
+    });
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: 'Database service is temporarily unavailable.' },
+      { status: 503 }
+    );
+  }
 }

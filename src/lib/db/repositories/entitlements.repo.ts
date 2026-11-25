@@ -123,7 +123,12 @@ export async function persistDbPlanUpdate(
       await tx.planBillingOption.upsert({
         where: { planId_billingInterval: { planId: plan.id, billingInterval: 'quarterly' } },
         update: { discountPercent: clamped, isActive: true },
-        create: { planId: plan.id, billingInterval: 'quarterly', discountPercent: clamped, isActive: true },
+        create: {
+          planId: plan.id,
+          billingInterval: 'quarterly',
+          discountPercent: clamped,
+          isActive: true,
+        },
       });
     }
 
@@ -132,7 +137,12 @@ export async function persistDbPlanUpdate(
       await tx.planBillingOption.upsert({
         where: { planId_billingInterval: { planId: plan.id, billingInterval: 'annual' } },
         update: { discountPercent: clamped, isActive: true },
-        create: { planId: plan.id, billingInterval: 'annual', discountPercent: clamped, isActive: true },
+        create: {
+          planId: plan.id,
+          billingInterval: 'annual',
+          discountPercent: clamped,
+          isActive: true,
+        },
       });
     }
   });
@@ -173,4 +183,31 @@ export async function loadDbUserOverrides(
     reason: row.reason ?? undefined,
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
   }));
+}
+
+export async function upsertDbUserOverride(
+  userId: string,
+  override: EntitlementOverride,
+  grantedById?: string | null,
+  client: PrismaClient = getPrismaClient()
+): Promise<void> {
+  await client.userEntitlementOverride.upsert({
+    where: { userId_featureKey: { userId, featureKey: override.featureKey } },
+    update: {
+      enabled: override.enabled,
+      numericLimit: override.numericLimit,
+      reason: override.reason ?? null,
+      grantedById: grantedById ?? null,
+      expiresAt: override.expiresAt ? new Date(override.expiresAt) : null,
+    },
+    create: {
+      userId,
+      featureKey: override.featureKey,
+      enabled: override.enabled,
+      numericLimit: override.numericLimit,
+      reason: override.reason ?? null,
+      grantedById: grantedById ?? null,
+      expiresAt: override.expiresAt ? new Date(override.expiresAt) : null,
+    },
+  });
 }

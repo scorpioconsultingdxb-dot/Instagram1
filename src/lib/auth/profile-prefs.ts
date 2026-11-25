@@ -110,6 +110,9 @@ export async function getAccountProfilePrefs(userId: string): Promise<PersonalPr
   if (isDatabaseConfigured()) {
     return getDbProfilePrefs(userId);
   }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
   return readLocalPrefs(userId);
 }
 

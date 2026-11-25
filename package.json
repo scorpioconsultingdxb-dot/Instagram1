@@ -10,22 +10,20 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:db": "node scripts/db/env-loader.mjs test npx vitest run --config vitest.integration.config.ts",
     "test:e2e": "node scripts/e2e-browser-tests.mjs",
-    "db:up": "docker compose up -d postgres",
-    "db:down": "docker compose stop postgres",
+    "db:up": "node scripts/db/env-loader.mjs docker up -d postgres",
+    "db:down": "node scripts/db/env-loader.mjs docker stop postgres",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
-    "db:migrate": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio --hostname 127.0.0.1 --port 5555",
-    "db:health": "node scripts/db/db-health.mjs",
-    "db:create-admin": "tsx scripts/db/create-admin.ts",
-    "db:backup": "pwsh -File scripts/db/backup.ps1",
-    "db:restore": "pwsh -File scripts/db/restore.ps1"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "db:migrate": "node scripts/db/env-loader.mjs admin npx prisma migrate dev",
+    "db:migrate:deploy": "node scripts/db/env-loader.mjs admin npx prisma migrate deploy",
+    "db:seed": "node scripts/db/env-loader.mjs admin npx tsx prisma/seed.ts",
+    "db:studio": "node scripts/db/env-loader.mjs runtime npx prisma studio --hostname 127.0.0.1 --port 5555",
+    "db:health": "node scripts/db/env-loader.mjs runtime node scripts/db/db-health.mjs",
+    "db:create-admin": "node scripts/db/env-loader.mjs admin npx tsx scripts/db/create-admin.ts",
+    "db:backup": "node scripts/db/env-loader.mjs backup",
+    "db:restore": "node scripts/db/env-loader.mjs restore"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { cookies } from 'next/headers';
 import { isDatabaseConfigured, isDemoModeEnabled, isLocalDevFallbackAllowed } from '@/lib/env';
 import { readJsonStore, updateJsonStore } from '@/lib/storage/persistence';
+import { getRequiredAuthSecret } from '@/lib/auth/secret';
 import {
   getDbSessionUserById,
   listDbAdminUsers,
@@ -39,14 +40,7 @@ export interface SessionUser {
 
 export const SESSION_COOKIE_NAME =
   process.env.NODE_ENV === 'production' ? '__Host-viewora_session' : 'viewora_session';
-// Backwards-compatible alias for existing tests and helpers
 export const LOCAL_SESSION_COOKIE = 'viewora_session';
-
-function resolveLocalSigningSecret(): string {
-  const configured = (process.env.AUTH_SECRET || '').trim();
-  if (configured.length >= 16) return configured;
-  return 'viewora-local-dev-session-secret-only';
-}
 
 const DEFAULT_LOCAL_USERS: SessionUser[] = [
   {
@@ -233,7 +227,8 @@ export function updateLocalUserPlan(userId: string, planCode: PlanCode): Session
 }
 
 function signPayload(payload: string): string {
-  return createHmac('sha256', resolveLocalSigningSecret()).update(payload).digest('hex');
+  const secret = getRequiredAuthSecret();
+  return createHmac('sha256', secret).update(payload).digest('hex');
 }
 
 export function encodeSignedSessionCookie(email: string): string {
@@ -266,45 +261,27 @@ export function buildSessionCookieOptions(maxAgeSeconds: number) {
 }
 
 /**
- * Resolves the currently authenticated user without any Supabase dependency:
- *   1. Independent PostgreSQL + Prisma database session (revocable HttpOnly cookie)
- *   2. Auth.js v5 session (`auth()`) mapped to PostgreSQL `users` table
- *   3. Explicitly isolated local demo session ONLY when `DATABASE_URL` is absent
- *      AND `DEMO_MODE_ENABLED=true`.
+ * Authoritative Unified Session Resolver (Single Source of Truth):
+ *   1. When PostgreSQL `DATABASE_URL` is configured: validates EXCLUSIVELY against
+ *      the revocable `public.sessions` table (`resolveDbSessionByRawToken`), verifying
+ *      non-revocation, expiration, active `accountStatus`, and live `role`/`planCode`.
+ *      Zero unrevocable JWT fallback.
+ *   2. Non-production isolated local demo mode ONLY when `NODE_ENV !== 'production'`
+ *      AND `DATABASE_URL` is absent AND `DEMO_MODE_ENABLED=true`.
  */
 export async function getCurrentSessionUser(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
 
   if (isDatabaseConfigured()) {
-    // 1a. Revocable database-backed session token cookie
     const rawDbToken =
       cookieStore.get(SESSION_COOKIE_NAME)?.value ?? cookieStore.get(LOCAL_SESSION_COOKIE)?.value;
-    if (rawDbToken && !rawDbToken.includes('|')) {
-      try {
-        const dbUser = await resolveDbSessionByRawToken(rawDbToken);
-        if (dbUser) return dbUser;
-      } catch {
-        // Fall through to Auth.js session check
-      }
+    if (!rawDbToken || rawDbToken.includes('|')) {
+      return null;
     }
-
-    // 1b. Auth.js v5 session fallback (lazy-loaded to avoid eager next/server import in non-Next runtimes)
-    try {
-      const { auth } = await import('@/lib/auth/auth');
-      const authJsSession = await auth();
-      const userId = authJsSession?.user?.id;
-      if (userId) {
-        const dbUser = await getDbSessionUserById(userId);
-        if (dbUser) return dbUser;
-      }
-    } catch {
-      // Ignore Auth.js read failure when no session cookie exists
-    }
-
-    return null;
+    return resolveDbSessionByRawToken(rawDbToken);
   }
 
-  // 2. Server-controlled Demo Mode (STRICTLY disabled by default: DEMO_MODE_ENABLED=false)
+  // Strictly isolated non-production Demo Mode — impossible in production
   if (!isDemoModeEnabled()) {
     return null;
   }
@@ -349,8 +326,8 @@ export async function loadAdminUsers(): Promise<SessionUser[]> {
   if (isDatabaseConfigured()) {
     return listDbAdminUsers();
   }
-  if (!isLocalDevFallbackAllowed() && !isDemoModeEnabled()) {
-    return [];
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
   }
   return listLocalDemoUsers();
 }
@@ -359,8 +336,8 @@ export async function loadAdminUserById(userId: string): Promise<SessionUser | n
   if (isDatabaseConfigured()) {
     return getDbSessionUserById(userId);
   }
-  if (!isLocalDevFallbackAllowed() && !isDemoModeEnabled()) {
-    return null;
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
   }
   return getLocalUserById(userId);
 }
@@ -380,7 +357,7 @@ export async function persistAdminUserUpdate(
     }
   }
 
-  if (!isLocalDevFallbackAllowed() && !isDemoModeEnabled()) {
+  if (!isLocalDevFallbackAllowed()) {
     return { ok: false, error: 'PostgreSQL DATABASE_URL is not configured.' };
   }
 

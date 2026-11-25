@@ -264,6 +264,9 @@ export async function loadUserWorkspaceState(
   if (isDatabaseConfigured()) {
     return loadDbUserWorkspaceState(userId, defaultWorkspace);
   }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
   return getUserWorkspaceState(userId, defaultWorkspace);
 }
 
@@ -283,21 +286,30 @@ export async function loadWorkspaceUsageStats(userId: string): Promise<Workspace
 export async function persistSavedProfile(
   userId: string,
   record: SavedProfileRecord,
-  defaultWorkspace = 'Personal Workspace'
+  defaultWorkspace = 'Personal Workspace',
+  options?: { maxProfilesLimit?: number | null }
 ): Promise<
   | { ok: true; workspace: UserWorkspaceState; savedProfile: SavedProfileRecord }
-  | { ok: false; error: string }
+  | { ok: false; error: string; statusCode?: number }
 > {
   if (isDatabaseConfigured()) {
     try {
-      const res = await persistDbSavedProfile(userId, record, defaultWorkspace);
+      const res = await persistDbSavedProfile(userId, record, defaultWorkspace, undefined, options);
       return { ok: true, ...res };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed to save profile.' };
+      const statusCode =
+        err && typeof err === 'object' && 'statusCode' in err && typeof err.statusCode === 'number'
+          ? err.statusCode
+          : 503;
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed to save profile.',
+        statusCode,
+      };
     }
   }
   if (!isLocalDevFallbackAllowed()) {
-    return { ok: false, error: 'PostgreSQL DATABASE_URL is not configured.' };
+    return { ok: false, error: 'PostgreSQL DATABASE_URL is not configured.', statusCode: 503 };
   }
   const next = updateUserWorkspaceState(
     userId,
@@ -636,6 +648,9 @@ export async function persistSavedAiReport(
   if (isDatabaseConfigured()) {
     return persistDbSavedAiReport(userId, report, defaultWorkspace);
   }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
+  }
   return recordSavedAiReport(userId, report);
 }
 
@@ -646,6 +661,9 @@ export async function persistExportHistory(
 ): Promise<ExportHistoryRecord> {
   if (isDatabaseConfigured()) {
     return persistDbExportHistory(userId, item, defaultWorkspace);
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
   }
   return recordExportHistory(userId, item);
 }

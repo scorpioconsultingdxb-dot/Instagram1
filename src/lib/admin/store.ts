@@ -543,13 +543,14 @@ export async function persistCmsContentUpdate(
   return updateCmsContent(id, patch);
 }
 
-export async function loadSupportTickets(): Promise<SupportTicketRecord[]> {
+export async function loadSupportTickets(
+  actor?: { userId?: string | null; role?: string }
+): Promise<SupportTicketRecord[]> {
   if (isDatabaseConfigured()) {
-    try {
-      return await loadDbSupportTickets();
-    } catch {
-      return [];
-    }
+    return loadDbSupportTickets(undefined, actor);
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
   }
   return listSupportTickets();
 }
@@ -573,10 +574,11 @@ export async function persistSupportTicketCreate(
 export async function persistSupportTicketUpdate(
   id: string,
   patch: Partial<Pick<SupportTicketRecord, 'status' | 'priority' | 'adminNotes'>>,
-  actorId?: string
+  actorId?: string,
+  actorRole?: string
 ): Promise<SupportTicketRecord | null> {
   if (isDatabaseConfigured()) {
-    return persistDbSupportTicketUpdate(id, patch, actorId);
+    return persistDbSupportTicketUpdate(id, patch, actorId, undefined, actorRole);
   }
   if (!isLocalDevFallbackAllowed()) return null;
   return updateSupportTicket(id, patch);
@@ -584,11 +586,10 @@ export async function persistSupportTicketUpdate(
 
 export async function loadBroadcastNotifications(): Promise<BroadcastNotificationRecord[]> {
   if (isDatabaseConfigured()) {
-    try {
-      return await loadDbBroadcastNotifications();
-    } catch {
-      return [];
-    }
+    return loadDbBroadcastNotifications();
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    return [];
   }
   return listBroadcastNotifications();
 }
@@ -627,11 +628,10 @@ export async function persistBroadcastToggle(
 
 export async function loadAuditLogs(): Promise<AuditLogRecord[]> {
   if (isDatabaseConfigured()) {
-    try {
-      return await loadDbAuditLogs();
-    } catch {
-      return [];
-    }
+    return loadDbAuditLogs();
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
   }
   return listAuditLogs();
 }
@@ -640,11 +640,10 @@ export async function persistAuditLog(
   entry: Omit<AuditLogRecord, 'id' | 'createdAt'>
 ): Promise<AuditLogRecord> {
   if (isDatabaseConfigured()) {
-    try {
-      return await persistDbAuditLog(entry);
-    } catch {
-      // Non-blocking audit fallback only in dev
-    }
+    return persistDbAuditLog(entry);
+  }
+  if (!isLocalDevFallbackAllowed()) {
+    throw new Error('PostgreSQL DATABASE_URL is not configured.');
   }
   return recordAuditLog(entry);
 }

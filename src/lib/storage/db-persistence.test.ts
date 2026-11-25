@@ -14,6 +14,7 @@ import {
   registerUserWithWorkspace,
   resolveDbSessionByRawToken,
   revokeDbSessionByRawToken,
+  suspendDbUserAccount,
   verifyDbUserCredentials,
 } from '@/lib/db/repositories/users.repo';
 import {
@@ -31,6 +32,7 @@ import {
   persistDbProfileMetaUpdate,
   persistDbRemoveProfile,
   persistDbSavedProfile,
+  QuotaExceededError,
   readDbPrivateProfileNotes,
   WorkspaceAuthorizationError,
 } from '@/lib/db/repositories/workspace.repo';
@@ -154,7 +156,13 @@ function createRelationalPrismaHarness() {
     return out;
   };
 
+  const rlsCalls: Array<{ sql: string; values: unknown[] }> = [];
+
   const client = {
+    $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      rlsCalls.push({ sql: strings.join('?'), values });
+      return 1;
+    },
     $transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(client),
     user: {
       findUnique: async ({
@@ -241,6 +249,29 @@ function createRelationalPrismaHarness() {
       },
     },
     userPreference: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        const now = new Date();
+        const row = {
+          professionalTitle: 'Social Intelligence Strategist',
+          organization: 'Viewora Workspace',
+          workspaceName: 'Personal Workspace',
+          avatarPreset: 'violet-cyan',
+          avatarEmoji: '',
+          coverPreset: 'aurora',
+          themePreference: 'system',
+          accentPreset: 'violet',
+          timezone: 'UTC',
+          defaultDateRange: '30d',
+          dashboardDensity: 'comfortable',
+          sidebarDefaultCollapsed: false,
+          personalShortcuts: [],
+          ...data,
+          createdAt: now,
+          updatedAt: now,
+        };
+        db.userPreferences.set(String(data.userId), row);
+        return row;
+      },
       upsert: async ({
         where,
         update,
@@ -423,6 +454,8 @@ function createRelationalPrismaHarness() {
       },
     },
     savedProfile: {
+      count: async ({ where }: { where: { userId: string } }) =>
+        Array.from(db.savedProfiles.values()).filter((p) => p.userId === where.userId).length,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const id = randomUUID();
         const row = { id, notes: '', tags: [], folderId: null, ...data, createdAt: new Date(), updatedAt: new Date() };
@@ -673,7 +706,7 @@ function createRelationalPrismaHarness() {
     },
   };
 
-  return { client: client as unknown as PrismaClient, db };
+  return { client: client as unknown as PrismaClient, db, rlsCalls };
 }
 
 describe('Independent PostgreSQL Prisma Repositories & Cross-Account Isolation', () => {
@@ -1085,5 +1118,88 @@ describe('Independent PostgreSQL Prisma Repositories & Cross-Account Isolation',
     );
     await storage.deleteOwnerNamespace('user-owner-a');
     expect(await storage.getObject(meta.key, 'user-owner-a')).toBeNull();
+
+    // Verify RLS transaction context (`set_config`) was actively executed
+    expect(
+      harness.rlsCalls.some((c) => c.sql.includes("set_config('app.current_user_id'"))
+    ).toBe(true);
+    expect(
+      harness.rlsCalls.some((c) => c.sql.includes("set_config('app.current_user_role'"))
+    ).toBe(true);
+  });
+
+  it('enforces session expiration, account suspension, immediate admin role removal, and quota limit rejection', async () => {
+    const reg = await registerUserWithWorkspace(
+      {
+        email: 'security-check@example.com',
+        password: 'SecurityCheckPass!1',
+        fullName: 'Security Check User',
+        segment: 'personal',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      harness.client
+    );
+    expect(reg.ok).toBe(true);
+    if (!reg.ok) return;
+
+    // Expired session rejected immediately
+    const expired = await createDbSession(
+      { userId: reg.user.id, ttlMs: -1000 },
+      harness.client
+    );
+    expect(await resolveDbSessionByRawToken(expired.rawToken, harness.client)).toBeNull();
+
+    // Active session reflects immediate admin role promotion and removal
+    const active = await createDbSession({ userId: reg.user.id }, harness.client);
+    await persistDbAdminUserUpdate(reg.user.id, { role: 'admin' }, harness.client);
+    expect((await resolveDbSessionByRawToken(active.rawToken, harness.client))?.role).toBe('admin');
+    await persistDbAdminUserUpdate(reg.user.id, { role: 'user' }, harness.client);
+    expect((await resolveDbSessionByRawToken(active.rawToken, harness.client))?.role).toBe('user');
+
+    // Quota limit enforced transactionally (maxProfilesLimit = 0 -> rejected with QuotaExceededError)
+    const sampleProfile: SavedProfileRecord = {
+      id: 'tmp-q',
+      username: 'quota.test',
+      profile: {
+        username: 'quota.test',
+        displayName: 'Quota Test',
+        bio: '',
+        category: 'Test',
+        externalUrl: null,
+        isVerified: false,
+        isBusinessAccount: false,
+        isPrivate: false,
+        avatarInitials: 'QT',
+        avatarAccent: '#7957FF',
+        followersCount: 1000,
+        followingCount: 100,
+        postsCount: 10,
+        estimatedEngagementRate: 3.1,
+        postingCadencePerWeek: 2,
+        recentPosts: [],
+        historicalTrend: [],
+      },
+      dataClass: 'demo',
+      providerLabel: 'demo_fixture',
+      workspace: 'Personal Workspace',
+      folderId: null,
+      tags: [],
+      privateNote: '',
+      savedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await expect(
+      persistDbSavedProfile(reg.user.id, sampleProfile, 'Personal Workspace', harness.client, {
+        maxProfilesLimit: 0,
+      })
+    ).rejects.toThrow(QuotaExceededError);
+
+    // Account suspension immediately revokes active sessions and blocks login
+    await suspendDbUserAccount(reg.user.id, harness.client);
+    expect(await resolveDbSessionByRawToken(active.rawToken, harness.client)).toBeNull();
+    expect(
+      await verifyDbUserCredentials('security-check@example.com', 'SecurityCheckPass!1', harness.client)
+    ).toBeNull();
   });
 });

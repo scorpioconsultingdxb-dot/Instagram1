@@ -2,6 +2,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getEnv, isDatabaseConfigured, isDemoModeEnabled } from '@/lib/env';
 import {
+  assertValidProductionAuthConfig,
+  AuthConfigurationError,
+  isAllowedCsrfOrigin,
+} from '@/lib/auth/secret';
+import {
   buildSessionCookieOptions,
   deriveLocalUserId,
   encodeSignedSessionCookie,
@@ -41,6 +46,25 @@ const signupSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAllowedCsrfOrigin(request)) {
+    return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
+  try {
+    assertValidProductionAuthConfig();
+  } catch (err) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          err instanceof AuthConfigurationError
+            ? 'Authentication service is not configured securely.'
+            : 'Authentication configuration error.',
+      },
+      { status: 503 }
+    );
+  }
+
   const ip = extractClientIp(request.headers);
   const ipLimit = checkAuthRateLimit({ scope: 'signup', identifier: `ip:${ip}`, maxAttempts: 10 });
   if (!ipLimit.allowed) {
@@ -134,7 +158,7 @@ export async function POST(request: NextRequest) {
       {
         ok: false,
         error:
-          'Registration requires a configured PostgreSQL DATABASE_URL. Isolated demo mode is disabled by default (DEMO_MODE_ENABLED=false).',
+          'Registration requires a reachable PostgreSQL database (DATABASE_URL). Service temporarily unavailable.',
       },
       { status: 503 }
     );

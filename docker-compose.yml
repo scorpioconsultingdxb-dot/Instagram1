@@ -1,12 +1,18 @@
 # ==============================================================================
 # Viewora — Self-Hosted PostgreSQL Docker Compose Configuration
 # Local development & testing only. Do NOT expose database ports publicly.
+# Loads credentials from .env.local (preferred) or .env automatically.
 # ==============================================================================
 services:
   postgres:
     image: postgres:16-alpine
     container_name: viewora-postgres
     restart: unless-stopped
+    env_file:
+      - path: ./.env
+        required: false
+      - path: ./.env.local
+        required: false
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-viewora}
       POSTGRES_USER: ${POSTGRES_ADMIN_USER:-viewora_admin}

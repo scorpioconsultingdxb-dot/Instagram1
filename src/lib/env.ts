@@ -106,22 +106,25 @@ export function isDatabaseConfigured(): boolean {
 }
 
 /**
- * Returns true when local file-backed dev/test storage fallback is permitted.
- * Strictly disabled in production unless explicitly running local E2E verification.
+ * Local file-backed development/test storage fallback.
+ * STRICTLY FORBIDDEN in production (`NODE_ENV === 'production'`) and never used
+ * when PostgreSQL `DATABASE_URL` is configured.
  */
 export function isLocalDevFallbackAllowed(): boolean {
+  if (process.env.NODE_ENV === 'production') return false;
   if (isDatabaseConfigured()) return false;
-  if (process.env.NODE_ENV !== 'production') return true;
-  return process.env.VIEWORA_ALLOW_LOCAL_DEV_STORAGE === 'true';
+  return true;
 }
 
 /**
- * Server-controlled Demo Mode. Disabled by default (DEMO_MODE_ENABLED=false).
- * Never allows demo authentication to bypass production security when disabled.
+ * Isolated Demo Mode.
+ * STRICTLY DISABLED in production (`NODE_ENV === 'production'`), regardless of env vars,
+ * so demo authentication and demo administrator access can NEVER be enabled in production.
  */
 export function isDemoModeEnabled(): boolean {
-  const env = getEnv();
-  return env.DEMO_MODE_ENABLED === 'true';
+  if (process.env.NODE_ENV === 'production') return false;
+  if (isDatabaseConfigured()) return false;
+  return getEnv().DEMO_MODE_ENABLED === 'true';
 }
 
 /**

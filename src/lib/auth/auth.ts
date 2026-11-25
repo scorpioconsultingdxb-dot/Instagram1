@@ -1,96 +1,73 @@
 import NextAuth from 'next-auth';
-import Credentials from 'next-auth/providers/credentials';
 import { PrismaAdapter } from '@auth/prisma-adapter';
-import { z } from 'zod';
 import { getPrismaClient } from '@/lib/db/prisma';
 import { isDatabaseConfigured } from '@/lib/env';
-import { verifyDbUserCredentials } from '@/lib/db/repositories/users.repo';
-import { checkAuthRateLimit } from '@/lib/auth/rate-limit';
+import {
+  assertValidProductionAuthConfig,
+  getRequiredAuthSecret,
+} from '@/lib/auth/secret';
 
-const credentialsSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
-});
+/**
+ * Authoritative Auth.js v5 configuration (PostgreSQL database session strategy).
+ *
+ * Unified Session Architecture:
+ *   - Viewora does NOT issue unrevocable JWT authentication cookies.
+ *   - All sessions are persisted in PostgreSQL `public.sessions` (hashed tokens)
+ *     and validated server-side on every request via `resolveDbSessionByRawToken`.
+ *   - Production startup/initialization strictly requires a strong `AUTH_SECRET`
+ *     with zero predictable fallbacks.
+ */
+function buildNextAuthInstance() {
+  const secret = getRequiredAuthSecret();
+  const isProd = process.env.NODE_ENV === 'production';
 
-function resolveAuthSecret(): string {
-  const configured = (process.env.AUTH_SECRET || '').trim();
-  if (configured.length >= 16) return configured;
-  if (process.env.NODE_ENV === 'production') {
-    // Never ship a predictable production secret; Auth.js will reject unsigned calls if missing
-    return configured || 'missing-auth-secret-configure-AUTH_SECRET-in-env';
-  }
-  return 'viewora-local-dev-auth-secret-do-not-use-in-production';
+  return NextAuth({
+    adapter: isDatabaseConfigured() ? PrismaAdapter(getPrismaClient()) : undefined,
+    secret,
+    trustHost: !isProd,
+    session: {
+      strategy: 'database',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      updateAge: 60 * 60 * 24, // refresh sliding window every 24h
+    },
+    pages: {
+      signIn: '/en/login',
+      error: '/en/login',
+    },
+    cookies: {
+      sessionToken: {
+        name: isProd
+          ? '__Host-viewora.authjs.session-token'
+          : 'viewora.authjs.session-token',
+        options: {
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          secure: isProd,
+        },
+      },
+    },
+    providers: [],
+  });
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: isDatabaseConfigured() ? PrismaAdapter(getPrismaClient()) : undefined,
-  secret: resolveAuthSecret(),
-  trustHost: true,
-  session: {
-    strategy: 'jwt',
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-  },
-  pages: {
-    signIn: '/en/login',
-    error: '/en/login',
-  },
-  cookies: {
-    sessionToken: {
-      name:
-        process.env.NODE_ENV === 'production'
-          ? '__Secure-viewora.authjs.session-token'
-          : 'viewora.authjs.session-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-      },
-    },
-  },
-  providers: [
-    Credentials({
-      id: 'credentials',
-      name: 'Email & Password',
-      credentials: {
-        email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' },
-      },
-      async authorize(rawCredentials) {
-        const parsed = credentialsSchema.safeParse(rawCredentials);
-        if (!parsed.success || !isDatabaseConfigured()) {
-          return null;
-        }
+let cachedInstance: ReturnType<typeof NextAuth> | null = null;
 
-        const email = parsed.data.email.trim().toLowerCase();
-        const limit = checkAuthRateLimit({ scope: 'login', identifier: email });
-        if (!limit.allowed) {
-          return null;
-        }
+function getAuthInstance() {
+  assertValidProductionAuthConfig();
+  if (!cachedInstance) {
+    cachedInstance = buildNextAuthInstance();
+  }
+  return cachedInstance;
+}
 
-        const user = await verifyDbUserCredentials(email, parsed.data.password);
-        if (!user) return null;
+export const handlers = {
+  GET: async (...args: Parameters<ReturnType<typeof NextAuth>['handlers']['GET']>) =>
+    getAuthInstance().handlers.GET(...args),
+  POST: async (...args: Parameters<ReturnType<typeof NextAuth>['handlers']['POST']>) =>
+    getAuthInstance().handlers.POST(...args),
+};
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.fullName,
-        };
-      },
-    }),
-  ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user?.id) {
-        token.sub = user.id;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user && token.sub) {
-        session.user.id = token.sub;
-      }
-      return session;
-    },
-  },
-});
+export async function auth() {
+  return getAuthInstance().auth();
+}

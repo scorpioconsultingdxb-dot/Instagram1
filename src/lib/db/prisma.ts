@@ -5,6 +5,18 @@ declare global {
   var __vieworaPrisma: PrismaClient | undefined;
 }
 
+export type DbTransactionClient = Omit<
+  PrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>;
+
+export interface RlsContext {
+  userId: string | null;
+  role: string;
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function createPrismaClient(): PrismaClient {
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
@@ -13,7 +25,7 @@ function createPrismaClient(): PrismaClient {
 
 /**
  * Singleton PrismaClient for Next.js hot-reload safety and connection pool reuse.
- * Only instantiates when accessed; zero Supabase dependency.
+ * Always connects using the restricted `DATABASE_URL` (`viewora_app`) at runtime.
  */
 export function getPrismaClient(): PrismaClient {
   if (!globalThis.__vieworaPrisma) {
@@ -22,27 +34,45 @@ export function getPrismaClient(): PrismaClient {
   return globalThis.__vieworaPrisma;
 }
 
-/**
- * Convenience getter that returns PrismaClient only when DATABASE_URL is configured.
- */
 export function getConfiguredPrisma(): PrismaClient | null {
   if (!isDatabaseConfigured()) return null;
   return getPrismaClient();
 }
 
 /**
+ * Establishes PostgreSQL transaction-local RLS identity (`app.current_user_id` and
+ * `app.current_user_role`) via `set_config(..., true)`.
+ *
+ * Because `is_local = true`, the context is automatically scoped to the current
+ * PostgreSQL transaction and can NEVER bleed across pooled connections.
+ */
+export async function setTxRlsContext(
+  tx: DbTransactionClient,
+  context: RlsContext
+): Promise<void> {
+  const safeUserId =
+    context.userId && UUID_REGEX.test(context.userId) ? context.userId : '';
+  const safeRole = (context.role || 'anonymous').trim().toLowerCase();
+
+  // Real Prisma clients always provide `$executeRaw`.
+  if (typeof (tx as { $executeRaw?: unknown }).$executeRaw === 'function') {
+    await tx.$executeRaw`SELECT set_config('app.current_user_id', ${safeUserId}, true)`;
+    await tx.$executeRaw`SELECT set_config('app.current_user_role', ${safeRole}, true)`;
+  }
+}
+
+/**
  * Executes a callback inside a PostgreSQL transaction with session-local RLS context
  * (`app.current_user_id` and `app.current_user_role`), ensuring defense-in-depth
- * isolation alongside repository-level ownership checks.
+ * isolation under the restricted `viewora_app` (`NOBYPASSRLS`) role.
  */
 export async function withUserRlsContext<T>(
-  context: { userId: string; role: string },
-  fn: (tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>) => Promise<T>
+  context: RlsContext,
+  fn: (tx: DbTransactionClient) => Promise<T>,
+  client: PrismaClient = getPrismaClient()
 ): Promise<T> {
-  const prisma = getPrismaClient();
-  return prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.current_user_id', ${context.userId}, true)`;
-    await tx.$executeRaw`SELECT set_config('app.current_user_role', ${context.role}, true)`;
+  return client.$transaction(async (tx) => {
+    await setTxRlsContext(tx, context);
     return fn(tx);
   });
 }

@@ -97,13 +97,20 @@ const workspaceActionSchema = z.discriminatedUnion('type', [
 ]);
 
 export async function GET() {
-  const user = await getCurrentSessionUser();
-  if (!user) {
-    return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
+  try {
+    const user = await getCurrentSessionUser();
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
+    }
+    const defaultWs = user.segment === 'agency' ? 'Primary Agency HQ' : 'Personal Workspace';
+    const workspace = await loadUserWorkspaceState(user.id, defaultWs);
+    return NextResponse.json({ ok: true, workspace });
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: 'Database service is temporarily unavailable.' },
+      { status: 503 }
+    );
   }
-  const defaultWs = user.segment === 'agency' ? 'Primary Agency HQ' : 'Personal Workspace';
-  const workspace = await loadUserWorkspaceState(user.id, defaultWs);
-  return NextResponse.json({ ok: true, workspace });
 }
 
 export async function POST(request: NextRequest) {
@@ -195,9 +202,14 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     };
 
-    const result = await persistSavedProfile(user.id, record, defaultWs);
+    const trackedRule = entitlements.rules.tracked_profiles;
+    const maxProfilesLimit = trackedRule.enabled ? trackedRule.numericLimit : 0;
+    const result = await persistSavedProfile(user.id, record, defaultWs, { maxProfilesLimit });
     if (!result.ok) {
-      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: result.error },
+        { status: result.statusCode ?? 500 }
+      );
     }
     return NextResponse.json(
       { ok: true, workspace: result.workspace, savedProfile: result.savedProfile },

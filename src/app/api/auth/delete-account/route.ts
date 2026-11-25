@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
+import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import {
   buildSessionCookieOptions,
   deleteLocalUser,
@@ -10,7 +11,7 @@ import {
 import { deleteAccountProfilePrefs } from '@/lib/auth/profile-prefs';
 import { deleteUserWorkspaceState } from '@/lib/dashboard/store';
 import { persistAuditLog } from '@/lib/admin/store';
-import { isDatabaseConfigured } from '@/lib/env';
+import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
 import { deleteDbUserAccount } from '@/lib/db/repositories/users.repo';
 import { defaultFileStorage } from '@/lib/storage/local-files';
 
@@ -19,6 +20,10 @@ const deleteSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAllowedCsrfOrigin(request)) {
+    return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
   const user = await getCurrentSessionUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
@@ -36,19 +41,13 @@ export async function POST(request: NextRequest) {
   if (isDatabaseConfigured()) {
     try {
       await deleteDbUserAccount(user.id, user.email);
-    } catch (err) {
+    } catch {
       return NextResponse.json(
-        {
-          ok: false,
-          error:
-            err instanceof Error
-              ? `Account deletion failed: ${err.message}`
-              : 'Unable to delete account in database.',
-        },
-        { status: 500 }
+        { ok: false, error: 'Database service is temporarily unavailable. Account was not deleted.' },
+        { status: 503 }
       );
     }
-  } else {
+  } else if (isLocalDevFallbackAllowed()) {
     deleteLocalUser(user.id);
     await persistAuditLog({
       actorId: 'system',
@@ -58,11 +57,17 @@ export async function POST(request: NextRequest) {
       targetId: user.id,
       diff: { selfServiceDeletion: true, deletedUserId: user.id },
     });
+  } else {
+    return NextResponse.json(
+      { ok: false, error: 'Database service is unavailable.' },
+      { status: 503 }
+    );
   }
 
-  // Always purge any local dev preferences, workspace records, and stored customer files
-  deleteAccountProfilePrefs(user.id);
-  deleteUserWorkspaceState(user.id);
+  if (!isDatabaseConfigured()) {
+    deleteAccountProfilePrefs(user.id);
+    deleteUserWorkspaceState(user.id);
+  }
   await defaultFileStorage.deleteOwnerNamespace(user.id).catch(() => undefined);
 
   const response = NextResponse.json({
@@ -73,6 +78,6 @@ export async function POST(request: NextRequest) {
   response.cookies.set(SESSION_COOKIE_NAME, '', expiredOpts);
   response.cookies.set(LOCAL_SESSION_COOKIE, '', expiredOpts);
   response.cookies.set('viewora.authjs.session-token', '', expiredOpts);
-  response.cookies.set('__Secure-viewora.authjs.session-token', '', expiredOpts);
+  response.cookies.set('__Host-viewora.authjs.session-token', '', expiredOpts);
   return response;
 }

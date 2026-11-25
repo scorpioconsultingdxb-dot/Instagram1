@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { getPrismaClient } from '@/lib/db/prisma';
+import { getPrismaClient, withUserRlsContext } from '@/lib/db/prisma';
 import type {
   AuditLogRecord,
   BroadcastNotificationRecord,
@@ -123,21 +123,31 @@ export async function persistDbCmsContentUpdate(
   };
 }
 
+/**
+ * Loads support tickets under explicit RLS context (support_agent / admin / super_admin).
+ */
 export async function loadDbSupportTickets(
-  client: PrismaClient = getPrismaClient()
+  client: PrismaClient = getPrismaClient(),
+  actor: { userId?: string | null; role?: string } = { role: 'support_agent' }
 ): Promise<SupportTicketRecord[]> {
-  const rows = await client.supportTicket.findMany({ orderBy: { createdAt: 'desc' } });
-  return rows.map((row) => ({
-    id: row.id,
-    email: row.email,
-    subject: row.subject,
-    message: row.message,
-    status: row.status as SupportTicketRecord['status'],
-    priority: row.priority as SupportTicketRecord['priority'],
-    adminNotes: row.adminNotes,
-    createdAt: row.createdAt.toISOString(),
-    isSample: false,
-  }));
+  return withUserRlsContext(
+    { userId: asUuidOrNull(actor.userId), role: actor.role || 'support_agent' },
+    async (tx) => {
+      const rows = await tx.supportTicket.findMany({ orderBy: { createdAt: 'desc' } });
+      return rows.map((row) => ({
+        id: row.id,
+        email: row.email,
+        subject: row.subject,
+        message: row.message,
+        status: row.status as SupportTicketRecord['status'],
+        priority: row.priority as SupportTicketRecord['priority'],
+        adminNotes: row.adminNotes,
+        createdAt: row.createdAt.toISOString(),
+        isSample: false,
+      }));
+    },
+    client
+  );
 }
 
 export async function persistDbSupportTicketCreate(
@@ -146,29 +156,34 @@ export async function persistDbSupportTicketCreate(
   },
   client: PrismaClient = getPrismaClient()
 ): Promise<SupportTicketRecord> {
-  const created = await client.$transaction(async (tx) => {
-    const t = await tx.supportTicket.create({
-      data: {
-        userId: asUuidOrNull(ticket.userId),
-        email: ticket.email,
-        subject: ticket.subject,
-        message: ticket.message,
-        priority: ticket.priority,
-        status: 'open',
-        adminNotes: '',
-      },
-    });
-    await tx.supportMessage.create({
-      data: {
-        ticketId: t.id,
-        authorId: asUuidOrNull(ticket.userId),
-        authorRole: 'customer',
-        isInternalNote: false,
-        body: ticket.message,
-      },
-    });
-    return t;
-  });
+  const ownerId = asUuidOrNull(ticket.userId);
+  const created = await withUserRlsContext(
+    { userId: ownerId, role: ownerId ? 'user' : 'anonymous' },
+    async (tx) => {
+      const t = await tx.supportTicket.create({
+        data: {
+          userId: ownerId,
+          email: ticket.email,
+          subject: ticket.subject,
+          message: ticket.message,
+          priority: ticket.priority,
+          status: 'open',
+          adminNotes: '',
+        },
+      });
+      await tx.supportMessage.create({
+        data: {
+          ticketId: t.id,
+          authorId: ownerId,
+          authorRole: 'customer',
+          isInternalNote: false,
+          body: ticket.message,
+        },
+      });
+      return t;
+    },
+    client
+  );
 
   return {
     id: created.id,
@@ -187,46 +202,50 @@ export async function persistDbSupportTicketUpdate(
   id: string,
   patch: Partial<Pick<SupportTicketRecord, 'status' | 'priority' | 'adminNotes'>>,
   actorId?: string,
-  client: PrismaClient = getPrismaClient()
+  client: PrismaClient = getPrismaClient(),
+  actorRole = 'support_agent'
 ): Promise<SupportTicketRecord | null> {
-  const existing = await client.supportTicket.findUnique({ where: { id } });
-  if (!existing) return null;
+  return withUserRlsContext(
+    { userId: asUuidOrNull(actorId), role: actorRole },
+    async (tx) => {
+      const existing = await tx.supportTicket.findUnique({ where: { id } });
+      if (!existing) return null;
 
-  const updated = await client.$transaction(async (tx) => {
-    const next = await tx.supportTicket.update({
-      where: { id },
-      data: {
-        ...(patch.status !== undefined ? { status: patch.status } : {}),
-        ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
-        ...(typeof patch.adminNotes === 'string' ? { adminNotes: patch.adminNotes } : {}),
-      },
-    });
-
-    if (patch.status && patch.status !== existing.status) {
-      await tx.supportTicketStatusHistory.create({
+      const next = await tx.supportTicket.update({
+        where: { id },
         data: {
-          ticketId: id,
-          changedById: asUuidOrNull(actorId),
-          fromStatus: existing.status,
-          toStatus: patch.status,
-          note: patch.adminNotes ?? '',
+          ...(patch.status !== undefined ? { status: patch.status } : {}),
+          ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+          ...(typeof patch.adminNotes === 'string' ? { adminNotes: patch.adminNotes } : {}),
         },
       });
-    }
-    return next;
-  });
 
-  return {
-    id: updated.id,
-    email: updated.email,
-    subject: updated.subject,
-    message: updated.message,
-    status: updated.status as SupportTicketRecord['status'],
-    priority: updated.priority as SupportTicketRecord['priority'],
-    adminNotes: updated.adminNotes,
-    createdAt: updated.createdAt.toISOString(),
-    isSample: false,
-  };
+      if (patch.status && patch.status !== existing.status) {
+        await tx.supportTicketStatusHistory.create({
+          data: {
+            ticketId: id,
+            changedById: asUuidOrNull(actorId),
+            fromStatus: existing.status,
+            toStatus: patch.status,
+            note: patch.adminNotes ?? '',
+          },
+        });
+      }
+
+      return {
+        id: next.id,
+        email: next.email,
+        subject: next.subject,
+        message: next.message,
+        status: next.status as SupportTicketRecord['status'],
+        priority: next.priority as SupportTicketRecord['priority'],
+        adminNotes: next.adminNotes,
+        createdAt: next.createdAt.toISOString(),
+        isSample: false,
+      };
+    },
+    client
+  );
 }
 
 export async function loadDbBroadcastNotifications(

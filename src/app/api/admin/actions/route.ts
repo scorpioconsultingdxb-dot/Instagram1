@@ -250,11 +250,16 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-    const updated = await persistSupportTicketUpdate(action.id, {
-      status: action.status,
-      priority: action.priority,
-      adminNotes: action.adminNotes,
-    });
+    const updated = await persistSupportTicketUpdate(
+      action.id,
+      {
+        status: action.status,
+        priority: action.priority,
+        adminNotes: action.adminNotes,
+      },
+      actor.id,
+      actor.role
+    );
     if (!updated) {
       return NextResponse.json({ ok: false, error: 'Ticket not found.' }, { status: 404 });
     }

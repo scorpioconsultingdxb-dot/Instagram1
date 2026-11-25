@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
-import { getPrismaClient } from '@/lib/db/prisma';
+import { getPrismaClient, withUserRlsContext } from '@/lib/db/prisma';
 import {
   createDefaultProfilePrefs,
   personalShortcutSchema,
@@ -13,54 +13,63 @@ export async function getDbProfilePrefs(
   client: PrismaClient = getPrismaClient()
 ): Promise<PersonalProfilePrefs> {
   const defaults = createDefaultProfilePrefs();
-  const user = await client.user.findUnique({
-    where: { id: userId },
-    select: {
-      fullName: true,
-      preferredLocale: true,
-      updatedAt: true,
-      preferences: true,
+  return withUserRlsContext(
+    { userId, role: 'user' },
+    async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: {
+          fullName: true,
+          preferredLocale: true,
+          updatedAt: true,
+          preferences: true,
+        },
+      });
+
+      if (!user) return defaults;
+
+      const pref = user.preferences;
+      const shortcutsParsed = z
+        .array(personalShortcutSchema)
+        .safeParse(pref?.personalShortcuts ?? defaults.personalShortcuts);
+
+      return {
+        fullName: user.fullName || undefined,
+        professionalTitle: pref?.professionalTitle ?? defaults.professionalTitle,
+        organization: pref?.organization ?? defaults.organization,
+        avatarPreset:
+          (pref?.avatarPreset as PersonalProfilePrefs['avatarPreset']) ?? defaults.avatarPreset,
+        avatarEmoji: pref?.avatarEmoji ?? '',
+        coverPreset:
+          (pref?.coverPreset as PersonalProfilePrefs['coverPreset']) ?? defaults.coverPreset,
+        preferredLocale:
+          (user.preferredLocale as PersonalProfilePrefs['preferredLocale']) ??
+          defaults.preferredLocale,
+        themePreference:
+          (pref?.themePreference as PersonalProfilePrefs['themePreference']) ??
+          defaults.themePreference,
+        accentPreset:
+          (pref?.accentPreset as PersonalProfilePrefs['accentPreset']) ?? defaults.accentPreset,
+        timezone: pref?.timezone ?? defaults.timezone,
+        defaultDateRange:
+          (pref?.defaultDateRange as PersonalProfilePrefs['defaultDateRange']) ??
+          defaults.defaultDateRange,
+        dashboardDensity:
+          (pref?.dashboardDensity as PersonalProfilePrefs['dashboardDensity']) ??
+          defaults.dashboardDensity,
+        sidebarDefaultCollapsed:
+          typeof pref?.sidebarDefaultCollapsed === 'boolean'
+            ? pref.sidebarDefaultCollapsed
+            : defaults.sidebarDefaultCollapsed,
+        workspaceName: pref?.workspaceName ?? defaults.workspaceName,
+        personalShortcuts: shortcutsParsed.success
+          ? shortcutsParsed.data
+          : defaults.personalShortcuts,
+        updatedAt: (pref?.updatedAt ?? user.updatedAt).toISOString(),
+      };
     },
-  });
-
-  if (!user) return defaults;
-
-  const pref = user.preferences;
-  const shortcutsParsed = z
-    .array(personalShortcutSchema)
-    .safeParse(pref?.personalShortcuts ?? defaults.personalShortcuts);
-
-  return {
-    fullName: user.fullName || undefined,
-    professionalTitle: pref?.professionalTitle ?? defaults.professionalTitle,
-    organization: pref?.organization ?? defaults.organization,
-    avatarPreset:
-      (pref?.avatarPreset as PersonalProfilePrefs['avatarPreset']) ?? defaults.avatarPreset,
-    avatarEmoji: pref?.avatarEmoji ?? '',
-    coverPreset:
-      (pref?.coverPreset as PersonalProfilePrefs['coverPreset']) ?? defaults.coverPreset,
-    preferredLocale:
-      (user.preferredLocale as PersonalProfilePrefs['preferredLocale']) ?? defaults.preferredLocale,
-    themePreference:
-      (pref?.themePreference as PersonalProfilePrefs['themePreference']) ??
-      defaults.themePreference,
-    accentPreset:
-      (pref?.accentPreset as PersonalProfilePrefs['accentPreset']) ?? defaults.accentPreset,
-    timezone: pref?.timezone ?? defaults.timezone,
-    defaultDateRange:
-      (pref?.defaultDateRange as PersonalProfilePrefs['defaultDateRange']) ??
-      defaults.defaultDateRange,
-    dashboardDensity:
-      (pref?.dashboardDensity as PersonalProfilePrefs['dashboardDensity']) ??
-      defaults.dashboardDensity,
-    sidebarDefaultCollapsed:
-      typeof pref?.sidebarDefaultCollapsed === 'boolean'
-        ? pref.sidebarDefaultCollapsed
-        : defaults.sidebarDefaultCollapsed,
-    workspaceName: pref?.workspaceName ?? defaults.workspaceName,
-    personalShortcuts: shortcutsParsed.success ? shortcutsParsed.data : defaults.personalShortcuts,
-    updatedAt: (pref?.updatedAt ?? user.updatedAt).toISOString(),
-  };
+    client
+  );
 }
 
 export async function saveDbProfilePrefs(
@@ -96,35 +105,39 @@ export async function saveDbProfilePrefs(
     prefPatch.personalShortcuts = patch.personalShortcuts as unknown as Prisma.InputJsonValue;
   }
 
-  await client.$transaction(async (tx) => {
-    if (Object.keys(userPatch).length > 0) {
-      await tx.user.update({
-        where: { id: userId },
-        data: userPatch,
-      });
-    }
+  await withUserRlsContext(
+    { userId, role: 'user' },
+    async (tx) => {
+      if (Object.keys(userPatch).length > 0) {
+        await tx.user.update({
+          where: { id: userId },
+          data: userPatch,
+        });
+      }
 
-    await tx.userPreference.upsert({
-      where: { userId },
-      update: prefPatch,
-      create: {
-        userId,
-        professionalTitle: patch.professionalTitle ?? 'Social Intelligence Strategist',
-        organization: patch.organization ?? 'Viewora Workspace',
-        workspaceName: patch.workspaceName ?? 'Primary Workspace',
-        avatarPreset: patch.avatarPreset ?? 'violet-cyan',
-        avatarEmoji: patch.avatarEmoji ?? '',
-        coverPreset: patch.coverPreset ?? 'aurora',
-        themePreference: patch.themePreference ?? 'system',
-        accentPreset: patch.accentPreset ?? 'violet',
-        timezone: patch.timezone ?? 'UTC',
-        defaultDateRange: patch.defaultDateRange ?? '30d',
-        dashboardDensity: patch.dashboardDensity ?? 'comfortable',
-        sidebarDefaultCollapsed: patch.sidebarDefaultCollapsed ?? false,
-        personalShortcuts: (patch.personalShortcuts ?? []) as unknown as Prisma.InputJsonValue,
-      },
-    });
-  });
+      await tx.userPreference.upsert({
+        where: { userId },
+        update: prefPatch,
+        create: {
+          userId,
+          professionalTitle: patch.professionalTitle ?? 'Social Intelligence Strategist',
+          organization: patch.organization ?? 'Viewora Workspace',
+          workspaceName: patch.workspaceName ?? 'Primary Workspace',
+          avatarPreset: patch.avatarPreset ?? 'violet-cyan',
+          avatarEmoji: patch.avatarEmoji ?? '',
+          coverPreset: patch.coverPreset ?? 'aurora',
+          themePreference: patch.themePreference ?? 'system',
+          accentPreset: patch.accentPreset ?? 'violet',
+          timezone: patch.timezone ?? 'UTC',
+          defaultDateRange: patch.defaultDateRange ?? '30d',
+          dashboardDensity: patch.dashboardDensity ?? 'comfortable',
+          sidebarDefaultCollapsed: patch.sidebarDefaultCollapsed ?? false,
+          personalShortcuts: (patch.personalShortcuts ?? []) as unknown as Prisma.InputJsonValue,
+        },
+      });
+    },
+    client
+  );
 
   return getDbProfilePrefs(userId, client);
 }

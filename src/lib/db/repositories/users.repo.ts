@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { getPrismaClient } from '@/lib/db/prisma';
+import { getPrismaClient, setTxRlsContext } from '@/lib/db/prisma';
 import { defaultFileStorage } from '@/lib/storage/local-files';
 import type {
   BillingInterval,
@@ -63,24 +63,22 @@ function normalizeEmailPrefs(raw: unknown): EmailPreferencesRecord {
   };
 }
 
-function mapUserToSessionUser(
-  user: {
-    id: string;
-    email: string;
-    fullName: string;
-    name: string | null;
-    role: string;
-    segment: string;
-    onboardingCompleted: boolean;
-    emailVerified: Date | null;
-    emailPreferences: unknown;
-    createdAt: Date;
-    subscriptions?: Array<{
-      billingInterval: string;
-      plan: { code: string };
-    }>;
-  }
-): DbSessionUser {
+function mapUserToSessionUser(user: {
+  id: string;
+  email: string;
+  fullName: string;
+  name: string | null;
+  role: string;
+  segment: string;
+  onboardingCompleted: boolean;
+  emailVerified: Date | null;
+  emailPreferences: unknown;
+  createdAt: Date;
+  subscriptions?: Array<{
+    billingInterval: string;
+    plan: { code: string };
+  }>;
+}): DbSessionUser {
   const latestSub = user.subscriptions?.[0];
   return {
     id: user.id,
@@ -152,9 +150,12 @@ export async function verifyDbUserCredentials(
 }
 
 /**
- * Atomically registers a new user, initializes their Personal Digital HQ preferences,
- * creates their default workspace + owner membership + default folder + Free subscription,
- * and issues a single-use hashed email verification token.
+ * Atomically registers a new user under the restricted `viewora_app` role:
+ *   1. Creates the `User` row (pre-context).
+ *   2. Immediately sets transaction-local PostgreSQL RLS identity (`setTxRlsContext`).
+ *   3. Inserts `UserPreference`, default `Workspace`, `WorkspaceMember(owner)`,
+ *      default `ResearchFolder`, Free `Subscription`, welcome `Notification`,
+ *      `EmailVerificationToken`, and `ConsentRecord` inside the same transaction.
  * NEVER inserts demo Instagram profiles for real customers.
  */
 export async function registerUserWithWorkspace(
@@ -188,104 +189,123 @@ export async function registerUserWithWorkspace(
   const verificationToken = generateOpaqueToken();
   const verificationExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24 hours
 
-  const created = await client.$transaction(async (tx) => {
-    const user = await tx.user.create({
-      data: {
-        email: normalizedEmail,
-        passwordHash,
-        fullName: input.fullName.trim(),
-        name: input.fullName.trim(),
-        role: 'user',
-        accountStatus: 'active',
-        segment: input.segment,
-        preferredLocale: input.preferredLocale,
-        onboardingCompleted: true,
-        emailPreferences: input.emailPreferences as unknown as Prisma.InputJsonValue,
-        preferences: {
-          create: {
-            workspaceName: 'Personal Workspace',
-          },
-        },
-      },
-    });
-
-    const workspace = await tx.workspace.create({
-      data: {
-        ownerId: user.id,
-        name: 'Personal Workspace',
-        slug: `ws-${user.id.replace(/-/g, '').slice(0, 12)}`,
-        segment: input.segment,
-        isDefault: true,
-      },
-    });
-
-    await tx.workspaceMember.create({
-      data: {
-        workspaceId: workspace.id,
-        userId: user.id,
-        memberRole: 'owner',
-      },
-    });
-
-    await tx.researchFolder.create({
-      data: {
-        workspaceId: workspace.id,
-        userId: user.id,
-        name: 'General Research',
-        color: 'violet',
-        description: 'Default folder for saved public profiles.',
-      },
-    });
-
-    const freePlan = await tx.plan.findUnique({ where: { code: 'free' } });
-    if (freePlan) {
-      await tx.subscription.create({
+  try {
+    const created = await client.$transaction(async (tx) => {
+      // Step 1: Create User before RLS context exists
+      const user = await tx.user.create({
         data: {
-          userId: user.id,
-          workspaceId: workspace.id,
-          planId: freePlan.id,
-          billingInterval: 'monthly',
-          status: 'active',
-          paymentProvider: 'disabled',
+          email: normalizedEmail,
+          passwordHash,
+          fullName: input.fullName.trim(),
+          name: input.fullName.trim(),
+          role: 'user',
+          accountStatus: 'active',
+          segment: input.segment,
+          preferredLocale: input.preferredLocale,
+          onboardingCompleted: true,
+          emailPreferences: input.emailPreferences as unknown as Prisma.InputJsonValue,
         },
       });
+
+      // Step 2: Establish transaction-local RLS context for all tenant-owned inserts
+      await setTxRlsContext(tx, { userId: user.id, role: 'user' });
+
+      // Step 3: Initialize RLS-protected customer records under restricted viewora_app
+      await tx.userPreference.create({
+        data: {
+          userId: user.id,
+          workspaceName: 'Personal Workspace',
+        },
+      });
+
+      const workspace = await tx.workspace.create({
+        data: {
+          ownerId: user.id,
+          name: 'Personal Workspace',
+          slug: `ws-${user.id.replace(/-/g, '').slice(0, 12)}`,
+          segment: input.segment,
+          isDefault: true,
+        },
+      });
+
+      await tx.workspaceMember.create({
+        data: {
+          workspaceId: workspace.id,
+          userId: user.id,
+          memberRole: 'owner',
+        },
+      });
+
+      await tx.researchFolder.create({
+        data: {
+          workspaceId: workspace.id,
+          userId: user.id,
+          name: 'General Research',
+          color: 'violet',
+          description: 'Default folder for saved public profiles.',
+        },
+      });
+
+      const freePlan = await tx.plan.findUnique({ where: { code: 'free' } });
+      if (freePlan) {
+        await tx.subscription.create({
+          data: {
+            userId: user.id,
+            workspaceId: workspace.id,
+            planId: freePlan.id,
+            billingInterval: 'monthly',
+            status: 'active',
+            paymentProvider: 'disabled',
+          },
+        });
+      }
+
+      await tx.notification.create({
+        data: {
+          userId: user.id,
+          title: 'Your private Viewora workspace is ready',
+          body: 'Save an eligible public profile, organize research folders, or customize your Personal Digital Headquarters.',
+          category: 'system',
+          actionUrl: '/dashboard/profiles',
+        },
+      });
+
+      await tx.emailVerificationToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: verificationToken.hash,
+          expiresAt: verificationExpiresAt,
+        },
+      });
+
+      await tx.consentRecord.create({
+        data: {
+          userId: user.id,
+          consentType: 'terms_and_privacy',
+          granted: true,
+          policyVersion: '2026-11',
+        },
+      });
+
+      return user;
+    });
+
+    return {
+      ok: true,
+      user: mapUserToSessionUser({ ...created, subscriptions: [] }),
+      verificationTokenRaw: verificationToken.raw,
+    };
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    if (code === 'P2002') {
+      return {
+        ok: false,
+        code: 'EMAIL_EXISTS',
+        error: 'Unable to complete registration with the provided email address.',
+      };
     }
-
-    await tx.notification.create({
-      data: {
-        userId: user.id,
-        title: 'Your private Viewora workspace is ready',
-        body: 'Save an eligible public profile, organize research folders, or customize your Personal Digital Headquarters.',
-        category: 'system',
-        actionUrl: '/dashboard/profiles',
-      },
-    });
-
-    await tx.emailVerificationToken.create({
-      data: {
-        userId: user.id,
-        tokenHash: verificationToken.hash,
-        expiresAt: verificationExpiresAt,
-      },
-    });
-
-    await tx.consentRecord.create({
-      data: {
-        userId: user.id,
-        consentType: 'terms_and_privacy',
-        granted: true,
-        policyVersion: '2026-11',
-      },
-    });
-
-    return user;
-  });
-
-  return {
-    ok: true,
-    user: mapUserToSessionUser({ ...created, subscriptions: [] }),
-    verificationTokenRaw: verificationToken.raw,
-  };
+    throw err;
+  }
 }
 
 export async function createDbSession(
@@ -311,6 +331,15 @@ export async function createDbSession(
   return { rawToken: token.raw, expires };
 }
 
+/**
+ * Authoritative PostgreSQL session resolver.
+ * Validates on EVERY request:
+ *   - Token hash matches an existing `sessions` row
+ *   - Session is not revoked (`revokedAt === null`)
+ *   - Session is not expired (`expires > now`)
+ *   - User exists and `accountStatus === 'active'` (suspended/deleted rejected immediately)
+ *   - Returns fresh `role` and `planCode` from PostgreSQL (role removal takes effect immediately)
+ */
 export async function resolveDbSessionByRawToken(
   rawToken: string,
   client: PrismaClient = getPrismaClient()
@@ -369,6 +398,33 @@ export async function revokeAllDbUserSessions(
     data: { revokedAt: new Date() },
   });
   return res.count;
+}
+
+export async function suspendDbUserAccount(
+  userId: string,
+  client: PrismaClient = getPrismaClient()
+): Promise<void> {
+  const now = new Date();
+  await client.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: userId },
+      data: { accountStatus: 'suspended' },
+    });
+    await tx.session.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: now },
+    });
+  });
+}
+
+export async function reactivateDbUserAccount(
+  userId: string,
+  client: PrismaClient = getPrismaClient()
+): Promise<void> {
+  await client.user.update({
+    where: { id: userId },
+    data: { accountStatus: 'active' },
+  });
 }
 
 export async function changeDbUserPassword(
@@ -503,6 +559,7 @@ export async function deleteDbUserAccount(
   client: PrismaClient = getPrismaClient()
 ): Promise<void> {
   await client.$transaction(async (tx) => {
+    await setTxRlsContext(tx, { userId, role: 'user' });
     await tx.accountDeletionRequest.create({
       data: {
         userId: null,

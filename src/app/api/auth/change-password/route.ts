@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { isDatabaseConfigured } from '@/lib/env';
+import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
 import {
   getCurrentSessionUser,
   LOCAL_SESSION_COOKIE,
@@ -15,6 +16,10 @@ const changePasswordSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAllowedCsrfOrigin(request)) {
+    return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
   const user = await getCurrentSessionUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });

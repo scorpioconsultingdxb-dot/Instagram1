@@ -1,9 +1,46 @@
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Calculator, Lock, ShieldCheck, Sparkles } from 'lucide-react';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/types';
 import { FREE_TOOLS, type ToolDefinition } from '@/lib/tools/catalog';
+import { Breadcrumbs, UpgradePreviewCard } from '@/components/ui/Primitives';
 import { ToolWorkspace } from '@/components/tools/ToolWorkspace';
+
+const PREMIUM_PREVIEWS: Record<
+  ToolDefinition['category'],
+  { title: string; description: string; tier: string }
+> = {
+  Viewer: {
+    title: 'Save eligible profiles & track longitudinal checkpoints',
+    description:
+      'Move beyond one-off lookups: organize saved accounts into research folders, add private strategy notes, and review historical snapshots inside your workspace.',
+    tier: 'Starter+ Plan',
+  },
+  Analytics: {
+    title: 'Automated historical charts, 7 AI reports & PDF/CSV exports',
+    description:
+      'Pair your manual calculations with multi-checkpoint growth curves, engagement rate trendlines, and provenance-stamped PDF or CSV exports.',
+    tier: 'Premium+ Plan',
+  },
+  Optimization: {
+    title: 'Turn bio and hashtag audits into a repeatable AI content audit',
+    description:
+      'Run structured Social Media Audit and Content Strategy reports inside the AI Intelligence Studio and save notes per client workspace.',
+    tier: 'Starter+ Plan',
+  },
+  Research: {
+    title: 'Persistent multi-account competitor projects & team sharing',
+    description:
+      'Save competitor comparison projects across up to 30 tracked profiles with side-by-side engagement deltas, cadence tracking, and executive summaries.',
+    tier: 'Premium / Pro / Agency',
+  },
+  Creation: {
+    title: 'Pair content planning with structured AI Content Strategy briefs',
+    description:
+      'Generate full weekly executive summaries and audience-aligned publishing roadmaps inside the Viewora workspace.',
+    tier: 'Starter+ Plan',
+  },
+};
 
 export function ToolPageView({
   tool,
@@ -16,7 +53,23 @@ export function ToolPageView({
   dict: Dictionary;
   sampleHandles: string[];
 }) {
-  const relatedTools = FREE_TOOLS.filter((t) => t.slug !== tool.slug).slice(0, 4);
+  const sameCategory = FREE_TOOLS.filter(
+    (t) => t.slug !== tool.slug && t.category === tool.category
+  );
+  const otherCategory = FREE_TOOLS.filter(
+    (t) => t.slug !== tool.slug && t.category !== tool.category
+  );
+  const relatedTools = [...sameCategory, ...otherCategory].slice(0, 4);
+
+  const preview = PREMIUM_PREVIEWS[tool.category];
+
+  const modeBadge =
+    tool.mode === 'functional_calculator'
+      ? { label: 'Deterministic Formula Engine', icon: Calculator }
+      : tool.mode === 'authorized_status_check'
+        ? { label: 'Authorized Meta Scope Check', icon: Lock }
+        : { label: 'Authorized Public / Demo Provider', icon: Sparkles };
+  const ModeIcon = modeBadge.icon;
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -35,27 +88,33 @@ export function ToolPageView({
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      <Link
-        href={`/${locale}/tools`}
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#64748B] hover:text-[#7957FF] dark:text-slate-400 dark:hover:text-[#A99AFF]"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-        All 12 Free Tools
-      </Link>
+      <Breadcrumbs
+        items={[
+          { label: dict.nav.home, href: `/${locale}` },
+          { label: `12 ${dict.nav.tools}`, href: `/${locale}/tools` },
+          { label: tool.name },
+        ]}
+      />
 
-      <header className="mt-4">
-        <span className="inline-block rounded-full bg-violet-50 px-3 py-0.5 text-xs font-semibold text-[#7957FF] dark:bg-violet-950 dark:text-[#A99AFF]">
-          {tool.category}
-        </span>
-        <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-[#0F172A] dark:text-white">
+      <header className="mt-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-block rounded-full bg-violet-50 px-3 py-0.5 text-xs font-bold text-[#6941EF] dark:bg-violet-950/60 dark:text-[#A99AFF]">
+            {tool.category}
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-0.5 text-xs font-semibold text-[#64748B] dark:border-[#263047] dark:bg-[#131C2E] dark:text-[#94A3B8]">
+            <ModeIcon className="h-3 w-3 text-[#22D3EE]" aria-hidden="true" />
+            {modeBadge.label}
+          </span>
+        </div>
+        <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-[#0F172A] sm:text-4xl dark:text-[#F8FAFC]">
           {tool.name}
         </h1>
-        <p className="mt-2 text-base text-[#64748B] dark:text-slate-300">
+        <p className="mt-2 max-w-3xl text-base leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
           {tool.shortDescription}
         </p>
       </header>
 
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-[#131C2E]">
+      <section className="viewora-card-elevated mt-8 rounded-3xl p-5 sm:p-7">
         <ToolWorkspace
           slug={tool.slug}
           locale={locale}
@@ -64,63 +123,52 @@ export function ToolPageView({
         />
       </section>
 
-      <section className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 dark:border-slate-800 dark:bg-[#131C2E]/70 dark:text-slate-400">
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-xs text-[#64748B] dark:border-[#263047] dark:bg-[#131C2E]/80 dark:text-[#94A3B8]">
         <div className="flex items-start gap-2.5">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#7957FF]" aria-hidden="true" />
+          <ShieldCheck
+            className="mt-0.5 h-4 w-4 shrink-0 text-[#6941EF] dark:text-[#A99AFF]"
+            aria-hidden="true"
+          />
           <div>
-            <p className="font-semibold text-slate-900 dark:text-white">
-              Methodology &amp; Data Limitations
+            <p className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+              Data-Source &amp; Methodology Disclosure
             </p>
-            <p className="mt-1">{tool.dataDisclosure}</p>
+            <p className="mt-1 leading-relaxed">{tool.dataDisclosure}</p>
           </div>
         </div>
       </section>
 
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-[#131C2E]">
-        <h2 className="text-lg font-bold text-[#0F172A] dark:text-white">How to get the most from this tool</h2>
-        <p className="mt-2 text-sm leading-relaxed text-[#64748B] dark:text-slate-300">
+      <section className="viewora-card mt-8 rounded-2xl p-6">
+        <h2 className="font-display text-lg font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+          How to get the most from this tool
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
           {tool.educationalBody}
         </p>
       </section>
 
-      <section className="mt-8 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-6 dark:border-violet-900/60 dark:from-violet-950/30 dark:to-[#131C2E]">
-        <h2 className="text-lg font-bold text-[#0F172A] dark:text-white">
-          Unlock historical snapshots, competitor sets &amp; Gemini AI reports
-        </h2>
-        <p className="mt-1.5 text-sm text-[#64748B] dark:text-slate-300">
-          Create a free Viewora account to save eligible public profiles and explore Starter,
-          Premium, Pro, and Agency capabilities.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Link
-            href={`/${locale}/register`}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-[#7957FF] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6441f5]"
-          >
-            Create Free Account
-            <ArrowRight className="h-4 w-4" aria-hidden="true" />
-          </Link>
-          <Link
-            href={`/${locale}/pricing`}
-            className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-[#080D19] dark:text-slate-200"
-          >
-            Compare Plans
-          </Link>
-        </div>
-      </section>
+      <div className="mt-8">
+        <UpgradePreviewCard
+          title={preview.title}
+          description={preview.description}
+          requiredTier={preview.tier}
+          ctaHref={`/${locale}/pricing`}
+          ctaLabel="Compare Membership Plans (Demo Pricing)"
+        />
+      </div>
 
       {tool.faqs.length > 0 ? (
         <section className="mt-10">
-          <h2 className="text-xl font-bold text-[#0F172A] dark:text-white">
+          <h2 className="font-display text-xl font-bold text-[#0F172A] dark:text-[#F8FAFC]">
             Frequently Asked Questions
           </h2>
           <dl className="mt-4 space-y-3">
             {tool.faqs.map((item) => (
-              <div
-                key={item.q}
-                className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-[#131C2E]"
-              >
-                <dt className="text-sm font-semibold text-slate-900 dark:text-white">{item.q}</dt>
-                <dd className="mt-1.5 text-sm text-[#64748B] dark:text-slate-300">{item.a}</dd>
+              <div key={item.q} className="viewora-card rounded-2xl p-5">
+                <dt className="text-sm font-bold text-[#0F172A] dark:text-[#F8FAFC]">{item.q}</dt>
+                <dd className="mt-1.5 text-sm leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
+                  {item.a}
+                </dd>
               </div>
             ))}
           </dl>
@@ -128,17 +176,36 @@ export function ToolPageView({
       ) : null}
 
       <section className="mt-10">
-        <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
-          Related Free Tools
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xs font-bold tracking-wider text-[#64748B] uppercase dark:text-[#94A3B8]">
+            Related Free Tools
+          </h2>
+          <Link
+            href={`/${locale}/tools`}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+          >
+            All 12 tools
+            <ArrowRight className="h-3 w-3" aria-hidden="true" />
+          </Link>
+        </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {relatedTools.map((rel) => (
             <Link
               key={rel.slug}
               href={`/${locale}/${rel.slug}`}
-              className="rounded-xl border border-slate-200 bg-white p-3.5 text-xs font-semibold text-slate-800 hover:border-[#7957FF] hover:text-[#7957FF] dark:border-slate-800 dark:bg-[#131C2E] dark:text-slate-200"
+              className="viewora-card group flex flex-col justify-between rounded-2xl p-4 transition hover:border-[#7957FF]/60"
             >
-              {rel.name}
+              <div>
+                <span className="text-[10px] font-bold tracking-wide text-[#64748B] uppercase dark:text-[#94A3B8]">
+                  {rel.category}
+                </span>
+                <p className="mt-1 text-xs font-bold text-[#0F172A] group-hover:text-[#6941EF] dark:text-[#F8FAFC] dark:group-hover:text-[#A99AFF]">
+                  {rel.name}
+                </p>
+              </div>
+              <span className="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-[#6941EF] dark:text-[#A99AFF]">
+                Open <ArrowRight className="h-3 w-3" aria-hidden="true" />
+              </span>
             </Link>
           ))}
         </div>

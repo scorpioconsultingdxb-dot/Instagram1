@@ -123,18 +123,17 @@ Remove-Item Env:\ADMIN_EMAIL, Env:\ADMIN_NAME, Env:\ADMIN_PASSWORD
 ## 5. Run Full Live PostgreSQL Integration & Browser E2E Verification
 
 ```powershell
-# 1. Apply migrations & seed to isolated viewora_test database
-$env:DATABASE_ADMIN_URL = (Get-Content .env.local | Select-String '^TEST_DATABASE_URL=').ToString().Split('=',2)[1]
-npm.cmd run db:migrate:deploy
-npm.cmd run db:seed
-Remove-Item Env:\DATABASE_ADMIN_URL
+# 1. Apply migrations & double-seed isolated viewora_test database (uses TEST_DATABASE_ADMIN_URL)
+npm.cmd run db:migrate:test
+npm.cmd run db:seed:test
+npm.cmd run db:seed:test
 
-# 2. Run mandatory live PostgreSQL + RLS multi-user isolation suite
+# 2. Run mandatory live PostgreSQL + RLS multi-user isolation suite (uses viewora_test_app)
 npm.cmd run test:db
 
 # 3. Build production bundle and run full PostgreSQL browser E2E suite (includes server restart persistence check)
 npm.cmd run build
-node scripts/e2e-postgres.mjs
+npm.cmd run test:e2e:pg
 ```
 
 ---
@@ -142,13 +141,14 @@ node scripts/e2e-postgres.mjs
 ## 6. Backup & Disposable Restore Drill on Windows
 
 ```powershell
-# Create timestamped custom-format .dump + .sha256 checksum (auto-discovers PostgreSQL\*\bin)
+# Custom-format .dump + .sha256 backup (auto-discovers PostgreSQL\*\bin & strips Prisma ?schema=public)
 npm.cmd run db:backup
 
-# Test restore into a disposable database (NEVER overwrite viewora during testing)
-psql -h 127.0.0.1 -p 5432 -U viewora_admin -d postgres -c "CREATE DATABASE viewora_restore_test OWNER viewora_admin;"
-npm.cmd run db:restore -- -BackupFile .\backups\<FILENAME>.dump -TargetDb viewora_restore_test -ConfirmRestore
-psql -h 127.0.0.1 -p 5432 -U viewora_admin -d postgres -c "DROP DATABASE viewora_restore_test;"
+# Plain-SQL .sql + .sha256 backup & disposable restore (works even if pg_restore.exe is blocked by Windows App Control)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\db\backup.ps1 -DatabaseName viewora -Format plain
+psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE DATABASE viewora_restore_test;"
+npm.cmd run db:restore -- -BackupFile .\backups\<FILENAME>.sql -TargetDb viewora_restore_test -ConfirmRestore
+psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "DROP DATABASE viewora_restore_test;"
 ```
 
-> **Windows App Control Note:** If `pg_restore.exe` in `PostgreSQL\14\bin` is blocked by Windows Application Control on your workstation, allowlist `C:\Program Files\PostgreSQL\14\bin\pg_restore.exe` (or install signed PostgreSQL 16 binaries) before running `db:restore`.
+> **Windows App Control Note:** `backup.ps1` and `restore.ps1` support both custom `.dump` (`pg_restore.exe`) and plain `.sql` (`psql.exe -v ON_ERROR_STOP=1`). If `pg_restore.exe` under `PostgreSQL\14\bin` is blocked by Windows Application Control, use `-Format plain` with `psql.exe` or install signed PostgreSQL 16 binaries.

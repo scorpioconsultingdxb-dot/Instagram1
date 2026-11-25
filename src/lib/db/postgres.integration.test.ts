@@ -19,6 +19,10 @@ import {
 } from '@/lib/db/repositories/auth-tokens.repo';
 import { getDbProfilePrefs, saveDbProfilePrefs } from '@/lib/db/repositories/profile-prefs.repo';
 import {
+  readDbUserModuleState,
+  updateDbUserModuleState,
+} from '@/lib/db/repositories/user-module-state.repo';
+import {
   loadDbUserWorkspaceState,
   persistDbCreateComparison,
   persistDbCreateFolder,
@@ -57,8 +61,16 @@ import type { SavedProfileRecord } from '@/lib/dashboard/store';
  *   - TEST_DATABASE_URL (admin role for schema/policy/cleanup introspection)
  *   - TEST_DATABASE_APP_URL (restricted `viewora_app` role with `NOBYPASSRLS`)
  */
-const ADMIN_TEST_URL = (process.env.TEST_DATABASE_URL || '').trim();
-const APP_TEST_URL = (process.env.TEST_DATABASE_APP_URL || ADMIN_TEST_URL).trim();
+const ADMIN_TEST_URL = (
+  process.env.TEST_DATABASE_ADMIN_URL ||
+  process.env.TEST_DATABASE_URL ||
+  ''
+).trim();
+const APP_TEST_URL = (
+  process.env.TEST_DATABASE_APP_URL ||
+  (process.env.TEST_DATABASE_ADMIN_URL ? process.env.TEST_DATABASE_URL : '') ||
+  ADMIN_TEST_URL
+).trim();
 
 function makeProfileFixture(username: string, privateNote = ''): SavedProfileRecord {
   const now = new Date().toISOString();
@@ -132,11 +144,11 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     }
   });
 
-  it('verifies all 40 tables, indexes, foreign keys, RLS policies, seeded plans, and restricted viewora_app role', async () => {
+  it('verifies all 58 tables, indexes, foreign keys, RLS policies, seeded plans, and restricted runtime role', async () => {
     const tables = await adminClient.$queryRaw<Array<{ tablename: string }>>`
       SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'
     `;
-    expect(tables.length).toBe(40);
+    expect(tables.length).toBe(58);
 
     const indexes = await adminClient.$queryRaw<Array<{ indexname: string }>>`
       SELECT indexname FROM pg_indexes WHERE schemaname = 'public'
@@ -159,13 +171,13 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     expect(plans.map((p) => p.code)).toEqual(['free', 'starter', 'premium', 'pro', 'agency']);
 
     // Verify restricted runtime role cannot bypass RLS and is not superuser
-    if (process.env.TEST_DATABASE_APP_URL) {
+    if (process.env.TEST_DATABASE_APP_URL || process.env.TEST_DATABASE_ADMIN_URL) {
       const roleInfo = await appClient.$queryRaw<
         Array<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>
       >`
         SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user
       `;
-      expect(roleInfo[0]?.rolname).toBe('viewora_app');
+      expect(['viewora_app', 'viewora_test_app']).toContain(roleInfo[0]?.rolname);
       expect(roleInfo[0]?.rolsuper).toBe(false);
       expect(roleInfo[0]?.rolbypassrls).toBe(false);
     }
@@ -606,5 +618,87 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
       where: { action: 'user.account.deleted', targetId: reg.user.id },
     });
     expect(deletionAudits.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('persists Personal Digital HQ 2.0, widgets, and Phase 3 module state in live PostgreSQL with strict cross-user RLS isolation', async () => {
+    const emailA = `hq-a-${randomUUID().slice(0, 8)}@viewora.test`;
+    const emailB = `hq-b-${randomUUID().slice(0, 8)}@viewora.test`;
+
+    const regA = await registerUserWithWorkspace(
+      {
+        email: emailA,
+        password: 'HqUserAPass!2026',
+        fullName: 'HQ Owner A',
+        segment: 'agency',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      appClient
+    );
+    const regB = await registerUserWithWorkspace(
+      {
+        email: emailB,
+        password: 'HqUserBPass!2026',
+        fullName: 'HQ Owner B',
+        segment: 'personal',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      appClient
+    );
+    expect(regA.ok && regB.ok).toBe(true);
+    if (!regA.ok || !regB.ok) return;
+    createdUserIds.push(regA.user.id, regB.user.id);
+
+    // Newly registered users begin with onboardingCompleted = false
+    expect(regA.user.onboardingCompleted).toBe(false);
+
+    // Save extended Personal HQ 2.0 + Onboarding + Widget Visibility for User A
+    const savedA = await saveDbProfilePrefs(
+      regA.user.id,
+      {
+        professionalTitle: 'Live PG Strategist',
+        biography: 'Persisted natively in PostgreSQL 14.25 under RLS.',
+        interests: ['creators', 'agency-reporting'],
+        onboardingSegment: 'agency',
+        onboardingStep: 4,
+        onboardingCompleted: true,
+        coverPreset: 'midnight',
+        coverPosition: 'top',
+        widgetVisibility: { checklist: false, kpis: true },
+      },
+      appClient
+    );
+    expect(savedA.biography).toBe('Persisted natively in PostgreSQL 14.25 under RLS.');
+    expect(savedA.onboardingCompleted).toBe(true);
+    expect(savedA.widgetVisibility.checklist).toBe(false);
+
+    // Persist Phase 3 custom report document for User A without clobbering HQ extended fields
+    await updateDbUserModuleState<Array<{ id: string; title: string }>>(
+      regA.user.id,
+      'customReports',
+      () => [],
+      (prev) => [{ id: 'crpt-live-1', title: 'Live PG Agency Brief' }, ...prev],
+      appClient
+    );
+
+    const reloadedA = await getDbProfilePrefs(regA.user.id, appClient);
+    const reloadedReportsA = await readDbUserModuleState<Array<{ id: string; title: string }>>(
+      regA.user.id,
+      'customReports',
+      () => [],
+      appClient
+    );
+    expect(reloadedA.biography).toBe('Persisted natively in PostgreSQL 14.25 under RLS.');
+    expect(reloadedA.widgetVisibility.checklist).toBe(false);
+    expect(reloadedReportsA).toEqual([{ id: 'crpt-live-1', title: 'Live PG Agency Brief' }]);
+
+    // Strict PostgreSQL RLS isolation: User B querying user_preferences for User A sees ZERO rows
+    const crossRead = await withUserRlsContext(
+      { userId: regB.user.id, role: 'user' },
+      (tx) => tx.userPreference.findUnique({ where: { userId: regA.user.id } }),
+      appClient
+    );
+    expect(crossRead).toBeNull();
   });
 });

@@ -9,16 +9,30 @@ param(
   [int]$RetentionDays = $(if ($env:BACKUP_RETENTION_DAYS) { [int]$env:BACKUP_RETENTION_DAYS } else { 14 }),
   [string]$ContainerName = $(if ($env:POSTGRES_CONTAINER) { $env:POSTGRES_CONTAINER } else { "viewora-postgres" }),
   [string]$DatabaseName = $(if ($env:POSTGRES_DB) { $env:POSTGRES_DB } else { "viewora" }),
-  [string]$AdminUser = $(if ($env:POSTGRES_ADMIN_USER) { $env:POSTGRES_ADMIN_USER } else { "viewora_admin" })
+  [string]$AdminUser = $(if ($env:POSTGRES_ADMIN_USER) { $env:POSTGRES_ADMIN_USER } else { "viewora_admin" }),
+  [ValidateSet("custom", "plain")]
+  [string]$Format = "custom"
 )
 
 $ErrorActionPreference = "Stop"
 
+function Remove-PrismaSchemaParam([string]$url) {
+  if (-not $url) { return $url }
+  $u = [System.UriBuilder]$url
+  if ($u.Query) {
+    $pairs = ($u.Query.TrimStart('?') -split '&') | Where-Object { $_ -and ($_ -notmatch '^schema=') }
+    $u.Query = ($pairs -join '&')
+  }
+  return $u.Uri.AbsoluteUri
+}
+
 New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
 $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
-$outFile = Join-Path $BackupDir "viewora_${DatabaseName}_${timestamp}.dump"
+$ext = if ($Format -eq "plain") { "sql" } else { "dump" }
+$fmtFlag = if ($Format -eq "plain") { "-Fp" } else { "-Fc" }
+$outFile = Join-Path $BackupDir "viewora_${DatabaseName}_${timestamp}.${ext}"
 
-Write-Host "[Viewora Backup] Starting PostgreSQL backup for database '$DatabaseName'..."
+Write-Host "[Viewora Backup] Starting PostgreSQL ($Format) backup for database '$DatabaseName'..."
 
 $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
 $pgDumpCmd = Get-Command pg_dump -ErrorAction SilentlyContinue
@@ -44,22 +58,23 @@ if ($dockerCmd) {
 }
 
 if ($dockerRunning) {
-  $tmpInside = "/tmp/viewora_backup_${timestamp}.dump"
+  $tmpInside = "/tmp/viewora_backup_${timestamp}.${ext}"
   & docker exec -e "PGPASSWORD=$($env:POSTGRES_ADMIN_PASSWORD)" $ContainerName `
-    pg_dump -U $AdminUser -d $DatabaseName -Fc --no-owner --no-acl -f $tmpInside
+    pg_dump -U $AdminUser -d $DatabaseName $fmtFlag --no-owner --no-acl -f $tmpInside
   if ($LASTEXITCODE -ne 0) { throw "docker exec pg_dump failed with exit code $LASTEXITCODE" }
   & docker cp "${ContainerName}:${tmpInside}" $outFile
   & docker exec $ContainerName rm -f $tmpInside | Out-Null
 }
 elseif ($pgDumpExe) {
-  $connUrl = if ($env:DATABASE_ADMIN_URL) { $env:DATABASE_ADMIN_URL } else { $env:DATABASE_URL }
-  if ($connUrl) {
-    & $pgDumpExe $connUrl -Fc --no-owner --no-acl -f $outFile
+  $rawUrl = if ($env:DATABASE_ADMIN_URL) { $env:DATABASE_ADMIN_URL } else { $env:DATABASE_URL }
+  if ($rawUrl) {
+    $cleanUrl = Remove-PrismaSchemaParam $rawUrl
+    & $pgDumpExe $fmtFlag --no-owner --no-acl -f $outFile --dbname=$cleanUrl
   } else {
     $env:PGPASSWORD = $env:POSTGRES_ADMIN_PASSWORD
     $pgHost = if ($env:POSTGRES_HOST) { $env:POSTGRES_HOST } else { "127.0.0.1" }
     $pgPort = if ($env:POSTGRES_PORT) { $env:POSTGRES_PORT } else { "5432" }
-    & $pgDumpExe -h $pgHost -p $pgPort -U $AdminUser -d $DatabaseName -Fc --no-owner --no-acl -f $outFile
+    & $pgDumpExe -h $pgHost -p $pgPort -U $AdminUser -d $DatabaseName $fmtFlag --no-owner --no-acl -f $outFile
   }
   if ($LASTEXITCODE -ne 0) { throw "pg_dump failed with exit code $LASTEXITCODE" }
 }

@@ -1,22 +1,20 @@
-# Viewora — Development Backlog (Updated After Database Activation Audit)
+# Viewora — Development Backlog (Updated After Live PostgreSQL Activation)
 
 **Date:** 2026-11-25  
-**Status Legend:** `Pending Owner Infrastructure` · `Pending Enhancement` · `Deferred (By Scope Restriction)`
+**Status Legend:** `Pending Cloud Provisioning` · `Pending Enhancement` · `Deferred (By Scope Restriction)`
 
 ---
 
-## 1. Pending Owner Infrastructure (Required Before Live Commercial Launch)
+## 1. Pending Cloud Provisioning (Before Multi-Instance Production Hosting)
 
-1. **Local Windows PostgreSQL Provisioning & Live Scenario B Execution (`Pending Owner Infrastructure`):**
-   - Provide local `postgres` superuser password to create `viewora` / `viewora_test` DBs and `viewora_admin` / `viewora_app` roles on the detected native PostgreSQL 14.25 instance (or install PostgreSQL 16), populate `.env.local`, and run `npm.cmd run env:check`, `db:migrate:deploy`, `db:seed` (2×), `db:health`, `db:bootstrap-admin`, `test:db`, and `node scripts/e2e-postgres.mjs` to capture real PostgreSQL-connected screenshots (`pg_e2e_*.png`).
-2. **Windows Application Control Policy for `pg_restore.exe` (`Pending Owner Infrastructure`):**
-   - Allowlist `C:\Program Files\PostgreSQL\14\bin\pg_restore.exe` (or install signed PostgreSQL 16 binaries) to execute a local Windows backup/restore drill via `npm.cmd run db:backup` + `db:restore` + `verify-backup-restore.mjs`.
-3. **Cloud Object Storage Driver (`Pending Infrastructure`):**
-   - Implement an S3 / GCS / Cloudflare R2 driver for `FileStorageDriver` (`src/lib/storage/local-files.ts`) before horizontal autoscaling or serverless deployment so customer avatar/cover uploads persist across stateless instances.
-4. **Distributed Background Worker & Cron Scheduler (`Pending Infrastructure`):**
-   - Connect `JobQueueEngine` to a PostgreSQL `background_jobs` (`SKIP LOCKED`) worker / cloud scheduler for automatic scheduled automation execution.
-5. **Live Lighthouse CI & Assistive Technology Audit (`Pending Staging & Manual QA`):**
-   - Run automated Lighthouse CI and manual screen-reader checks (NVDA / VoiceOver) against a deployed HTTPS staging URL.
+1. **Cloud Object Storage Driver (`Pending Cloud Provisioning`):**
+   - Implement an S3 / GCS / Cloudflare R2 `FileStorageDriver` (`src/lib/storage/local-files.ts`) so custom avatar/cover uploads (`/api/auth/media`) scale across stateless serverless/container replicas.
+2. **Distributed Background Worker & Cron Scheduler (`Pending Cloud Provisioning`):**
+   - Attach a dedicated worker process / cloud scheduler reading PostgreSQL `background_jobs` (`SKIP LOCKED`) for automatic scheduled automation execution.
+3. **Managed PostgreSQL 16 Staging & Live Lighthouse CI (`Pending Cloud Provisioning`):**
+   - Provision managed PG 16 with PgBouncer + `?sslmode=require`, run `npm run env:check -- --strict` + `db:migrate:deploy` + `test:db`, and execute Lighthouse CI + manual NVDA/VoiceOver assistive-tech audits against the HTTPS staging URL.
+4. **Local Windows App Control Policy for `pg_restore.exe` (Optional Workstation Admin Item):**
+   - Plain-SQL backup & restore (`backup.ps1 -Format plain` + `restore.ps1` via `psql.exe`) and custom-format backup (`pg_dump -Fc`) are verified live; allowlisting `pg_restore.exe` (or installing signed PG16) enables local `.dump` restores as well.
 
 ---
 
@@ -24,30 +22,26 @@
 
 1. **Promote `referrals/service.ts` to Native PostgreSQL Tables (`Pending Enhancement`):**
    - Wire `src/lib/referrals/service.ts` directly to the existing `referral_codes`, `referral_attributions`, and `affiliate_accounts` Prisma models (currently fails closed cleanly with `503` on read-only filesystems).
-2. **Dedicated Normalized Tables for Phase 3 Modules (`Optional Future Optimization`):**
-   - Phase 3 user-owned modules (`researchPro`, `customReports`, `agencyOrg`, `automation`) now persist natively in PostgreSQL under RLS-protected `user_preferences.notification_preferences._modules` (zero disk writes, full `ON DELETE CASCADE`). If cross-workspace SQL analytics over custom reports or agency comments is needed at high scale, promote them into dedicated relational tables via an additive migration.
+2. **Optional Normalized Tables for Phase 3 Modules:**
+   - Research Pro, Report Builder, Agency Center, and Automation Center are now verified live in RLS-protected PostgreSQL (`user_preferences.notification_preferences._modules`, zero disk writes, `ON DELETE CASCADE`); normalize into standalone tables only if cross-tenant SQL reporting is needed later.
 
 ---
 
 ## 3. Explicitly Deferred by Scope Restrictions (Do Not Activate Until Authorized)
 
-1. **Stripe Billing & Affiliate Payouts (`Deferred — PAYMENTS_ENABLED=false`):** Locked off across env validation, database feature flag, UI, and API routes.
-2. **Official Meta Graph API / Business Discovery (`Deferred`):** Interfaces preserved; unactivated.
-3. **Gemini Live API (`Deferred`):** Budget/kill-switch interfaces preserved; falls back cleanly to deterministic templates.
-4. **Resend Transactional Email (`Deferred`):** Deduplication interfaces preserved; external email delivery inactive.
-5. **External Analytics Providers (`Deferred`):** First-party consent-aware funnel analytics preserved.
+1. **Stripe Billing & Affiliate Payouts (`Deferred — PAYMENTS_ENABLED=false`)**
+2. **Official Meta Graph API / Business Discovery (`Deferred`)**
+3. **Gemini Live API (`Deferred`)**
+4. **Resend Transactional Email (`Deferred`)**
+5. **External Analytics Providers (`Deferred`)**
 
 ---
 
-## 4. Completed in Database Activation & Hardening Pass
+## 4. Completed in Live PostgreSQL 14.25 Activation Pass
 
-- [x] Thorough Windows PostgreSQL detection (discovered running `postgresql-x64-14` + `pgbouncer` at `C:\Program Files\PostgreSQL\14\bin` and WDAC block on `pg_restore.exe`/`pg_isready.exe`)
-- [x] Created `scripts/db/check-env.mjs` (`npm run env:check`) preflight validator with zero secret output
-- [x] Hardened `scripts/db/create-admin.ts` (`npm run db:bootstrap-admin`) with strong mixed-class password validation (`bootstrap-validation.ts`) and promotion audit logging
-- [x] Enhanced `scripts/db/backup.ps1` & `restore.ps1` with automatic Windows `PostgreSQL\{17..13}\bin` discovery and `DATABASE_ADMIN_URL` restore support
-- [x] Fixed silent PostgreSQL drop of 15 Personal Digital HQ 2.0 / Onboarding / Dashboard fields (`profile-prefs.repo.ts`)
-- [x] Removed browser-only `localStorage` widget visibility persistence (`CustomerDashboard.tsx`) in favor of account-owned `/api/auth/profile` persistence
-- [x] Persisted Research Pro, Report Builder, Agency Center, and Automation Center natively in RLS-protected PostgreSQL (`user-module-state.repo.ts`) for read-only filesystem & multi-instance safety
-- [x] Tightened `GET /api/support` with explicit customer RLS context (`{ userId, role: 'user' }`) and set new user `onboardingCompleted: false` on registration
-- [x] Extended `scripts/e2e-postgres.mjs` to cover free tools, Report Builder, Support tickets, Personal HQ bio/widgets, and full process restart verification
-- [x] Added `src/lib/integration/db-activation.test.ts` (+3 tests; total **84/84 passing** across 17 suites) and re-verified strict Scenario A production QA (**78/78 routes HTTP 200**, `0` errors)
+- [x] Verified `.env.local` git-ignored, upgraded `AUTH_SECRET` to 64-char `base64url`, verified all 4 live DB connections via `npm run env:check`
+- [x] Added Migration 4 (`20261125000004_runtime_role_grants_and_test_role`) and `TEST_DATABASE_ADMIN_URL` runner support (`db:migrate:test`, `db:seed:test`, `test:e2e:pg`)
+- [x] Executed all 4 Prisma migrations + idempotent double seeds on both `viewora` and `viewora_test` + verified `db:health` via `viewora_app`
+- [x] Executed and passed **5/5 live PostgreSQL integration & RLS isolation tests (`npm run test:db`)** through `viewora_test_app` (`58` tables, `74` FKs, `147` indexes, `23` RLS policies)
+- [x] Executed and passed **full live PostgreSQL production browser E2E (`npm run test:e2e:pg`)** including full `next start` restart persistence, super admin bootstrap, locked `payments_enabled` (`403`), account deletion cascade, `0` console/page errors, and **11 live PG screenshots**
+- [x] Fixed Windows `pg_dump` flag ordering & Prisma `?schema=public` stripping in `backup.ps1` / `restore.ps1`, added `-Format plain` (`psql`) restore support, and verified live `.dump` backup + disposable `viewora_restore_test` restore fidelity (**58/58 tables, 74/74 FKs, 147/147 indexes, 23/23 RLS policies**, `restrictedRoleReadVerified: true`)

@@ -169,6 +169,7 @@ async function main() {
   const runtimeDb = inspectPostgresUrl(env.DATABASE_URL);
   const adminDb = inspectPostgresUrl(env.DATABASE_ADMIN_URL);
   const testDb = inspectPostgresUrl(env.TEST_DATABASE_URL);
+  const testAdminDb = inspectPostgresUrl(env.TEST_DATABASE_ADMIN_URL);
 
   if (!runtimeDb.configured) {
     errors.push('DATABASE_URL is not configured in .env.local or process environment.');
@@ -187,7 +188,7 @@ async function main() {
   }
 
   if (!adminDb.configured) {
-    warnings.push('WARN: DATABASE_ADMIN_URL is not set. Separate migration/admin credentials ("viewora_admin") from runtime "viewora_app".');
+    warnings.push('WARN: DATABASE_ADMIN_URL is not set. Separate migration/admin credentials from runtime "viewora_app".');
   } else if (!adminDb.valid) {
     errors.push(`DATABASE_ADMIN_URL is invalid: ${adminDb.error}`);
   } else {
@@ -195,7 +196,7 @@ async function main() {
       `PASS: DATABASE_ADMIN_URL syntax valid (host=${adminDb.host}, db=${adminDb.database}, role=${adminDb.username || 'unset'}).`
     );
     if (runtimeDb.valid && adminDb.username && runtimeDb.username === adminDb.username) {
-      warnings.push('WARN: DATABASE_URL and DATABASE_ADMIN_URL share the same role. Use viewora_app for runtime and viewora_admin for migrations.');
+      warnings.push('WARN: DATABASE_URL and DATABASE_ADMIN_URL share the same role. Use viewora_app for runtime and a separate admin role for migrations.');
     }
   }
 
@@ -207,42 +208,71 @@ async function main() {
         `SAFETY BLOCK: TEST_DATABASE_URL points to the same database ("${testDb.database}") as DATABASE_URL. Use an isolated database (e.g. viewora_test).`
       );
     } else {
-      checks.push(`PASS: TEST_DATABASE_URL isolated (db=${testDb.database}).`);
+      checks.push(`PASS: TEST_DATABASE_URL isolated (db=${testDb.database}, role=${testDb.username || 'unset'}).`);
     }
   } else {
     warnings.push('WARN: TEST_DATABASE_URL is not set (required for npm run test:db).');
   }
 
-  // 6. Live PostgreSQL reachability test when DATABASE_URL is syntactically valid
-  let liveConnection = { tested: false, reachable: false, latencyMs: null, role: null };
-  if (runtimeDb.configured && runtimeDb.valid) {
-    const prisma = new PrismaClient({ datasources: { db: { url: env.DATABASE_URL } } });
+  if (testAdminDb.configured) {
+    if (!testAdminDb.valid) {
+      errors.push(`TEST_DATABASE_ADMIN_URL is invalid: ${testAdminDb.error}`);
+    } else if (runtimeDb.valid && testAdminDb.database === runtimeDb.database && testAdminDb.host === runtimeDb.host) {
+      errors.push(
+        `SAFETY BLOCK: TEST_DATABASE_ADMIN_URL points to the same database ("${testAdminDb.database}") as DATABASE_URL.`
+      );
+    } else {
+      checks.push(`PASS: TEST_DATABASE_ADMIN_URL isolated (db=${testAdminDb.database}, role=${testAdminDb.username || 'unset'}).`);
+    }
+  }
+
+  // 6. Live PostgreSQL reachability & role-privilege checks (zero secrets logged)
+  async function probeConnection(label, url, expectRestricted) {
+    const prisma = new PrismaClient({ datasources: { db: { url } } });
     const started = Date.now();
     try {
-      const rows = await prisma.$queryRaw`SELECT current_user::text AS role, current_database()::text AS db`;
+      const rows = await prisma.$queryRaw`
+        SELECT current_user::text AS role,
+               current_database()::text AS db,
+               r.rolsuper AS is_super,
+               r.rolbypassrls AS bypass_rls
+        FROM pg_roles r
+        WHERE r.rolname = current_user
+      `;
       const row = Array.isArray(rows) ? rows[0] : null;
-      liveConnection = {
-        tested: true,
-        reachable: true,
-        latencyMs: Date.now() - started,
-        role: row?.role ?? null,
-      };
+      const latencyMs = Date.now() - started;
       checks.push(
-        `PASS: PostgreSQL reachable in ${liveConnection.latencyMs}ms (connected as role=${row?.role}, db=${row?.db}).`
+        `PASS: ${label} reachable in ${latencyMs}ms (role=${row?.role}, db=${row?.db}, super=${row?.is_super}, bypassrls=${row?.bypass_rls}).`
       );
+      if (expectRestricted && (row?.is_super || row?.bypass_rls)) {
+        errors.push(`${label} role "${row?.role}" must NOT be superuser or have BYPASSRLS.`);
+      }
+      return { tested: true, reachable: true, latencyMs, role: row?.role ?? null, db: row?.db ?? null };
     } catch (err) {
-      liveConnection = {
-        tested: true,
-        reachable: false,
-        latencyMs: Date.now() - started,
-        role: null,
-      };
+      const latencyMs = Date.now() - started;
       errors.push(
-        `PostgreSQL connection failed (${err instanceof Error ? err.message.split('\n')[0] : 'unreachable'}).`
+        `${label} connection failed (${err instanceof Error ? err.message.split('\n')[0] : 'unreachable'}).`
       );
+      return { tested: true, reachable: false, latencyMs, role: null, db: null };
     } finally {
       await prisma.$disconnect().catch(() => undefined);
     }
+  }
+
+  let liveConnection = { tested: false, reachable: false, latencyMs: null, role: null };
+  const connectionProbes = {};
+  if (runtimeDb.configured && runtimeDb.valid) {
+    liveConnection = await probeConnection('DATABASE_URL', env.DATABASE_URL, true);
+    connectionProbes.mainRuntime = liveConnection;
+  }
+  if (adminDb.configured && adminDb.valid) {
+    connectionProbes.mainAdmin = await probeConnection('DATABASE_ADMIN_URL', env.DATABASE_ADMIN_URL, false);
+  }
+  if (testDb.configured && testDb.valid) {
+    connectionProbes.testRuntime = await probeConnection('TEST_DATABASE_URL', env.TEST_DATABASE_URL, true);
+  }
+  if (testAdminDb.configured && testAdminDb.valid) {
+    connectionProbes.testAdmin = await probeConnection('TEST_DATABASE_ADMIN_URL', env.TEST_DATABASE_ADMIN_URL, false);
   }
 
   const localPgInstalls = detectWindowsPostgresDirs();
@@ -252,6 +282,7 @@ async function main() {
     envFilesFound: { dotEnv: hasDotEnv, dotEnvLocal: hasDotEnvLocal },
     windowsPostgresInstallations: localPgInstalls,
     liveConnection,
+    connectionProbes,
     checks,
     warnings,
     errors,

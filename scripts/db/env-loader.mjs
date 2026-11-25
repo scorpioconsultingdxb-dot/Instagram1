@@ -44,7 +44,9 @@ const mergedEnv = { ...fileEnv, ...process.env };
 
 const [, , mode, ...rest] = process.argv;
 if (!mode) {
-  console.error('Usage: node scripts/db/env-loader.mjs <admin|runtime|test|docker|backup|restore> [args...]');
+  console.error(
+    'Usage: node scripts/db/env-loader.mjs <admin|test-admin|runtime|test|docker|backup|restore> [args...]'
+  );
   process.exit(1);
 }
 
@@ -64,6 +66,16 @@ if (mode === 'admin') {
   }
   if (!mergedEnv.DATABASE_URL) {
     console.error('[viewora:db] ERROR: Set DATABASE_ADMIN_URL or DATABASE_URL in .env.local before running migrations or seeds.');
+    process.exit(1);
+  }
+  const [bin, ...args] = rest;
+  runCommand(bin, args, mergedEnv);
+} else if (mode === 'test-admin') {
+  // Privileged operations against isolated test DB use TEST_DATABASE_ADMIN_URL
+  if (mergedEnv.TEST_DATABASE_ADMIN_URL) {
+    mergedEnv.DATABASE_URL = mergedEnv.TEST_DATABASE_ADMIN_URL;
+  } else {
+    console.error('[viewora:db] ERROR: Set TEST_DATABASE_ADMIN_URL in .env.local before running test database migrations or seeds.');
     process.exit(1);
   }
   const [bin, ...args] = rest;

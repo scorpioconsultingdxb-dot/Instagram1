@@ -1,30 +1,36 @@
 # Viewora — Commercial Production Readiness Assessment
 
 **Date:** 2026-11-25  
-**Overall Verdict:** **APPLICATION CODE READY FOR POSTGRESQL ACTIVATION — NOT YET COMMERCIALLY LIVE** (Live Scenario B verification against a provisioned PostgreSQL database and backup/restore drill remain **Pending Owner Credentials / Infrastructure**).
+**Overall Verdict:** **FULLY ACTIVATED & VERIFIED LOCALLY ON REAL POSTGRESQL 14.25 — READY FOR STAGING / CLOUD PROVISIONING** (Cloud object storage for multi-instance uploads, distributed worker scheduling, HTTPS staging Lighthouse CI, and explicitly excluded external APIs/payments remain for cloud deployment phase).
 
 ---
 
 ## 1. Honest Readiness Matrix
 
-| Domain | Status | Evidence & Remaining Gate |
+| Domain | Status | Verified Evidence |
 | --- | --- | --- |
-| **Build, Lint, Types & Unit/Repo Tests** | **Verified** | `prisma validate/generate` pass · `eslint` `0/0` · `tsc` `0` · **84/84 tests (17 suites)** · **302/302 static pages** |
-| **Public Site Stability (Scenario A — No DB + Read-Only FS)** | **Verified Live** | **78/78 public routes HTTP 200**, 5 locales, 6 viewports (`0px` overflow), dark theme, interactive tool pass, `0` console/page/5xx/stderr errors |
-| **Full PostgreSQL Persistence & RLS Code Architecture** | **Verified (Code + Repo Tests)** | Zero Supabase; 40 Prisma models + 3 SQL migrations + 16 RLS-protected tables; Personal HQ 2.0, Onboarding, Widgets, Research Pro, Report Builder, Agency, Automation, and Support all wired to PostgreSQL under `viewora_app` RLS with zero local disk writes |
-| **Startup Preflight & Super Admin Bootstrap** | **Verified (Code + CLI)** | `npm run env:check` validates config/role separation/safety locks without exposing secrets; `npm run db:bootstrap-admin` enforces mixed-class >= 12-char passwords and writes audit logs |
-| **Live Local PostgreSQL Activation (Scenario B)** | **Pending Owner Credentials** | Native `postgresql-x64-14` (`C:\Program Files\PostgreSQL\14\bin`) + `pgbouncer` detected running on port `5432`/`6432`, but requires owner's `postgres` password to create `viewora` / `viewora_test` DBs and `.env.local`, then run `migrate deploy`, 2× `db:seed`, `db:health`, `test:db`, and `scripts/e2e-postgres.mjs` |
-| **Backup & Disposable Restore Drill** | **Pending Owner Infrastructure** | `backup.ps1` / `restore.ps1` upgraded with auto-discovery; local `PostgreSQL\14\bin\pg_restore.exe` is currently blocked by Windows Application Control and needs allowlisting or PG16 installation |
-| **Stateless Cloud Object Storage & Distributed Workers** | **Pending Cloud Provisioning** | Required before multi-instance / serverless deployment for `/api/auth/media` uploads and scheduled automation jobs (documented in `PRODUCTION_DATABASE_GUIDE.md`) |
+| **Build, Lint, Types & Unit Tests** | **Verified** | `eslint` `0/0` · `tsc` `0` · **84/84 unit tests (17 suites)** · **302/302 static pages** · zero Supabase |
+| **Public Site Resilience (Scenario A — No DB + Read-Only FS)** | **Verified Live** | **78/78 public routes HTTP 200**, 5 locales, 6 viewports (`0px` overflow), dark mode, interactive tool pass, `0` errors |
+| **Independent PostgreSQL Activation (Scenario B — Live PG 14.25)** | **Verified Live** | `env:check` (`ok: true`, all 4 connections), 4 SQL migrations on `viewora` & `viewora_test`, 2× idempotent seed on both DBs, `db:health` healthy via `viewora_app` (`162 ms`) |
+| **Multi-User RLS & Database Security** | **Verified Live** | **5/5 live integration tests (`test:db`)** against `viewora_test` via restricted `viewora_test_app` (`rolsuper=false`, `rolbypassrls=false`): 58 tables, 74 FKs, 147 indexes, 23 RLS policies, private notes inaccessible to admins/other tenants, concurrent quota lock |
+| **End-to-End Customer & Admin Flows + Restart Persistence** | **Verified Live** | **`test:e2e:pg` PASS** (`0` console/page errors, **11 live PG screenshots**): UI registration, onboarding, saved profiles/folders/notes, Personal HQ 2.0, widgets, Report Builder, Support, Membership, **full `next start` restart persistence**, `db:bootstrap-admin` super admin, locked `payments_enabled` (`403`), confirmed account deletion |
+| **Backup & Disposable Restore Fidelity** | **Verified Live** | Custom `.dump` (`166,497` B + SHA-256) + plain `.sql` restore into `viewora_restore_test`: **58/58 tables, 74/74 FKs, 147/147 indexes, 23/23 RLS policies**, synthetic data & `viewora_test_app` RLS read matched (`pg_restore.exe` remains subject to local Windows App Control policy) |
+| **Cloud Object Storage & Distributed Workers** | **Pending Cloud Provisioning** | Needed before multi-instance cloud autoscaling for `/api/auth/media` uploads and scheduled jobs (documented in `PRODUCTION_DATABASE_GUIDE.md`) |
 | **External APIs & Payments (Meta, Gemini, Resend, Stripe)** | **Intentionally Inactive** | Preserved behind clean interfaces; `PAYMENTS_ENABLED=false` strictly locked |
 
 ---
 
-## 2. Exact Owner Activation Sequence (5 Minutes Once Ready)
+## 2. Next Owner Actions
 
-1. Follow [`WINDOWS_POSTGRESQL_SETUP.md`](./WINDOWS_POSTGRESQL_SETUP.md) to create `viewora_admin`, `viewora_app`, `viewora`, `viewora_test`, and `.env.local` (with generated 64-hex `AUTH_SECRET`).
-2. Run `npm.cmd run env:check` → confirm `"ok": true` and live `SELECT 1` latency.
-3. Run `npm.cmd run db:migrate:deploy`, `npm.cmd run db:seed` (twice), `npm.cmd run db:health`, and `npm.cmd run db:bootstrap-admin`.
-4. Run `npm.cmd run test:db` and `node scripts/e2e-postgres.mjs` to complete **Scenario B** and generate live PostgreSQL-connected screenshots (`pg_e2e_*.png`).
-5. Complete a disposable backup/restore drill (`db:backup` → `db:restore -TargetDb viewora_restore_test -ConfirmRestore` → `verify-backup-restore.mjs`) and review [`PRODUCTION_DATABASE_GUIDE.md`](./PRODUCTION_DATABASE_GUIDE.md) before cloud hosting.
-6. Push verified commits to GitHub manually when satisfied (all GitHub operations remain strictly owner-managed).
+1. **Create Your Permanent Super Admin Account** on `viewora` when ready:
+   ```powershell
+   npm.cmd run db:bootstrap-admin
+   ```
+   (Prompts interactively for email, full name, and a strong >= 12-character mixed-class password.)
+2. **Start Viewora Connected to Your Live PostgreSQL Database:**
+   ```powershell
+   npm.cmd run start
+   ```
+   Open `http://localhost:3000/en`, register a real account, and verify `http://localhost:3000/api/health`.
+3. **Manual GitHub Sync:** Push reviewed local commits to GitHub manually when ready.
+4. **Cloud Deployment:** Follow [PRODUCTION_DATABASE_GUIDE.md](./PRODUCTION_DATABASE_GUIDE.md) when provisioning managed PostgreSQL 16 + S3/GCS/R2 object storage.

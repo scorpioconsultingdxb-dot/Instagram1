@@ -279,6 +279,7 @@ async function main() {
     await cdp.goto(`${BASE_URL}/en/register`, 1200);
     const regText = await cdp.eval(`document.body.innerText`);
     assert(!regText.toLowerCase().includes('supabase'), 'Found Supabase text on /register');
+    report.screenshots.push(await cdp.screenshot('pg_e2e_register_1440px.png'));
 
     await cdp.eval(`(() => {
       const setVal = (sel, val) => {
@@ -401,7 +402,7 @@ async function main() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'create',
-          reportType: 'profile_summary',
+          reportType: 'executive_summary',
           title: 'PG Verified Executive Brief',
           description: 'End-to-end PostgreSQL report persistence verification',
           usernames: ['viewora.studio']
@@ -443,6 +444,7 @@ async function main() {
 
     // Log back in via /en/login UI
     await cdp.goto(`${BASE_URL}/en/login`, 1200);
+    report.screenshots.push(await cdp.screenshot('pg_e2e_login_1440px.png'));
     await cdp.eval(`(() => {
       const setVal = (sel, val) => {
         const el = document.querySelector(sel);
@@ -591,6 +593,7 @@ async function main() {
   } finally {
     await stopProcess(chrome);
     await stopProcess(server);
+    await adminDb.user.deleteMany({ where: { email: { in: [synthEmail, synthAdminEmail] } } }).catch(() => undefined);
     await adminDb.$disconnect();
     fs.rmSync(chromeProfileDir, { recursive: true, force: true });
   }

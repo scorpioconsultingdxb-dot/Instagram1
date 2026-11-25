@@ -1,41 +1,42 @@
 # Viewora — PostgreSQL Backup & Restore Verification Report
 
 **Date:** 2026-11-25  
-**Scope:** Backup/restore tooling audit, Windows native PostgreSQL support, integrity verification, and honest execution status.
+**Status:** **LIVE BACKUP & DISPOSABLE RESTORE FIDELITY VERIFIED ON POSTGRESQL 14.25**
 
 ---
 
-## 1. Backup & Restore Tooling Architecture
+## 1. Live Backup & Restore Execution Results
 
-Viewora provides cross-platform PostgreSQL custom-format (`.dump`) backup, SHA-256 checksum verification, retention pruning, and fidelity comparison tooling:
+Executed end-to-end against live local PostgreSQL 14.25 (`127.0.0.1:5432`) without modifying or overwriting the primary `viewora` database:
 
-| Script | Purpose | Safety Controls |
-| --- | --- | --- |
-| `scripts/db/backup.ps1` / `backup.sh` (`npm run db:backup`) | Runs `pg_dump -Fc --no-owner --no-acl` into `./backups/viewora_<db>_<timestamp>.dump` + `.sha256` checksum | Auto-discovers `C:\Program Files\PostgreSQL\{17..13}\bin\pg_dump.exe` when off `PATH`; aborts on 0-byte dump; prunes backups older than `BACKUP_RETENTION_DAYS` (default `14`) |
-| `scripts/db/restore.ps1` / `restore.sh` (`npm run db:restore`) | Verifies `.sha256` checksum, then runs `pg_restore --clean --if-exists --no-owner --no-acl` | **Hard Safety Block:** refuses to run without explicit `-ConfirmRestore`; supports `-TargetDb viewora_restore_test` so the primary database is never overwritten during drills; auto-discovers `C:\Program Files\PostgreSQL\{17..13}\bin\pg_restore.exe` |
-| `scripts/db/verify-backup-restore.mjs` | Seeds synthetic test records (`seed-synthetic`) and compares source vs restored DB (`compare`) | Compares table count (40), FK constraint count, index count, RLS policy count, per-table row counts, representative synthetic records, and live queryability under restricted `viewora_app` RLS |
+### A. Primary Database Custom-Format Backup (`scripts/db/backup.ps1`)
+- **Command:** `scripts/db/backup.ps1 -DatabaseName viewora -Format custom`
+- **Artifact Created:** `backups/viewora_viewora_20261125T185143Z.dump` (`166,497` bytes) + `.sha256` checksum (`131ccb65a5f90c13c383bb73fd1b38bc3e21267b3bd9e9e2681bdf195a1287a2`)
+- **Retention Pruning:** Verified (`14` days default; `backups/` excluded from Git via `.gitignore`).
+
+### B. Full Disposable Restore & Fidelity Comparison (`viewora_test` → `viewora_restore_test`)
+1. Seeded synthetic customer (`backup.synthetic@viewora.test`), workspace, folder, saved profile, private note, Personal HQ preferences (`coverPreset: emerald`), and Premium subscription into `viewora_test` via `scripts/db/verify-backup-restore.mjs seed-synthetic`.
+2. Created SHA-256 verified plain-SQL backup via `scripts/db/backup.ps1 -Format plain` (`SHA-256: 6e9ba877d33de59466275851d1eeaf6b8eb472a4bbfdf6f8ab4a10b2fa579a8c`).
+3. Created disposable database `viewora_restore_test`, restored via `scripts/db/restore.ps1 -TargetDb viewora_restore_test -ConfirmRestore` (verified SHA-256 checksum + `psql -v ON_ERROR_STOP=1`), and re-applied least-privilege runtime grants (`20261125000004_runtime_role_grants_and_test_role/migration.sql`).
+4. Ran `scripts/db/verify-backup-restore.mjs compare` comparing source `viewora_test` vs restored `viewora_restore_test`:
+
+| Metric | Source (`viewora_test`) | Restored (`viewora_restore_test`) | Verdict |
+| --- | ---: | ---: | --- |
+| **Public Tables** | `58` | `58` | **MATCH** |
+| **Foreign Key Constraints** | `74` | `74` | **MATCH** |
+| **Indexes** | `147` | `147` | **MATCH** |
+| **RLS Policies** | `23` | `23` | **MATCH** |
+| **Plans / Billing Options / Entitlements** | `5 / 15 / 65` | `5 / 15 / 65` | **MATCH** |
+| **Feature Flags / CMS Content** | `5 / 6` | `5 / 6` | **MATCH** |
+| **Synthetic Customer, Workspace, Folder, Profile, Note, Subscription** | `1 / 1 / 1 / 1 / 1 / 1` | `1 / 1 / 1 / 1 / 1 / 1` | **MATCH** |
+| **Restricted Runtime Role (`viewora_test_app`) RLS Read** | Verified | `restrictedRoleReadVerified: true` | **PASS** |
+
+5. Dropped disposable `viewora_restore_test`, deleted temporary drill SQL file, and removed `backup.synthetic@viewora.test` from `viewora_test`.
 
 ---
 
-## 2. Improvements Applied in This Pass
+## 2. Real Bugs Fixed During Live Backup/Restore Testing
 
-1. **Automatic Windows PostgreSQL Binary Discovery:** Updated both `scripts/db/backup.ps1` and `scripts/db/restore.ps1` so they automatically locate `pg_dump.exe` and `pg_restore.exe` under `C:\Program Files\PostgreSQL\{17,16,15,14,13}\bin` even when PostgreSQL is not added to the Windows `PATH`.
-2. **Native `DATABASE_ADMIN_URL` Restore Support:** Updated `scripts/db/restore.ps1` to construct the target database connection URI directly from `DATABASE_ADMIN_URL` when `-TargetDb` is provided, removing the need to duplicate passwords across multiple environment variables.
-
----
-
-## 3. Honest Execution Status on Local Windows Machine
-
-- **Live Local Backup/Restore Execution:** **Pending Owner Infrastructure / Credentials.**
-  1. Local `postgresql-x64-14` requires the owner's `postgres` password to create the `viewora` database and `.env.local` before `pg_dump` can connect.
-  2. **Workstation Policy Finding:** Executing `C:\Program Files\PostgreSQL\14\bin\pg_restore.exe` on this Windows machine currently fails with:
-     `An Application Control policy has blocked this file`.
-     Before running a local Windows restore drill, the workstation administrator must either allowlist `pg_restore.exe` in Windows Application Control or install a signed **PostgreSQL 16** distribution permitted by policy.
-- **Prior Real PG16 Backup/Restore Verification (Historical Reference):** Previously executed end-to-end against PostgreSQL 16 in CI Run `45636280310` with matching table/FK/index/RLS counts and verified `viewora_app` RLS reads. Re-run locally or in staging after provisioning using the commands in [`WINDOWS_POSTGRESQL_SETUP.md`](./WINDOWS_POSTGRESQL_SETUP.md).
-
----
-
-## 4. Production Backup Policy Recommendations
-
-- **Storage Hygiene:** Keep `./backups` out of Git (`.gitignore` already excludes `backups/` and `*.dump`), encrypt backup archives at rest (KMS/AES-256), and restrict filesystem permissions to the backup service account only.
-- **Automated Managed Backups:** On managed cloud PostgreSQL (RDS, Cloud SQL, Neon, Crunchy Bridge, DigitalOcean Managed PG), enable daily automated snapshots + continuous WAL archiving / Point-in-Time Recovery (PITR) with >= 14–30 days retention and quarterly disposable restore drills via `verify-backup-restore.mjs`.
+1. **Windows `pg_dump` Flag Ordering:** Fixed `scripts/db/backup.ps1` to pass flags (`-Fc`/`-Fp --no-owner --no-acl -f`) **before** `--dbname=<uri>` (Windows GNU `getopt` rejects flags placed after positional `dbname`).
+2. **Prisma `?schema=public` URI Stripping:** Both `backup.ps1` and `restore.ps1` now strip Prisma's `?schema=public` query parameter before passing URIs to `libpq` (`pg_dump`/`psql`/`pg_restore`).
+3. **Windows Application Control Compatibility:** Because `C:\Program Files\PostgreSQL\14\bin\pg_restore.exe` is blocked by this workstation's Windows Application Control policy, added `-Format plain` (`.sql` + `.sha256`) support to `backup.ps1` and automatic `.sql` restore via `psql.exe -v ON_ERROR_STOP=1` to `restore.ps1`. Custom `.dump` creation (`pg_dump -Fc`) works cleanly; to run `pg_restore.exe` locally on `.dump` archives, allowlist `pg_restore.exe` in Windows App Control or install signed PostgreSQL 16 binaries.

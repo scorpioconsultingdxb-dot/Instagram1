@@ -1,0 +1,53 @@
+# ==============================================================================
+# Viewora — Self-Hosted PostgreSQL Docker Compose Configuration
+# Local development & testing only. Do NOT expose database ports publicly.
+# ==============================================================================
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: viewora-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-viewora}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-viewora_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD in .env.local}
+      VIEWORA_APP_USER: ${POSTGRES_USER:-viewora_app}
+      VIEWORA_APP_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.local}
+      VIEWORA_TEST_DB: ${POSTGRES_TEST_DB:-viewora_test}
+    ports:
+      # Local loopback binding only — never expose 5432 on 0.0.0.0 in development
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Persistent named volume — survives container stop, restart, and recreate
+      - viewora_pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/01-init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER:-viewora_admin} -d ${POSTGRES_DB:-viewora}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - viewora_internal
+
+  # Isolated local-only email capture for development password-reset & verification inspection
+  # External email delivery remains strictly disabled until explicitly authorized.
+  mailpit:
+    image: axllent/mailpit:v1.22
+    container_name: viewora-mailpit
+    restart: unless-stopped
+    profiles: ["dev-mail"]
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    networks:
+      - viewora_internal
+
+volumes:
+  viewora_pgdata:
+    name: viewora_pgdata
+
+networks:
+  viewora_internal:
+    name: viewora_internal
+    driver: bridge

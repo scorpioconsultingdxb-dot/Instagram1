@@ -14,12 +14,13 @@
 /playwright-report
 /test-results
 
-# Environment variables
+# Environment variables & secrets (NEVER commit real credentials)
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+!.env.example
 
 # Logs & debug
 npm-debug.log*
@@ -27,9 +28,18 @@ yarn-debug.log*
 pnpm-debug.log*
 *.log
 
-# Local durable runtime data & headless browser temp dirs
+# Database backups, raw database files & customer file uploads (NEVER commit)
+/backups/
+/pgdata/
+/postgres-data/
 /.viewora-data/
+/.viewora-storage/
 /.tmp-chrome-profile/
+*.dump
+*.sql.gz
+*.backup
+*.sqlite
+*.db
 
 # OS & editor files
 .DS_Store

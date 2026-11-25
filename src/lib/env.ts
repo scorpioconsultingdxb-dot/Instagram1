@@ -3,9 +3,12 @@ import { z } from 'zod';
 const envSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default('Viewora'),
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional().or(z.literal('')),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional().or(z.literal('')),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().optional().or(z.literal('')),
+  DATABASE_URL: z.string().optional().or(z.literal('')),
+  DATABASE_ADMIN_URL: z.string().optional().or(z.literal('')),
+  TEST_DATABASE_URL: z.string().optional().or(z.literal('')),
+  AUTH_SECRET: z.string().optional().or(z.literal('')),
+  AUTH_URL: z.string().url().optional().or(z.literal('')),
+  VIEWORA_STORAGE_DIR: z.string().optional().default('.viewora-storage'),
   DEMO_MODE_ENABLED: z.string().optional().default('false'),
   VIEWORA_ENABLE_DEMO_PROVIDER: z.string().optional().default('true'),
   META_APP_ID: z.string().optional().or(z.literal('')),
@@ -46,9 +49,12 @@ export function getEnv(): AppEnv {
   const parsed = envSchema.safeParse({
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
     NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || 'Viewora',
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    DATABASE_URL: process.env.DATABASE_URL || '',
+    DATABASE_ADMIN_URL: process.env.DATABASE_ADMIN_URL || '',
+    TEST_DATABASE_URL: process.env.TEST_DATABASE_URL || '',
+    AUTH_SECRET: process.env.AUTH_SECRET || '',
+    AUTH_URL: process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+    VIEWORA_STORAGE_DIR: process.env.VIEWORA_STORAGE_DIR || '.viewora-storage',
     DEMO_MODE_ENABLED: process.env.DEMO_MODE_ENABLED ?? 'false',
     VIEWORA_ENABLE_DEMO_PROVIDER: process.env.VIEWORA_ENABLE_DEMO_PROVIDER ?? 'true',
     META_APP_ID: process.env.META_APP_ID || process.env.META_OAUTH_APP_ID || '',
@@ -90,9 +96,23 @@ export function getEnv(): AppEnv {
   return parsed.data;
 }
 
-export function isSupabaseConfigured(): boolean {
-  const env = getEnv();
-  return Boolean(env.NEXT_PUBLIC_SUPABASE_URL && env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+/**
+ * Returns true when an independent PostgreSQL DATABASE_URL is configured.
+ * Zero Supabase credentials are read or required.
+ */
+export function isDatabaseConfigured(): boolean {
+  const url = (process.env.DATABASE_URL || '').trim();
+  return /^postgres(ql)?:\/\//i.test(url);
+}
+
+/**
+ * Returns true when local file-backed dev/test storage fallback is permitted.
+ * Strictly disabled in production unless explicitly running local E2E verification.
+ */
+export function isLocalDevFallbackAllowed(): boolean {
+  if (isDatabaseConfigured()) return false;
+  if (process.env.NODE_ENV !== 'production') return true;
+  return process.env.VIEWORA_ALLOW_LOCAL_DEV_STORAGE === 'true';
 }
 
 /**

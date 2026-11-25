@@ -21,7 +21,7 @@ import { getDictionary } from '@/i18n/get-dictionary';
 import { buildPageMetadata } from '@/lib/seo/metadata';
 import { defaultProviderRegistry, getDemoFixtureUsernames } from '@/lib/providers';
 import { FREE_TOOLS } from '@/lib/tools/catalog';
-import { calculateIntervalPrice } from '@/lib/entitlements/catalog';
+import { calculateIntervalPrice, INITIAL_PLANS } from '@/lib/entitlements/catalog';
 import { loadConfiguredPlans } from '@/lib/entitlements/service';
 import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';
 import { MembershipBadge } from '@/components/ui/Primitives';
@@ -56,9 +56,9 @@ export default async function HomePage({
   const { locale } = await params;
   const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
   const dict = getDictionary(safeLocale);
-  const providerHealth = await defaultProviderRegistry.checkAllHealth();
+  const providerHealth = await defaultProviderRegistry.checkAllHealth().catch(() => []);
   const sampleHandles = getDemoFixtureUsernames();
-  const plans = (await loadConfiguredPlans()).filter((p) => p.isActive);
+  const plans = (await loadConfiguredPlans().catch(() => INITIAL_PLANS)).filter((p) => p.isActive);
 
   const faqItems: FaqItem[] = [
     {
@@ -79,7 +79,7 @@ export default async function HomePage({
     {
       question: 'Are subscription payments enabled right now?',
       answer:
-        'No. All five tiers are shown for transparent commercial preview while server-side payments remain strictly disabled (PAYMENTS_ENABLED=false).',
+        'No. All five membership tiers are shown for transparent preview while live billing and payment collection remain disabled.',
     },
     {
       question: 'Can I organize research notes privately inside my own workspace?',
@@ -104,7 +104,7 @@ export default async function HomePage({
   };
 
   return (
-    <div className="viewora-hero-glow">
+    <div className="viewora-hero-glow" data-page-ready="homepage">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}

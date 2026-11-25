@@ -12,7 +12,7 @@ import { buildPageMetadata } from '@/lib/seo/metadata';
 import { getDemoFixtureUsernames } from '@/lib/providers';
 import { getAllToolSlugs, getToolBySlug } from '@/lib/tools/catalog';
 import { getAllInfoPageSlugs, getInfoPageBySlug } from '@/lib/public/info-pages';
-import { getPublishedCmsBySlug } from '@/lib/admin/store';
+import { loadPublishedCmsBySlug } from '@/lib/admin/store';
 import { ToolPageView } from '@/components/tools/ToolPageView';
 import { ContactForm } from '@/components/public/ContactForm';
 import { Breadcrumbs } from '@/components/ui/Primitives';
@@ -71,12 +71,14 @@ export default async function PublicSlugPage({
   const tool = getToolBySlug(slug);
   if (tool) {
     return (
-      <ToolPageView
-        tool={tool}
-        locale={safeLocale}
-        dict={dict}
-        sampleHandles={getDemoFixtureUsernames()}
-      />
+      <div data-page-ready={`tool-${tool.slug}`}>
+        <ToolPageView
+          tool={tool}
+          locale={safeLocale}
+          dict={dict}
+          sampleHandles={getDemoFixtureUsernames()}
+        />
+      </div>
     );
   }
 
@@ -85,7 +87,7 @@ export default async function PublicSlugPage({
     notFound();
   }
 
-  const publishedCms = getPublishedCmsBySlug(info.slug, safeLocale);
+  const publishedCms = await loadPublishedCmsBySlug(info.slug, safeLocale).catch(() => null);
 
   const structuredData =
     info.slug === 'faq'
@@ -118,7 +120,10 @@ export default async function PublicSlugPage({
           };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+    <div
+      className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8"
+      data-page-ready={`info-${info.slug}`}
+    >
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}

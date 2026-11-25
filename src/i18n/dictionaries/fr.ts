@@ -79,7 +79,7 @@ export const fr: Dictionary = {
     subtitle:
       'Commencez gratuitement avec les consultations de profils publics et 12 outils d’analyse et de planification. Découvrez nos formules adaptées aux particuliers, entreprises et agences.',
     demoNoticeTitle:
-      'Tarifs de Démonstration Uniquement — Paiements Strictement Désactivés (PAYMENTS_ENABLED=false)',
+      'Tarifs d’Aperçu — Paiements Actuellement Désactivés',
     demoNoticeBody:
       'Les cinq formules ci-dessous sont synchronisées directement depuis le moteur centralisé de droits Viewora. Aucune carte bancaire n’est demandée et aucun prélèvement n’est effectué tant que la facturation n’est pas autorisée.',
     monthly: 'Mensuel',

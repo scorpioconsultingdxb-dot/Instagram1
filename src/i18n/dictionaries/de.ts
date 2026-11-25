@@ -79,7 +79,7 @@ export const de: Dictionary = {
     subtitle:
       'Starte kostenlos mit öffentlichen Profilabfragen und 12 Analyse- & Planungs-Tools. Entdecke berechtigungsbasierte Tarife für Privat-, Business- und Agentur-Workflows.',
     demoNoticeTitle:
-      'Nur Demonstrationspreise — Live-Zahlungen Strikt Deaktiviert (PAYMENTS_ENABLED=false)',
+      'Vorschaupreise — Live-Zahlungen Derzeit Deaktiviert',
     demoNoticeBody:
       'Alle fünf Mitgliedschaftsstufen unten werden direkt aus Vieworas zentraler Berechtigungs-Engine synchronisiert. Es werden keine Kreditkarten erfasst und keine Gebühren erhoben, solange Live-Billing nicht ausdrücklich freigegeben wurde.',
     monthly: 'Monatlich',

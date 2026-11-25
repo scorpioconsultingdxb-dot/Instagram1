@@ -34,13 +34,13 @@ const signupSchema = z.object({
     .object({
       productUpdates: z.boolean().default(false),
       weeklyDigest: z.boolean().default(false),
-      trackingAlerts: z.boolean().default(true),
+      trackingAlerts: z.boolean().default(false),
       marketing: z.boolean().default(false),
     })
     .default({
       productUpdates: false,
       weeklyDigest: false,
-      trackingAlerts: true,
+      trackingAlerts: false,
       marketing: false,
     }),
 });
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
       {
         ok: false,
         error:
-          'Registration requires a reachable PostgreSQL database (DATABASE_URL). Service temporarily unavailable.',
+          'Account registration is temporarily unavailable. You can continue exploring our free tools.',
       },
       { status: 503 }
     );

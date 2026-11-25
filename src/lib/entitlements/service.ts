@@ -125,7 +125,8 @@ export function getUserEntitlementOverrides(userId: string): EntitlementOverride
 }
 
 /**
- * Independent PostgreSQL (Prisma) plan loader with local dev fallback when unconfigured.
+ * Independent PostgreSQL (Prisma) plan loader with safe static catalog fallback.
+ * Never performs local filesystem I/O in production when PostgreSQL is unavailable.
  */
 export async function loadConfiguredPlans(): Promise<PlanDefinition[]> {
   if (isDatabaseConfigured()) {
@@ -133,10 +134,13 @@ export async function loadConfiguredPlans(): Promise<PlanDefinition[]> {
       const plans = await loadDbPlans();
       if (plans.length > 0) return plans;
     } catch {
-      // Fall back to static catalog for public pricing display if DB is temporarily unreachable
+      // Fall back to static reviewed catalog for public pricing display if DB is unreachable
     }
   }
-  return loadPlans();
+  if (isLocalDevFallbackAllowed()) {
+    return loadPlans();
+  }
+  return cloneInitialPlans();
 }
 
 export async function persistConfiguredPlan(
@@ -174,7 +178,10 @@ export async function loadUserEntitlementOverrides(userId: string): Promise<Enti
       return [];
     }
   }
-  return getUserEntitlementOverrides(userId);
+  if (isLocalDevFallbackAllowed()) {
+    return getUserEntitlementOverrides(userId);
+  }
+  return [];
 }
 
 /**
@@ -189,12 +196,13 @@ export function resolveEntitlements(params: {
   disabledFeatureFlags?: FeatureKey[];
   plans?: PlanDefinition[];
 }): ResolvedEntitlements {
-  const plans = params.plans ?? loadPlans();
+  const plans =
+    params.plans ?? (isLocalDevFallbackAllowed() ? loadPlans() : cloneInitialPlans());
   const plan = getPlanByCode(params.planCode, plans);
   const now = Date.now();
 
   const combinedOverrides = [
-    ...(params.userId && !isDatabaseConfigured() ? getUserEntitlementOverrides(params.userId) : []),
+    ...(params.userId && isLocalDevFallbackAllowed() ? getUserEntitlementOverrides(params.userId) : []),
     ...(params.overrides ?? []),
   ];
 

@@ -6,9 +6,12 @@ import {
   AlertCircle,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
+  Clock,
   Eye,
   EyeOff,
   Loader2,
+  Wrench,
 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Locale } from '@/i18n/config';
@@ -50,16 +53,19 @@ export function SignupForm({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [segment, setSegment] = useState<CustomerSegment>(initialSegment);
+  const [showMorePrefs, setShowMorePrefs] = useState(false);
   const [runOnboarding, setRunOnboarding] = useState(true);
+  // All optional communications are explicit opt-ins (false by default)
   const [emailPreferences, setEmailPreferences] = useState({
     productUpdates: false,
     weeklyDigest: false,
-    trackingAlerts: true,
+    trackingAlerts: false,
     marketing: false,
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const registrationAvailable = databaseConfigured || demoModeEnabled;
   const safeNext = safeClientRedirect(redirectTo);
 
   const pwChecks = {
@@ -88,6 +94,10 @@ export function SignupForm({
     e.preventDefault();
     setError(null);
 
+    if (!registrationAvailable) {
+      setError('Account registration is temporarily unavailable. You can continue exploring our free tools.');
+      return;
+    }
     if (fullName.trim().length < 2) {
       setError('Please enter your full name (at least 2 characters).');
       return;
@@ -135,7 +145,7 @@ export function SignupForm({
       }
       router.refresh();
     } catch {
-      setError('Unable to reach the registration service right now. Please try again.');
+      setError('Unable to reach the registration service right now. Please try again shortly.');
     } finally {
       setLoading(false);
     }
@@ -147,14 +157,43 @@ export function SignupForm({
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
-      {!databaseConfigured && !demoModeEnabled ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-          <p className="font-bold">PostgreSQL Database Configuration Required</p>
-          <p className="mt-1 leading-relaxed">
-            New account registration requires a configured PostgreSQL{' '}
-            <code className="font-mono">DATABASE_URL</code>. Local demo registration is disabled by
-            default (<code className="font-mono">DEMO_MODE_ENABLED=false</code>).
-          </p>
+      {!registrationAvailable ? (
+        <div
+          role="status"
+          data-auth-status="unavailable"
+          className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/35 dark:text-amber-200"
+        >
+          <div className="flex items-start gap-2.5">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <div className="space-y-2.5">
+              <p className="font-bold">Account services are temporarily unavailable</p>
+              <p className="leading-relaxed">
+                New account registration is temporarily paused. You can continue exploring all 12
+                free Instagram calculators and public analytics guides right away.
+              </p>
+              <div className="flex flex-wrap gap-2 pt-0.5">
+                <Link
+                  href={`/${locale}/tools`}
+                  className="inline-flex items-center gap-1 rounded-lg bg-[#7957FF] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#6941EF]"
+                >
+                  <Wrench className="h-3 w-3" aria-hidden="true" />
+                  Explore Free Tools
+                </Link>
+                <Link
+                  href={`/${locale}`}
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-amber-950 hover:bg-amber-100/60 dark:border-amber-800 dark:bg-[#131C2E] dark:text-amber-200"
+                >
+                  Return to Homepage
+                </Link>
+                <Link
+                  href={`/${locale}/contact`}
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-amber-950 hover:bg-amber-100/60 dark:border-amber-800 dark:bg-[#131C2E] dark:text-amber-200"
+                >
+                  Contact Support
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -164,10 +203,10 @@ export function SignupForm({
         </div>
       ) : null}
 
-      {initialHandle ? (
+      {initialHandle && registrationAvailable ? (
         <div className="rounded-xl border border-violet-200 bg-violet-50/80 px-4 py-3 text-xs text-violet-950 dark:border-[#263047] dark:bg-[#192337] dark:text-violet-200">
           Your search for <span className="font-mono font-bold">@{initialHandle}</span> will be
-          carried into your first workspace step after registration.
+          carried into your workspace setup after registration.
         </div>
       ) : null}
 
@@ -185,11 +224,11 @@ export function SignupForm({
             required
             minLength={2}
             autoComplete="name"
-            disabled={loading}
+            disabled={loading || !registrationAvailable}
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             placeholder="Alex Rivera"
-            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
+            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
           />
         </div>
 
@@ -205,11 +244,11 @@ export function SignupForm({
             type="email"
             required
             autoComplete="email"
-            disabled={loading}
+            disabled={loading || !registrationAvailable}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
+            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
           />
         </div>
       </div>
@@ -228,12 +267,12 @@ export function SignupForm({
             required
             minLength={8}
             autoComplete="new-password"
-            disabled={loading}
+            disabled={loading || !registrationAvailable}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             aria-describedby="signup-password-hints"
             placeholder={t.createPasswordPlaceholder}
-            className="h-11 w-full rounded-xl border border-slate-300 bg-white pr-11 pl-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
+            className="h-11 w-full rounded-xl border border-slate-300 bg-white pr-11 pl-3.5 text-sm text-[#0F172A] disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
           />
           <button
             type="button"
@@ -309,10 +348,13 @@ export function SignupForm({
       </div>
 
       {/* Segment Onboarding Selector */}
-      <fieldset>
+      <fieldset disabled={!registrationAvailable}>
         <legend className="text-xs font-semibold text-[#0F172A] dark:text-slate-200">
           {t.segmentLegend}
         </legend>
+        <p className="mt-0.5 text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+          Tailors your workspace layout. All new accounts start on the Free membership tier.
+        </p>
         <div className="mt-2 grid gap-2.5 sm:grid-cols-3">
           {(
             [
@@ -324,9 +366,10 @@ export function SignupForm({
             <button
               key={opt.id}
               type="button"
+              disabled={!registrationAvailable}
               aria-pressed={segment === opt.id}
               onClick={() => setSegment(opt.id)}
-              className={`rounded-xl border p-3 text-left transition ${
+              className={`rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
                 segment === opt.id
                   ? 'border-[#7957FF] bg-violet-50/80 ring-1 ring-[#7957FF] dark:border-[#A99AFF] dark:bg-[#192337]'
                   : 'border-slate-200 bg-white hover:border-slate-300 dark:border-[#263047] dark:bg-[#080D19]'
@@ -343,52 +386,67 @@ export function SignupForm({
         </div>
       </fieldset>
 
-      {/* Transparent, User-Controlled Email Preferences */}
-      <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-[#263047] dark:bg-[#0F172A]">
-        <legend className="text-xs font-semibold text-[#0F172A] dark:text-slate-200">
-          {t.prefsLegend}
-        </legend>
-        <div className="mt-2.5 space-y-2 text-xs text-[#0F172A] dark:text-slate-300">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={runOnboarding}
-              onChange={(e) => setRunOnboarding(e.target.checked)}
-            />
-            <span>{t.prefOnboarding}</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={emailPreferences.trackingAlerts}
-              onChange={(e) =>
-                setEmailPreferences({ ...emailPreferences, trackingAlerts: e.target.checked })
-              }
-            />
-            <span>{t.prefTrackingAlerts}</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={emailPreferences.weeklyDigest}
-              onChange={(e) =>
-                setEmailPreferences({ ...emailPreferences, weeklyDigest: e.target.checked })
-              }
-            />
-            <span>{t.prefWeeklyDigest}</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={emailPreferences.marketing}
-              onChange={(e) =>
-                setEmailPreferences({ ...emailPreferences, marketing: e.target.checked })
-              }
-            />
-            <span>{t.prefMarketing}</span>
-          </label>
-        </div>
-      </fieldset>
+      {/* Progressive Disclosure for Optional Preferences (Explicit Opt-Ins) */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 dark:border-[#263047] dark:bg-[#0F172A]">
+        <button
+          type="button"
+          aria-expanded={showMorePrefs}
+          onClick={() => setShowMorePrefs((prev) => !prev)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left text-xs font-semibold text-[#0F172A] dark:text-slate-200"
+        >
+          <span>{t.prefsLegend} (Optional)</span>
+          <ChevronDown
+            className={`h-4 w-4 text-[#64748B] transition-transform ${showMorePrefs ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          />
+        </button>
+        {showMorePrefs ? (
+          <div className="space-y-2 border-t border-slate-200 px-4 py-3 text-xs text-[#0F172A] dark:border-[#263047] dark:text-slate-300">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                disabled={!registrationAvailable}
+                checked={runOnboarding}
+                onChange={(e) => setRunOnboarding(e.target.checked)}
+              />
+              <span>{t.prefOnboarding}</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                disabled={!registrationAvailable}
+                checked={emailPreferences.trackingAlerts}
+                onChange={(e) =>
+                  setEmailPreferences({ ...emailPreferences, trackingAlerts: e.target.checked })
+                }
+              />
+              <span>{t.prefTrackingAlerts}</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                disabled={!registrationAvailable}
+                checked={emailPreferences.weeklyDigest}
+                onChange={(e) =>
+                  setEmailPreferences({ ...emailPreferences, weeklyDigest: e.target.checked })
+                }
+              />
+              <span>{t.prefWeeklyDigest}</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                disabled={!registrationAvailable}
+                checked={emailPreferences.marketing}
+                onChange={(e) =>
+                  setEmailPreferences({ ...emailPreferences, marketing: e.target.checked })
+                }
+              />
+              <span>{t.prefMarketing}</span>
+            </label>
+          </div>
+        ) : null}
+      </div>
 
       {error ? (
         <div
@@ -402,14 +460,16 @@ export function SignupForm({
 
       <button
         type="submit"
-        disabled={loading}
-        className="viewora-btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold shadow-sm disabled:opacity-60"
+        disabled={loading || !registrationAvailable}
+        className="viewora-btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             {t.creatingWorkspace}
           </>
+        ) : !registrationAvailable ? (
+          'Registration Temporarily Unavailable'
         ) : (
           <>
             {t.createAccountCta}

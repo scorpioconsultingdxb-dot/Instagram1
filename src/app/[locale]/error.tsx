@@ -16,7 +16,10 @@ export default function LocaleErrorBoundary({
   }, [error]);
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-20 text-center">
+    <div
+      className="mx-auto max-w-lg px-4 py-20 text-center"
+      data-error-boundary="locale"
+    >
       <div
         role="alert"
         className="viewora-card-elevated rounded-3xl border-rose-200 p-8 dark:border-rose-900/60"
@@ -28,8 +31,8 @@ export default function LocaleErrorBoundary({
           Something went wrong loading this view
         </h1>
         <p className="mt-2 text-xs leading-relaxed text-[#64748B] dark:text-[#94A3B8]">
-          An unexpected rendering error interrupted this page. Your saved data remains safe. Try
-          reloading this view or returning to the homepage.
+          An unexpected error interrupted this page. Try reloading this view, exploring our free
+          tools, or returning to the homepage.
         </p>
         {error.digest ? (
           <p className="mt-3 font-mono text-[11px] text-[#64748B]">Reference: {error.digest}</p>
@@ -43,6 +46,12 @@ export default function LocaleErrorBoundary({
             <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
             Try Again
           </button>
+          <Link
+            href="/en/tools"
+            className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-slate-200"
+          >
+            Explore Free Tools
+          </Link>
           <Link
             href="/en"
             className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-[#0F172A] hover:border-[#7957FF] dark:border-[#263047] dark:text-slate-200"

@@ -79,7 +79,7 @@ export const ptBR: Dictionary = {
     subtitle:
       'Comece grátis com consultas de perfis públicos e 12 ferramentas de análise e planejamento. Explore planos orientados a direitos para uso Pessoal, Empresarial e Agências.',
     demoNoticeTitle:
-      'Preços Apenas para Demonstração — Pagamentos Estritamente Desativados (PAYMENTS_ENABLED=false)',
+      'Preços de Prévia — Pagamentos Atualmente Desativados',
     demoNoticeBody:
       'Todos os cinco níveis de assinatura abaixo são sincronizados diretamente pelo motor centralizado de direitos do Viewora. Nenhum cartão é solicitado e nenhuma cobrança é feita até que o faturamento ao vivo seja explicitamente autorizado.',
     monthly: 'Mensal',

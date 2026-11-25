@@ -40,8 +40,21 @@ export default async function RegisterPage({
     segment === 'business' || segment === 'agency' ? segment : 'personal';
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-12 sm:px-6">
+    <div className="mx-auto max-w-xl px-4 py-12 sm:px-6" data-page-ready="register">
       <div className="viewora-card-elevated rounded-3xl p-7 sm:p-8">
+        <div className="mb-5 flex items-center gap-2.5">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#7957FF] to-[#22D3EE] font-display text-sm font-extrabold text-white shadow-sm">
+            V
+          </span>
+          <div>
+            <p className="font-display text-sm font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
+              Viewora
+            </p>
+            <p className="text-[11px] font-medium text-[#64748B] dark:text-[#94A3B8]">
+              Explore More. Discover More.
+            </p>
+          </div>
+        </div>
         <h1 className="font-display text-2xl font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
           {dict.auth.registerTitle}
         </h1>

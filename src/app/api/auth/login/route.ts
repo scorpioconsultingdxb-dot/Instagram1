@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
       {
         ok: false,
         error:
-          'Authentication requires a reachable PostgreSQL database (DATABASE_URL). Service temporarily unavailable.',
+          'Account sign-in is temporarily unavailable. You can continue exploring our free tools.',
       },
       { status: 503 }
     );

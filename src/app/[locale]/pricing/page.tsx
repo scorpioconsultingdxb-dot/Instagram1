@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { buildPageMetadata } from '@/lib/seo/metadata';
+import { INITIAL_PLANS } from '@/lib/entitlements/catalog';
 import { loadConfiguredPlans } from '@/lib/entitlements/service';
 import { getCurrentSessionUser } from '@/lib/auth/session';
 import { isPaymentsEnabled } from '@/lib/env';
@@ -34,12 +35,12 @@ export default async function PricingPage({
   const { locale } = await params;
   const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
   const dict = getDictionary(safeLocale);
-  const plans = (await loadConfiguredPlans()).filter((p) => p.isActive);
+  const plans = (await loadConfiguredPlans().catch(() => INITIAL_PLANS)).filter((p) => p.isActive);
   const paymentsEnabled = isPaymentsEnabled();
-  const user = await getCurrentSessionUser();
+  const user = await getCurrentSessionUser().catch(() => null);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8" data-page-ready="pricing">
       <div className="mx-auto max-w-2xl text-center">
         <span className="inline-block rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-bold text-[#6941EF] dark:border-violet-800/60 dark:bg-violet-950/60 dark:text-[#A99AFF]">
           {dict.pricing.badge}

@@ -17,13 +17,18 @@ export default async function ReferralLandingPage({
   const safeLocale: Locale = isSupportedLocale(locale) ? locale : DEFAULT_LOCALE;
   const normalizedCode = code.trim().toUpperCase();
 
-  const record = getReferralCodeRecord(normalizedCode);
-  if (record) {
-    recordReferralLandingVisit(normalizedCode, utm_campaign);
+  let record = null;
+  try {
+    record = getReferralCodeRecord(normalizedCode);
+    if (record) {
+      recordReferralLandingVisit(normalizedCode, utm_campaign);
+    }
+  } catch {
+    // Never crash public referral landing pages on read-only filesystems
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-14 sm:px-6">
+    <div className="mx-auto max-w-2xl px-4 py-14 sm:px-6" data-page-ready="referral-landing">
       <div className="viewora-card-elevated rounded-3xl p-8 text-center">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-[#6941EF] dark:bg-violet-950/60 dark:text-[#A99AFF]">
           <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />

@@ -339,8 +339,38 @@ export function listCmsContent(): CmsContentRecord[] {
 }
 
 export function getPublishedCmsBySlug(slug: string, locale: string): CmsContentRecord | null {
-  const items = listCmsContent().filter((c) => c.slug === slug && c.isPublished);
-  return items.find((c) => c.locale === locale) ?? items.find((c) => c.locale === 'en') ?? null;
+  try {
+    const sourceItems = isLocalDevFallbackAllowed()
+      ? listCmsContent()
+      : createDefaultAdminState().cmsItems;
+    const items = sourceItems.filter((c) => c.slug === slug && c.isPublished);
+    return items.find((c) => c.locale === locale) ?? items.find((c) => c.locale === 'en') ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Safe public CMS loader: queries PostgreSQL when configured, degrades gracefully
+ * to reviewed static CMS defaults if the database is unavailable or unconfigured,
+ * and never performs filesystem writes on public page requests.
+ */
+export async function loadPublishedCmsBySlug(
+  slug: string,
+  locale: string
+): Promise<CmsContentRecord | null> {
+  if (isDatabaseConfigured()) {
+    try {
+      const dbItems = await loadDbCmsContent();
+      const published = dbItems.filter((c) => c.slug === slug && c.isPublished);
+      const match =
+        published.find((c) => c.locale === locale) ?? published.find((c) => c.locale === 'en');
+      if (match) return match;
+    } catch {
+      // Degrade gracefully to reviewed static CMS fallback on DB connectivity errors
+    }
+  }
+  return getPublishedCmsBySlug(slug, locale);
 }
 
 export function updateCmsContent(

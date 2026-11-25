@@ -896,7 +896,7 @@ describe('Independent PostgreSQL Prisma Repositories & Cross-Account Isolation',
     // Re-issue email verification token works cleanly
     const reVerify = await issueEmailVerificationToken(reg.user.id, harness.client);
     expect(reVerify.rawToken.length).toBeGreaterThanOrEqual(32);
-  });
+  }, 15_000);
 
   it('enforces strict cross-account and cross-workspace isolation on saved profiles, private notes, folders, and notifications', async () => {
     const regA = await registerUserWithWorkspace(

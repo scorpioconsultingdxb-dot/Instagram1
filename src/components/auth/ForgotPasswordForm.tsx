@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Loader2, Wrench } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Locale } from '@/i18n/config';
 
@@ -22,6 +22,11 @@ export function ForgotPasswordForm({
     setError(null);
     setSuccess(null);
 
+    if (!databaseConfigured) {
+      setError('Account recovery is temporarily unavailable. You can continue exploring our free tools.');
+      return;
+    }
+
     if (!email.trim().includes('@')) {
       setError('Please enter a valid account email address.');
       return;
@@ -41,10 +46,10 @@ export function ForgotPasswordForm({
       }
       setSuccess(
         json.message ??
-          'If an account exists for that email address, recovery instructions have been dispatched.'
+          'If an account exists for that email address, recovery instructions have been recorded.'
       );
     } catch {
-      setError('Unable to reach the recovery service right now. Please try again.');
+      setError('Unable to reach the recovery service right now. Please try again shortly.');
     } finally {
       setLoading(false);
     }
@@ -53,10 +58,36 @@ export function ForgotPasswordForm({
   return (
     <div className="space-y-4">
       {!databaseConfigured ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-          <strong>Database Required for Recovery:</strong> Configure{' '}
-          <code className="font-mono">DATABASE_URL</code> to generate single-use password reset
-          tokens. External email delivery remains disabled until authorized.
+        <div
+          role="status"
+          data-auth-status="unavailable"
+          className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/35 dark:text-amber-200"
+        >
+          <div className="flex items-start gap-2.5">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <div className="space-y-2">
+              <p className="font-bold">Account recovery is temporarily unavailable</p>
+              <p className="leading-relaxed">
+                Password recovery is currently paused while account services are offline. You can
+                continue using our free tools or contact support for assistance.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/${locale}/tools`}
+                  className="inline-flex items-center gap-1 rounded-lg bg-[#7957FF] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#6941EF]"
+                >
+                  <Wrench className="h-3 w-3" aria-hidden="true" />
+                  Explore Free Tools
+                </Link>
+                <Link
+                  href={`/${locale}/contact`}
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-amber-950 dark:border-amber-800 dark:bg-[#131C2E] dark:text-amber-200"
+                >
+                  Contact Support
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -73,11 +104,11 @@ export function ForgotPasswordForm({
             type="email"
             required
             autoComplete="email"
-            disabled={loading}
+            disabled={loading || !databaseConfigured}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@company.com"
-            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
+            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
           />
         </div>
 
@@ -103,14 +134,16 @@ export function ForgotPasswordForm({
 
         <button
           type="submit"
-          disabled={loading}
-          className="viewora-btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold disabled:opacity-60"
+          disabled={loading || !databaseConfigured}
+          className="viewora-btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               Checking recovery service…
             </>
+          ) : !databaseConfigured ? (
+            'Recovery Temporarily Unavailable'
           ) : (
             'Request Password Recovery'
           )}

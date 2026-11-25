@@ -2,7 +2,16 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowRight,
+  Clock,
+  Eye,
+  EyeOff,
+  Loader2,
+  ShieldCheck,
+  Wrench,
+} from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/types';
@@ -22,6 +31,18 @@ function safeClientRedirect(raw: string | undefined, fallback: string): string {
     return fallback;
   }
   return trimmed;
+}
+
+function friendlyDestinationLabel(destination: string): string {
+  if (destination.includes('/admin')) return 'the Administration Console';
+  if (destination.includes('/dashboard/profile')) return 'your Personal Digital Headquarters';
+  if (destination.includes('/dashboard/projects')) return 'your Research Workspace';
+  if (destination.includes('/dashboard/analytics')) return 'your Analytics Workspace';
+  if (destination.includes('/dashboard/report-builder')) return 'the Report Builder';
+  if (destination.includes('/dashboard/agency')) return 'your Agency Collaboration Center';
+  if (destination.includes('/onboarding')) return 'your workspace setup';
+  if (destination.includes('/dashboard')) return 'your Viewora workspace';
+  return 'your requested page';
 }
 
 export function LoginForm({
@@ -46,9 +67,14 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const authAvailable = databaseConfigured || demoModeEnabled;
   const destination = safeClientRedirect(redirectTo, `/${locale}/dashboard`);
 
   const submitLogin = async (loginEmail: string, loginPassword: string) => {
+    if (!authAvailable) {
+      setError('Account services are temporarily unavailable. You can continue exploring our free tools.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -65,7 +91,7 @@ export function LoginForm({
       router.push(destination);
       router.refresh();
     } catch {
-      setError('Unable to reach the authentication service right now. Please try again.');
+      setError('Unable to reach the sign-in service right now. Please try again shortly.');
     } finally {
       setLoading(false);
     }
@@ -73,6 +99,10 @@ export function LoginForm({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (!authAvailable) {
+      setError('Account services are temporarily unavailable. You can continue exploring our free tools.');
+      return;
+    }
     if (!email.trim() || password.length < 6) {
       setError('Please enter a valid email address and a password of at least 6 characters.');
       return;
@@ -85,11 +115,50 @@ export function LoginForm({
     : `/${locale}/register`;
 
   return (
-    <div className="space-y-6">
-      {redirectTo ? (
+    <div className="space-y-5">
+      {!authAvailable ? (
+        <div
+          role="status"
+          data-auth-status="unavailable"
+          className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/35 dark:text-amber-200"
+        >
+          <div className="flex items-start gap-2.5">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <div className="space-y-2.5">
+              <p className="font-bold">Account services are temporarily unavailable</p>
+              <p className="leading-relaxed">
+                Sign-in is currently paused while account services are offline. You can continue
+                exploring our 12 free Instagram analytics tools without an account.
+              </p>
+              <div className="flex flex-wrap gap-2 pt-0.5">
+                <Link
+                  href={`/${locale}/tools`}
+                  className="inline-flex items-center gap-1 rounded-lg bg-[#7957FF] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#6941EF]"
+                >
+                  <Wrench className="h-3 w-3" aria-hidden="true" />
+                  Explore Free Tools
+                </Link>
+                <Link
+                  href={`/${locale}`}
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-amber-950 hover:bg-amber-100/60 dark:border-amber-800 dark:bg-[#131C2E] dark:text-amber-200"
+                >
+                  Return to Homepage
+                </Link>
+                <Link
+                  href={`/${locale}/contact`}
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-amber-950 hover:bg-amber-100/60 dark:border-amber-800 dark:bg-[#131C2E] dark:text-amber-200"
+                >
+                  Contact Support
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {redirectTo && authAvailable ? (
         <div className="rounded-xl border border-violet-200 bg-violet-50/70 px-3.5 py-2.5 text-xs text-violet-950 dark:border-[#263047] dark:bg-[#192337] dark:text-violet-200">
-          {t.redirectNoticePrefix}{' '}
-          <code className="font-mono font-semibold">{destination}</code>.
+          Sign in to continue directly to <strong>{friendlyDestinationLabel(destination)}</strong>.
         </div>
       ) : null}
 
@@ -106,12 +175,12 @@ export function LoginForm({
             type="email"
             required
             autoComplete="email"
-            disabled={loading}
+            disabled={loading || !authAvailable}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@company.com"
             aria-invalid={Boolean(error)}
-            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
+            className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm text-[#0F172A] disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
           />
         </div>
 
@@ -137,12 +206,12 @@ export function LoginForm({
               required
               minLength={6}
               autoComplete="current-password"
-              disabled={loading}
+              disabled={loading || !authAvailable}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t.passwordPlaceholder}
               aria-invalid={Boolean(error)}
-              className="h-11 w-full rounded-xl border border-slate-300 bg-white pr-11 pl-3.5 text-sm text-[#0F172A] disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
+              className="h-11 w-full rounded-xl border border-slate-300 bg-white pr-11 pl-3.5 text-sm text-[#0F172A] disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#263047] dark:bg-[#080D19] dark:text-white"
             />
             <button
               type="button"
@@ -172,14 +241,16 @@ export function LoginForm({
 
         <button
           type="submit"
-          disabled={loading}
-          className="viewora-btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold shadow-sm disabled:opacity-60"
+          disabled={loading || !authAvailable}
+          className="viewora-btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               {t.signingIn}
             </>
+          ) : !authAvailable ? (
+            'Sign In Temporarily Unavailable'
           ) : (
             <>
               {t.signInCta}
@@ -189,30 +260,19 @@ export function LoginForm({
         </button>
       </form>
 
-      {/* Honest Auth Mode Status */}
       {databaseConfigured ? (
         <p className="flex items-center justify-center gap-1.5 text-[11px] text-[#64748B] dark:text-[#94A3B8]">
           <ShieldCheck className="h-3.5 w-3.5 text-[#34D399]" aria-hidden="true" />
           {t.protectedByAuth}
         </p>
-      ) : !demoModeEnabled ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-          <p className="font-bold">{t.authNotConfiguredTitle}</p>
-          <p className="mt-1 leading-relaxed">
-            Configure <code className="font-mono">DATABASE_URL</code> and{' '}
-            <code className="font-mono">AUTH_SECRET</code> to activate independent PostgreSQL
-            sign-in. Isolated local demo login is disabled by default (
-            <code className="font-mono">DEMO_MODE_ENABLED=false</code>).
-          </p>
-        </div>
-      ) : (
+      ) : demoModeEnabled ? (
         <div className="rounded-xl border border-amber-300/80 bg-amber-50/70 p-4 dark:border-amber-800/60 dark:bg-amber-950/25">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-bold text-amber-950 dark:text-amber-200">
               {t.localDemoTitle}
             </p>
-            <span className="rounded-full bg-amber-200/80 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-950 dark:bg-amber-900 dark:text-amber-200">
-              DEMO_MODE_ENABLED=true
+            <span className="rounded-full bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-950 dark:bg-amber-900 dark:text-amber-200">
+              Local Preview
             </span>
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-amber-900/90 dark:text-amber-200/80">
@@ -235,7 +295,7 @@ export function LoginForm({
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
       <p className="text-center text-xs text-[#64748B] dark:text-[#94A3B8]">
         {t.newToViewora}{' '}

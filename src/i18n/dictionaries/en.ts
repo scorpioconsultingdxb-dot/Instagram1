@@ -79,7 +79,7 @@ export const en: Dictionary = {
     subtitle:
       'Start free with public profile lookups and 12 analytics & planning tools. Explore entitlement-driven tiers for Personal, Business, and Agency workflows.',
     demoNoticeTitle:
-      'Demonstration Pricing Only — Live Payments Strictly Disabled (PAYMENTS_ENABLED=false)',
+      'Preview Pricing Only — Live Billing Currently Disabled',
     demoNoticeBody:
       "All five membership tiers below are synchronized directly from Viewora's centralized entitlement engine. No credit cards are collected and no charges are ever processed until live billing is explicitly authorized.",
     monthly: 'Monthly',

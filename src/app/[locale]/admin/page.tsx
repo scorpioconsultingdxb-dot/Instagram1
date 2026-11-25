@@ -11,6 +11,7 @@ import {
   getApiUsageMetrics,
   getSearchAnalyticsMetrics,
   listAuditLogs,
+  listBroadcastNotifications,
   listCmsContent,
   listFeatureFlags,
   listSupportTickets,
@@ -31,7 +32,7 @@ export async function generateMetadata({
   return buildPageMetadata({
     locale: safeLocale,
     path: '/admin',
-    title: 'Admin Console — Viewora',
+    title: 'Admin Console',
     description: 'Server-protected Viewora administration dashboard.',
     noIndex: true,
   });
@@ -53,18 +54,18 @@ export default async function AdminPage({
   if (!isAdminRole(user.role)) {
     return (
       <div className="mx-auto max-w-lg px-4 py-20 text-center">
-        <div className="rounded-2xl border border-rose-200 bg-white p-8 shadow-sm dark:border-rose-900/60 dark:bg-slate-900">
-          <ShieldAlert className="mx-auto h-10 w-10 text-rose-600 dark:text-rose-400" />
-          <h1 className="mt-4 text-xl font-extrabold text-slate-900 dark:text-white">
+        <div className="viewora-card rounded-2xl border-rose-200 p-8 dark:border-rose-900/60">
+          <ShieldAlert className="mx-auto h-10 w-10 text-rose-600 dark:text-[#F87171]" />
+          <h1 className="mt-4 font-display text-xl font-extrabold text-[#0F172A] dark:text-white">
             403 — Administrator Access Required
           </h1>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+          <p className="mt-2 text-sm text-[#64748B] dark:text-[#94A3B8]">
             Your current account role (<span className="font-mono">{user.role}</span>) does not have
             permission to access administrative controls.
           </p>
           <Link
             href={`/${safeLocale}/dashboard`}
-            className="mt-6 inline-block rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+            className="viewora-btn-primary mt-6 inline-block rounded-xl px-4 py-2 text-xs font-semibold"
           >
             Return to Dashboard
           </Link>
@@ -79,6 +80,7 @@ export default async function AdminPage({
   return (
     <AdminConsole
       actor={user}
+      initialTab="users"
       initialUsers={listLocalDemoUsers()}
       initialPlans={getConfiguredPlans()}
       providerHealth={providerHealth}
@@ -88,6 +90,7 @@ export default async function AdminPage({
       experiments={DEFAULT_EXPERIMENTS}
       initialCms={listCmsContent()}
       initialTickets={listSupportTickets()}
+      initialBroadcasts={listBroadcastNotifications()}
       initialAuditLogs={listAuditLogs()}
       initialFlags={listFeatureFlags()}
     />

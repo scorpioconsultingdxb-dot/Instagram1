@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { normalizeInstagramInput } from '@/lib/instagram/normalize';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { recordSearchMetric } from '@/lib/admin/store';
 
 const ANON_SEARCH_COOKIE = 'viewora_anon_searches';
 const FREE_ANON_SEARCH_LIMIT = 1;
@@ -52,9 +53,31 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const startedAt = Date.now();
   const result = await defaultProviderRegistry.lookupPublicProfile(normalized.username, {
     allowDemoFallback: true,
   });
+  const latencyMs = Date.now() - startedAt;
+
+  try {
+    recordSearchMetric({
+      normalizedUsername: normalized.username,
+      availability:
+        result.meta.availability === 'private_account'
+          ? 'private_account'
+          : result.data
+            ? 'available'
+            : 'unavailable',
+      dataClass:
+        result.meta.dataClass === 'live' || result.meta.dataClass === 'cached'
+          ? result.meta.dataClass
+          : 'demo',
+      providerId: result.meta.providerId,
+      latencyMs,
+    });
+  } catch {
+    // Non-blocking telemetry recording
+  }
 
   const nextCount = isAuthenticated ? previousCount : previousCount + 1;
   const response = NextResponse.json({

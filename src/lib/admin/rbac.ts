@@ -1,9 +1,60 @@
 import { NextResponse } from 'next/server';
 import { getCurrentSessionUser, isAdminRole, type SessionUser } from '@/lib/auth/session';
+import type { UserRole } from '@/lib/entitlements/types';
 
 export type AdminGuardResult =
   | { ok: true; user: SessionUser }
   | { ok: false; response: NextResponse };
+
+export type AdminCapability =
+  | 'manage_users'
+  | 'manage_roles'
+  | 'manage_plans'
+  | 'manage_entitlements'
+  | 'manage_flags'
+  | 'manage_support'
+  | 'manage_cms'
+  | 'manage_notifications';
+
+const ROLE_CAPABILITIES: Record<UserRole, AdminCapability[]> = {
+  user: [],
+  customer: [],
+  analyst: [],
+  support_agent: ['manage_support'],
+  content_manager: ['manage_cms', 'manage_notifications'],
+  operations_admin: [
+    'manage_users',
+    'manage_plans',
+    'manage_entitlements',
+    'manage_flags',
+    'manage_support',
+    'manage_notifications',
+  ],
+  admin: [
+    'manage_users',
+    'manage_roles',
+    'manage_plans',
+    'manage_entitlements',
+    'manage_flags',
+    'manage_support',
+    'manage_cms',
+    'manage_notifications',
+  ],
+  super_admin: [
+    'manage_users',
+    'manage_roles',
+    'manage_plans',
+    'manage_entitlements',
+    'manage_flags',
+    'manage_support',
+    'manage_cms',
+    'manage_notifications',
+  ],
+};
+
+export function hasAdminCapability(role: UserRole, capability: AdminCapability): boolean {
+  return (ROLE_CAPABILITIES[role] ?? []).includes(capability);
+}
 
 export function checkAdminAuthorization(user: SessionUser | null): {
   allowed: boolean;

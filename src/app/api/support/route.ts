@@ -1,11 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getCurrentSessionUser } from '@/lib/auth/session';
-import { listSupportTickets, recordAuditLog, type SupportTicketRecord } from '@/lib/admin/store';
+import {
+  createSupportTicket,
+  listSupportTickets,
+  recordAuditLog,
+} from '@/lib/admin/store';
 
 const ticketSchema = z.object({
-  subject: z.string().min(4).max(160),
-  message: z.string().min(10).max(2000),
+  subject: z.string().trim().min(4).max(160),
+  message: z.string().trim().min(10).max(2000),
   priority: z.enum(['low', 'normal', 'high']).default('normal'),
 });
 
@@ -37,18 +41,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const ticket: SupportTicketRecord = {
-    id: `tkt-${Date.now().toString().slice(-5)}`,
+  const ticket = createSupportTicket({
     email: user.email,
-    subject: parsed.data.subject.trim(),
-    message: parsed.data.message.trim(),
-    status: 'open',
+    subject: parsed.data.subject,
+    message: parsed.data.message,
     priority: parsed.data.priority,
-    adminNotes: '',
-    createdAt: new Date().toISOString(),
-  };
+  });
 
-  listSupportTickets().unshift(ticket);
   recordAuditLog({
     actorId: user.id,
     actorEmail: user.email,

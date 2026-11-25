@@ -4,6 +4,7 @@ import {
   getApiUsageMetrics,
   getSearchAnalyticsMetrics,
   listAuditLogs,
+  listBroadcastNotifications,
   listCmsContent,
   listFeatureFlags,
   listSupportTickets,
@@ -32,6 +33,7 @@ export async function GET() {
     experiments: DEFAULT_EXPERIMENTS,
     cmsContent: listCmsContent(),
     supportTickets: listSupportTickets(),
+    broadcastNotifications: listBroadcastNotifications(),
     auditLogs: listAuditLogs(),
     featureFlags: listFeatureFlags(),
   });

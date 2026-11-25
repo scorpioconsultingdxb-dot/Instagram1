@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAdminApi } from '@/lib/admin/rbac';
+import { hasAdminCapability, requireAdminApi } from '@/lib/admin/rbac';
 import {
+  createBroadcastNotification,
   recordAuditLog,
+  toggleBroadcastNotification,
   toggleFeatureFlag,
   updateCmsContent,
   updateSupportTicket,
@@ -18,7 +20,17 @@ const adminActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('update_user'),
     userId: z.string().min(1),
-    role: z.enum(['user', 'admin', 'super_admin']).optional(),
+    role: z
+      .enum([
+        'user',
+        'analyst',
+        'content_manager',
+        'support_agent',
+        'operations_admin',
+        'admin',
+        'super_admin',
+      ])
+      .optional(),
     planCode: z.enum(['free', 'starter', 'premium', 'pro', 'agency']).optional(),
   }),
   z.object({
@@ -44,14 +56,27 @@ const adminActionSchema = z.discriminatedUnion('type', [
     type: z.literal('update_ticket'),
     id: z.string().min(1),
     status: z.enum(['open', 'in_progress', 'resolved', 'closed']).optional(),
+    priority: z.enum(['low', 'normal', 'high']).optional(),
     adminNotes: z.string().max(1000).optional(),
   }),
   z.object({
     type: z.literal('update_cms'),
     id: z.string().min(1),
-    title: z.string().min(2).max(160).optional(),
-    body: z.string().min(2).max(2000).optional(),
+    title: z.string().trim().min(2).max(160).optional(),
+    body: z.string().trim().min(2).max(2000).optional(),
     isPublished: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('create_broadcast'),
+    title: z.string().trim().min(3).max(120),
+    body: z.string().trim().min(5).max(600),
+    category: z.enum(['system', 'tracking', 'report', 'billing', 'security']).default('system'),
+    targetSegment: z.enum(['all', 'personal', 'business', 'agency']).default('all'),
+  }),
+  z.object({
+    type: z.literal('toggle_broadcast'),
+    id: z.string().min(1),
+    isActive: z.boolean(),
   }),
 ]);
 
@@ -72,6 +97,18 @@ export async function POST(request: NextRequest) {
   const actor = guard.user;
 
   if (action.type === 'update_user') {
+    if (action.role && !hasAdminCapability(actor.role, 'manage_roles')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" is not permitted to change administrative roles.` },
+        { status: 403 }
+      );
+    }
+    if (action.planCode && !hasAdminCapability(actor.role, 'manage_users')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" is not permitted to update user plans.` },
+        { status: 403 }
+      );
+    }
     if (action.role) updateLocalUserRole(action.userId, action.role);
     if (action.planCode) updateLocalUserPlan(action.userId, action.planCode);
     const audit = recordAuditLog({
@@ -86,6 +123,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'update_plan') {
+    if (!hasAdminCapability(actor.role, 'manage_plans')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot modify plan configuration.` },
+        { status: 403 }
+      );
+    }
     const updated = updateConfiguredPlan(action.planCode, {
       monthlyPriceCents: action.monthlyPriceCents,
       quarterlyDiscount: action.quarterlyDiscount,
@@ -110,6 +153,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'update_entitlement') {
+    if (!hasAdminCapability(actor.role, 'manage_entitlements')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot modify entitlements.` },
+        { status: 403 }
+      );
+    }
     const ok = updatePlanEntitlement(
       action.planCode,
       action.featureKey as FeatureKey,
@@ -131,6 +180,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'toggle_flag') {
+    if (!hasAdminCapability(actor.role, 'manage_flags')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot toggle feature flags.` },
+        { status: 403 }
+      );
+    }
     const result = toggleFeatureFlag(action.key, action.enabled);
     if (!result.ok) {
       return NextResponse.json({ ok: false, error: result.error }, { status: 403 });
@@ -147,8 +202,15 @@ export async function POST(request: NextRequest) {
   }
 
   if (action.type === 'update_ticket') {
+    if (!hasAdminCapability(actor.role, 'manage_support')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot update support tickets.` },
+        { status: 403 }
+      );
+    }
     const updated = updateSupportTicket(action.id, {
       status: action.status,
+      priority: action.priority,
       adminNotes: action.adminNotes,
     });
     if (!updated) {
@@ -160,11 +222,65 @@ export async function POST(request: NextRequest) {
       action: 'admin.support_ticket.updated',
       targetType: 'support_ticket',
       targetId: action.id,
-      diff: { status: updated.status, adminNotes: updated.adminNotes },
+      diff: { status: updated.status, priority: updated.priority, adminNotes: updated.adminNotes },
     });
     return NextResponse.json({ ok: true, ticket: updated, audit });
   }
 
+  if (action.type === 'create_broadcast') {
+    if (!hasAdminCapability(actor.role, 'manage_notifications')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot publish notifications.` },
+        { status: 403 }
+      );
+    }
+    const broadcast = createBroadcastNotification({
+      title: action.title,
+      body: action.body,
+      category: action.category,
+      targetSegment: action.targetSegment,
+      isActive: true,
+    });
+    const audit = recordAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'admin.broadcast.created',
+      targetType: 'broadcast_notification',
+      targetId: broadcast.id,
+      diff: { title: broadcast.title, targetSegment: broadcast.targetSegment },
+    });
+    return NextResponse.json({ ok: true, broadcast, audit }, { status: 201 });
+  }
+
+  if (action.type === 'toggle_broadcast') {
+    if (!hasAdminCapability(actor.role, 'manage_notifications')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" cannot manage notifications.` },
+        { status: 403 }
+      );
+    }
+    const broadcast = toggleBroadcastNotification(action.id, action.isActive);
+    if (!broadcast) {
+      return NextResponse.json({ ok: false, error: 'Notification not found.' }, { status: 404 });
+    }
+    const audit = recordAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'admin.broadcast.toggled',
+      targetType: 'broadcast_notification',
+      targetId: broadcast.id,
+      diff: { isActive: broadcast.isActive },
+    });
+    return NextResponse.json({ ok: true, broadcast, audit });
+  }
+
+  // update_cms
+  if (!hasAdminCapability(actor.role, 'manage_cms')) {
+    return NextResponse.json(
+      { ok: false, error: `Role "${actor.role}" cannot edit CMS content.` },
+      { status: 403 }
+    );
+  }
   const updatedCms = updateCmsContent(action.id, {
     title: action.title,
     body: action.body,

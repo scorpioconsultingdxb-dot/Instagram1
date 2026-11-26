@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+.vercel
+node_modules
+.next
+backups/
+ci-screenshots/
+executive_visual_evidence/
+dark_mode_product_screenshots/
+*.zip
+*.dump
+*.sql.gz
+coverage/
+.viewora-data/
+.viewora-storage/

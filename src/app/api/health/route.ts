@@ -44,6 +44,7 @@ export async function GET() {
           reachable: dbHealth.reachable,
           status: dbHealth.status,
           latencyMs: dbHealth.latencyMs,
+          connectedRole: dbHealth.connectedRole ?? null,
           security: dbSecurity,
         },
         registration: {

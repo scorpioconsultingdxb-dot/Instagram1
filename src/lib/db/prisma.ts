@@ -79,18 +79,29 @@ export async function withUserRlsContext<T>(
   });
 }
 
+export interface ConnectedRoleInfo {
+  role: string;
+  rolsuper: boolean;
+  rolcreatedb: boolean;
+  rolcreaterole: boolean;
+  rolbypassrls: boolean;
+  restrictedPrivilegeVerified: boolean;
+}
+
 export interface DatabaseHealthResult {
   configured: boolean;
   reachable: boolean;
   status: 'healthy' | 'unreachable' | 'not_configured';
   latencyMs: number | null;
   engine: 'postgresql';
+  connectedRole?: ConnectedRoleInfo | null;
   error?: string;
 }
 
 /**
- * Measures real PostgreSQL connectivity via `SELECT 1`.
- * Never fabricates healthy status when DATABASE_URL is absent or unreachable.
+ * Measures real PostgreSQL connectivity via `SELECT 1` and verifies actual
+ * connected database role & least-privilege attributes (`current_user` + `pg_roles`).
+ * Never fabricates healthy status or exposes credentials.
  */
 export async function checkDatabaseHealth(): Promise<DatabaseHealthResult> {
   if (!isDatabaseConfigured()) {
@@ -100,6 +111,7 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealthResult> {
       status: 'not_configured',
       latencyMs: null,
       engine: 'postgresql',
+      connectedRole: null,
     };
   }
 
@@ -107,12 +119,44 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealthResult> {
   try {
     const prisma = getPrismaClient();
     await prisma.$queryRaw`SELECT 1`;
+    let connectedRole: ConnectedRoleInfo | null = null;
+    try {
+      const rows = await prisma.$queryRaw<
+        Array<{
+          role: string;
+          rolsuper: boolean;
+          rolcreatedb: boolean;
+          rolcreaterole: boolean;
+          rolbypassrls: boolean;
+        }>
+      >`SELECT current_user AS role, r.rolsuper, r.rolcreatedb, r.rolcreaterole, r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user`;
+      const row = rows[0];
+      if (row) {
+        const restrictedPrivilegeVerified =
+          (row.role === 'viewora_app' || row.role === 'viewora_test_app') &&
+          row.rolsuper === false &&
+          row.rolcreatedb === false &&
+          row.rolcreaterole === false &&
+          row.rolbypassrls === false;
+        connectedRole = {
+          role: row.role,
+          rolsuper: row.rolsuper,
+          rolcreatedb: row.rolcreatedb,
+          rolcreaterole: row.rolcreaterole,
+          rolbypassrls: row.rolbypassrls,
+          restrictedPrivilegeVerified,
+        };
+      }
+    } catch {
+      connectedRole = null;
+    }
     return {
       configured: true,
       reachable: true,
       status: 'healthy',
       latencyMs: Date.now() - startedAt,
       engine: 'postgresql',
+      connectedRole,
     };
   } catch (err) {
     return {
@@ -121,6 +165,7 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealthResult> {
       status: 'unreachable',
       latencyMs: Date.now() - startedAt,
       engine: 'postgresql',
+      connectedRole: null,
       error: err instanceof Error ? err.message : 'Unable to reach PostgreSQL database.',
     };
   }

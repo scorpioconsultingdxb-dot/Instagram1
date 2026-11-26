@@ -1,12 +1,12 @@
 # VIEWORA — Stage 74: Production Monitoring & Observability Readiness Report
 
 **Date:** 2026-11-26  
-**Live Canonical Endpoint:** https://instagram1-beta.vercel.app  
+**Live Canonical Endpoint:** https://instagram1-beta.vercel.app (`dpl_4kCzhJk5xJJNboSSo52BMiZyjEer` — Stage 74 hardening **DEPLOYED LIVE & VERIFIED**)  
 **Paid Monitoring Providers:** **Disabled** (zero paid accounts or SaaS subscriptions provisioned without owner approval).
 
 ---
 
-## 1. Public Health Endpoint Security Review & Completed Hardening
+## 1. Public Health Endpoint Security Review & Live Verified Hardening
 
 ### Finding Before Stage 74
 An unauthenticated `GET /api/health` previously returned internal infrastructure details publicly:
@@ -15,18 +15,19 @@ An unauthenticated `GET /api/health` previously returned internal infrastructure
 - AI daily spend & budget caps (`dailySpentUsd`, `dailyBudgetUsd`)
 - Internal background job queue counts (`total`, `queued`, `deadLetter`) and internal provider IDs.
 
-### Completed Stage 74 Hardening (Verified Locally — Ready for Next Authorized Deployment)
+### Completed Stage 74 Hardening (Deployed Live in `dpl_4kCzhJk5xJJNboSSo52BMiZyjEer` & Verified)
 Refactored [src/app/api/health/route.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/app/api/health/route.ts) into a strict **two-tier observability contract**:
 
 1. **Public Unauthenticated `GET /api/health` (Minimal Non-Sensitive Status):**
-   - Returns **only**: `ok`, `status` (`"healthy" | "degraded"`), `correlationId`, `checkedAt`, `responseTimeMs`, `uptimeMeasured`, `services.database` (`{ status, reachable, latencyMs }`), and coarse boolean feature flags (`registration.publicOpen`, `demoMode.enabled`, `payments.enabled`, `backgroundJobs.enabled`, `emailDelivery.enabled`).
-   - Returns **HTTP `503`** when PostgreSQL is configured but unreachable (enabling external uptime monitors to alert immediately on HTTP status alone).
-   - Sets `Cache-Control: no-store, max-age=0`, `x-request-id`, and `x-response-time-ms`.
-   - **Strictly omits** `connectedRole`, `security`, `aiEngine`, `providers`, `observability`, and all environment/role names.
+   - **Live Verified Response (`2026-11-26T11:44:12.883Z`):** HTTP `200`, `Cache-Control: no-store, max-age=0`, `X-Request-Id` present, `X-Response-Time-Ms: 13`, `ok: true`, `status: "healthy"`, `services.database: { status: "healthy", reachable: true, latencyMs: 13 }`, coarse booleans only (`registration.publicOpen: false`, `demoMode.enabled: false`, `payments.enabled: false`, `backgroundJobs.enabled: false`, `emailDelivery.enabled: false`).
+   - **Leak Audit:** `PUBLIC_HEALTH_LEAKS: []` — **zero** credentials, **zero** `connectedRole` / `viewora_app`, **zero** `VIEWORA_DATABASE_URL` / `security`, **zero** `aiEngine`, **zero** `providers`, **zero** `observability`, **zero** customer data.
+   - **Isolated HTTP `503` Outage Test:** Verified via isolated Vitest mock in [phase8-stage74.test.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/observability/phase8-stage74.test.ts) without disrupting live production — confirms DB failure returns HTTP `503`, `ok: false`, `status: "degraded"`, `Cache-Control: no-store`, and zero leaked internals.
 2. **Authorized Full Diagnostics (`GET /api/health?detail=full`):**
-   - Strictly gated behind **either** an authenticated `super_admin` session **or** a timing-safe `HEALTH_DIAGNOSTICS_TOKEN` (`>= 24` chars, via `x-health-diagnostics-token` or `Authorization: Bearer ...`).
-   - Invalid or missing tokens safely fall back to the minimal public payload.
-   - Returns full database role/security diagnostics, provider readiness, queue summary, AI cost caps, and live internal observability metrics (`observability`).
+   - Strictly gated behind **either** an authenticated `super_admin` session **or** a timing-safe `HEALTH_DIAGNOSTICS_TOKEN` (`>= 24` chars) transmitted **EXCLUSIVELY via `Authorization: Bearer <token>` header**.
+   - **Never accepted in URLs or query strings:** Query parameters (`token`, `api_key`, `secret`) explicitly cause rejection even if an `Authorization` header is also present, preventing leaks into browser history or HTTP access logs.
+   - **Live Unauthorized Rejection Verified:** Unauthenticated `?detail=full`, forged `Authorization: Bearer`, and query-string `?detail=full&token=...` all returned minimal public payload with `leaks=[]`.
+
+> **Important Serverless Telemetry Limitation:** Process-local observability counters in [src/lib/observability/metrics.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/observability/metrics.ts) explicitly declare `scope: "process_local_not_globally_aggregated"`. On Vercel serverless functions, counters reflect only the warm instance serving a given request and reset on cold starts or horizontal scaling — they are **NOT** globally aggregated across instances. Global aggregation requires external log drains, Redis, or an external APM/metrics provider when authorized.
 
 ---
 
@@ -77,8 +78,39 @@ All external monitoring and error-tracking SaaS tools remain **disabled** until 
 
 **Estimated Pre-Beta Total Monthly Infrastructure Cost:** `\$0 / mo` (Free tiers across Vercel, Neon, Better Stack/UptimeRobot, Sentry Developer, Resend Free) or `~\$39 / mo` if upgrading to Vercel Pro (`\$20`) + Neon Launch (`\$19`) for commercial Terms & 7-day PITR.
 
-### Exact Owner Actions
-1. Authorize one controlled Vercel Production deployment so the hardened two-tier `/api/health` endpoint and internal observability telemetry go live.
-2. *(Optional)* Add a random 48-char `HEALTH_DIAGNOSTICS_TOKEN` secret in Vercel Production if an external private monitoring script needs `/api/health?detail=full`.
-3. Configure a free uptime monitor (Better Stack or UptimeRobot) targeting `https://instagram1-beta.vercel.app/api/health` (expect HTTP `200` and JSON `"ok":true`) and `/en` (expect HTTP `200`).
-4. When ready for beta, provision Sentry (`SENTRY_DSN`) with PII scrubbing enabled and review Vercel Pro Log Drains.
+## 5. Free External Uptime Monitoring Configuration Guide (Task 6 — Neon Cold-Start Tuned)
+
+**Target URL:** `https://instagram1-beta.vercel.app/api/health` *(plus secondary website check on `/en`)*  
+**Cost:** `\$0 / mo` (Better Stack Uptime Free or UptimeRobot Free — **no paid subscription purchased**).
+
+### Critical Tuning for Neon Scale-to-Zero & Cold-Start Latency
+Neon Free suspends idle compute after 5 minutes of inactivity. Measured latency across this project:
+- **Warm Neon + Vercel response:** `13–45 ms`
+- **Cold Neon compute wake-up (`db:hosted:health` / cold Lambda):** `250 ms – 6.8 s`
+
+Configure the external monitor carefully to prevent false-positive pages AND avoid unintentionally keeping Neon Free compute awake 24/7 (which could consume monthly compute-hour quota):
+
+| Setting | Recommended Value | Rationale |
+|---|---|---|
+| **Monitor 1 (API & DB Health)** | `GET https://instagram1-beta.vercel.app/api/health` | Verifies HTTPS, Vercel runtime, and Neon PostgreSQL reachability in one check |
+| **Monitor 2 (Public Website)** | `GET https://instagram1-beta.vercel.app/en` | Verifies edge CDN & SSR rendering without touching DB |
+| **Expected HTTP Status** | `200` (alerts on `503`, `5xx`, TLS error, or timeout) | Matches Stage 74 `/api/health` HTTP `503` outage contract |
+| **Keyword / Body Assertion** | Contains `"status":"healthy"` (on `/api/health`) | Prevents false greens if a proxy returns a non-app `200` page |
+| **Check Interval** | **`5 minutes`** on `/api/health` *(or `3 minutes` once on Neon Launch)*; `3 minutes` on `/en` | Balances outage detection with Neon Free compute-hour budget |
+| **Request Timeout** | **`20 seconds`** | Safely absorbs Neon compute cold wake-up (`~6–7s`) without timing out |
+| **Consecutive Failure Threshold (False-Positive Prevention)** | **`2` consecutive failures** across **2+ regions** (with `30–60s` confirmation retry) | Eliminates transient network blips or single cold-start spikes |
+| **Latency Warning Threshold** | Warn if 5-check rolling average `> 3,000 ms` | Detects sustained DB or serverless degradation |
+| **Incident & Recovery Notifications** | Owner email *(+ optional Slack/Telegram webhook)* on `Down` AND `Up (Recovered)` | Ensures clear incident lifecycle visibility |
+| **Maintenance Windows** | Schedule maintenance window before planned Prisma migrations or custom-domain cutover | Suppresses expected deployment/cutover noise |
+
+### Exact Owner Setup Steps (Better Stack Uptime Free or UptimeRobot Free)
+1. Create a free account at Better Stack Uptime (or UptimeRobot) — do **not** attach a credit card.
+2. Add Monitor 1 (`Viewora API & DB Health`): URL `https://instagram1-beta.vercel.app/api/health`, Method `GET`, Keyword `"status":"healthy"`, Timeout `20s`, Interval `5m`, Confirmation `2` consecutive failures.
+3. Add Monitor 2 (`Viewora Public Site`): URL `https://instagram1-beta.vercel.app/en`, Method `GET`, Expected Status `200`, Timeout `15s`, Interval `3m`, Confirmation `2` consecutive failures.
+4. Enable Email alerts for both **Incident Started** and **Incident Resolved**, and save a reusable **Deployment Maintenance Window** template.
+
+### Exact Owner Actions (Stage 74)
+1. *(Completed)* Hardened two-tier `/api/health` and internal observability are live on `dpl_4kCzhJk5xJJNboSSo52BMiZyjEer`.
+2. *(Optional)* Add a random 48-char `HEALTH_DIAGNOSTICS_TOKEN` secret in Vercel Production if private CLI/cron diagnostics will query `GET /api/health?detail=full` with `Authorization: Bearer <token>`.
+3. Configure the free external uptime monitor using the table above.
+4. Keep Sentry (`SENTRY_DSN`) and paid observability tiers disabled until beta authorization.

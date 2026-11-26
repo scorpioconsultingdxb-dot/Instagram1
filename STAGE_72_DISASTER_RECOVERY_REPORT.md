@@ -43,13 +43,55 @@ Created [.github/workflows/neon-dr-backup-drill.yml](file:///c:/Users/Scorpio/Vi
 
 ## 3. Historical Vercel Deployments Audit & Safe Credential Rotation Plan
 
-### Audit Findings (`vercel ls` on `scorpioconsultingdxb-9036/instagram1`)
+### Audit Findings (`vercel ls` — 2 Pages Inspected on `scorpioconsultingdxb-9036/instagram1`)
 
-| Deployment Group | Representative URLs / Age | Privileged Neon Env Var Snapshot Status | Active Protection |
+| Deployment Group | Representative URLs / IDs | Privileged Neon Env Var Snapshot Status | Active Protection |
 |---|---|---|---|
-| **Current Post-Isolation Production** | `instagram1-c7wjmiq9i` (10m), `instagram1-nwyx3am19` / `dpl_BfPjyS8kbSMSNongfZgcsqqXWqy1` (19m) | **CLEAN — 0 privileged Neon Marketplace vars** (`VIEWORA_DATABASE_URL` `viewora_app` only) | Live canonical alias `https://instagram1-beta.vercel.app` |
-| **Pre-Isolation Historical Deployments (~17+ builds)** | `instagram1-1uwzrmu1n` (35m) through `instagram1-cua7mzh9d` (2h) and earlier | **RETAINS IMMUTABLE BUILD-TIME ENV SNAPSHOT** of old `neondb_owner` variables (`DATABASE_URL`, `PGPASSWORD`, etc.) | Protected by Vercel Deployment Protection (`vercel_authentication`); not publicly aliased |
+| **Current Post-Isolation Production (3 builds)** | `dpl_4kCzhJk5xJJNboSSo52BMiZyjEer` (`instagram1-jruifnvah`, **ACTIVE LIVE**), `instagram1-c7wjmiq9i`, `dpl_BfPjyS8kbSMSNongfZgcsqqXWqy1` (`instagram1-nwyx3am19`) | **CLEAN — 0 privileged Neon Marketplace vars** (`VIEWORA_DATABASE_URL` `viewora_app` only) | Live canonical alias `https://instagram1-beta.vercel.app` |
+| **Pre-Isolation Historical Deployments (~17+ builds)** | `instagram1-1uwzrmu1n` through `instagram1-cua7mzh9d` (plus earlier pre-Neon deployments on page 2: `instagram1-6gt7vscvw` through `instagram1-azzpp7h8l`) | **RETAINS IMMUTABLE BUILD-TIME ENV SNAPSHOT** of old `neondb_owner` variables (`DATABASE_URL`, `PGPASSWORD`, etc.) on deployments built while Marketplace vars were scoped to Production | Protected by Vercel Deployment Protection (`vercel_authentication`); not publicly aliased |
 | **Vercel Preview Environment** | Preview target in Vercel env settings | Retains Marketplace-managed `neondb_owner` variables for Preview/branching compatibility | Protected by `vercel_authentication` |
+
+### Administrative Dependency Audit Before `neondb_owner` Rotation (Task 4)
+
+**Status:** **NO credentials rotated and NO historical deployments deleted** (awaiting separate owner approval). Every dependency that uses `neondb_owner` was verified before rotation:
+
+| Dependency | Location / Commands | Uses `neondb_owner`? | Action Required After Rotation |
+|---|---|---|---|
+| **Live Vercel Production Runtime** | `VIEWORA_DATABASE_URL` (`viewora_app`) | **NO** | **None — 0 seconds downtime** (strictly preserve `viewora_app`) |
+| **Local Hosted Admin Env** | `.env.hosted.local` → `DATABASE_ADMIN_URL` (loaded exclusively by [hosted-env-loader.mjs](file:///c:/Users/Scorpio/Videos/Instagram/scripts/db/hosted-env-loader.mjs)) | **YES** | Update `DATABASE_ADMIN_URL` with rotated `neondb_owner` password |
+| **Hosted Admin & Migration Scripts** | `package.json`: `db:hosted:inspect`, `db:hosted:setup-role`, `db:hosted:migrate`, `db:hosted:migrate:status`, `db:hosted:seed`, `db:hosted:bootstrap-admin` | **YES** (via `DATABASE_ADMIN_URL`) | Automatically pick up updated `.env.hosted.local` |
+| **DR Backup Script** | [neon-encrypted-backup-drill.sh](file:///c:/Users/Scorpio/Videos/Instagram/deploy/scripts/neon-encrypted-backup-drill.sh) (`NEON_ADMIN_SOURCE_URL`) | **YES** | Update GitHub Environment secret `NEON_ADMIN_SOURCE_URL` |
+| **GitHub Actions DR Workflow** | [.github/workflows/neon-dr-backup-drill.yml](file:///c:/Users/Scorpio/Videos/Instagram/.github/workflows/neon-dr-backup-drill.yml) (`production-dr`) | **YES** | Update `NEON_ADMIN_SOURCE_URL` in `production-dr` secrets |
+| **Neon Marketplace Integration (Vercel Preview)** | Vercel Project `instagram1` → Preview env vars | **YES** (Preview only) | Re-sync via Neon Integration if Preview DB access is needed, or unscope Preview vars |
+| **Local PostgreSQL `14.25`** | `.env.local` (`viewora` / `viewora_test`) | **NO** | **None — completely isolated** |
+| **External SQL Clients (psql / GUI)** | Owner's local DB tools (if configured) | **YES** (if saved) | Update saved connection password |
+
+### Safe Recovery Plan During Rotation
+- If any admin script fails after rotating `neondb_owner`, verify URL encoding of special characters in `.env.hosted.local` and run `npm run db:hosted:inspect` (read-only).
+- Live Production (`viewora_app`) is completely unaffected by `neondb_owner` rotation; verify `https://instagram1-beta.vercel.app/api/health` and `npm run db:hosted:health` remain healthy throughout.
+
+### Task 5 — 16-Point DR Execution Readiness Verification
+
+| # | Requirement | Verified Status |
+|---|---|---|
+| 1 | PostgreSQL 18 client compatibility | Enforced (`pg_dump` & `pg_restore` major version `>= 18` check + PGDG `postgresql-client-18`) |
+| 2 | Minimum workflow permissions | `permissions: contents: read` |
+| 3 | Protected `production-dr` environment | Workflow bound to `environment: production-dr` |
+| 4 | Manual execution only | Strictly `on: workflow_dispatch` (zero push/PR/cron triggers) |
+| 5 | Secret redaction | Secrets via `env:` only; never printed; only sanitized `dr-summary.json` uploaded |
+| 6 | Independent encryption & authentication keys | Per-backup 256-bit salt + domain-separated `ENC_KEY` & `MAC_KEY` |
+| 7 | Encrypt-then-MAC implementation | `AES-256-CBC PBKDF2-600k` + `HMAC-SHA256(MAC_KEY, meta + ciphertext)` |
+| 8 | Constant-time authentication verification | `constant_time_eq` verifies HMAC **before** `openssl enc -d` |
+| 9 | Tamper rejection | Live 1-bit tamper-rejection self-test executed on temp copy every drill |
+| 10 | Main database overwrite prevention | Triple guard: `CONFIRM_ISOLATED_BRANCH`, source≠target host, target≠`NEON_PRODUCTION_MAIN_HOST` |
+| 11 | Verified isolated destination identity | Hostname extracted & validated against source and production `main` before `DROP SCHEMA` |
+| 12 | Backup integrity | `sha256sum` verified on ciphertext + round-trip plaintext match after decrypt |
+| 13 | Schema & migration verification | Asserts `>= 58` public tables & `>= 6` completed Prisma migrations |
+| 14 | RLS & RBAC verification | Asserts `>= 24` public RLS policies & `viewora_app` non-superuser/nobypassrls flags |
+| 15 | Audit immutability | Asserts `trg_audit_logs_immutable` trigger count `== 1` |
+| 16 | Temporary branch cleanup | Runner shreds temp dumps (`if: always()`); owner deletes temporary Neon child branch in Neon Console after archiving `dr-summary.json` |
+
+> **Honest Status Notice:** No actual end-to-end Neon restore drill has been claimed as passed yet — execution awaits the owner's manual `workflow_dispatch` run on GitHub Actions (`production-dr`).
 
 ### Zero-Downtime Credential Rotation & Historical Deployment Protection Plan
 

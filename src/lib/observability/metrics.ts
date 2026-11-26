@@ -31,6 +31,7 @@ export interface ObservabilityEventRecord {
 }
 
 export interface InternalMetricsSnapshot {
+  scope: 'process_local_not_globally_aggregated';
   processStartedAt: string;
   processUptimeSeconds: number;
   counters: {
@@ -191,6 +192,7 @@ export function recordObservabilityEvent(event: Omit<ObservabilityEventRecord, '
 export function getInternalMetricsSnapshot(): InternalMetricsSnapshot {
   const state = getState();
   return {
+    scope: 'process_local_not_globally_aggregated',
     processStartedAt: state.startedAtIso,
     processUptimeSeconds: Math.max(0, Math.floor((Date.now() - state.startedAtMs) / 1000)),
     counters: { ...state.counters },

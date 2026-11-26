@@ -25,12 +25,21 @@ function hasAuthorizedDiagnosticsToken(request?: NextRequest): boolean {
   const configuredToken = (process.env.HEALTH_DIAGNOSTICS_TOKEN || '').trim();
   if (!configuredToken || configuredToken.length < 24 || !request) return false;
 
-  const headerToken = (request.headers.get('x-health-diagnostics-token') || '').trim();
+  // Strictly require Authorization: Bearer <token> header transport.
+  // Never accept diagnostic secrets in URLs or query parameters.
+  if (
+    request.nextUrl?.searchParams?.has('token') ||
+    request.nextUrl?.searchParams?.has('api_key') ||
+    request.nextUrl?.searchParams?.has('secret')
+  ) {
+    return false;
+  }
+
   const authHeader = (request.headers.get('authorization') || '').trim();
-  const bearerToken = authHeader.toLowerCase().startsWith('bearer ')
-    ? authHeader.slice(7).trim()
-    : '';
-  const candidate = headerToken || bearerToken;
+  if (!authHeader.toLowerCase().startsWith('bearer ')) {
+    return false;
+  }
+  const candidate = authHeader.slice(7).trim();
   if (!candidate) return false;
 
   const a = Buffer.from(candidate);

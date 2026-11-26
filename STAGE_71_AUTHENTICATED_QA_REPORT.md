@@ -2,7 +2,8 @@
 
 **Date:** 2026-11-26  
 **Live Production URL:** https://instagram1-beta.vercel.app  
-**Verified Live Baseline:** Neon PostgreSQL `18.7 (3190d2f)`, `viewora_app` restricted role, 58 tables, 6 migrations, 24 RLS policies, 0 privileged Neon Marketplace vars in Vercel Production.
+**Active Live Deployment:** `dpl_4kCzhJk5xJJNboSSo52BMiZyjEer` (`readyState: READY`, aliased to `https://instagram1-beta.vercel.app`)  
+**Verified Live Baseline:** Neon PostgreSQL `18.7 (3190d2f)`, `viewora_app` restricted role, 58 tables, 6 migrations, 24 RLS policies, 0 privileged Neon Marketplace vars in Vercel Production, Stage 71 Demo Preview hardening **deployed live**.
 
 ---
 
@@ -12,7 +13,7 @@
   - Full live HTTPS verification across **all 5 supported languages** (`en`, `pt-BR`, `es`, `de`, `fr`) covering **25/25** localized public routes (all HTTP `200`, valid `rel="canonical"` + `hrefLang` alternates, **0** Supabase references).
   - Full live HTTPS authentication & security gate checks (CSRF cross-origin `POST /api/auth/login` → HTTP `403`, closed registration `POST /api/auth/signup` → HTTP `403 REGISTRATION_CLOSED`, unauthenticated `/api/admin/overview`, `/api/auth/profile`, `/api/dashboard/workspace`, `/api/auth/sessions` → all HTTP `401`).
   - Live Neon DB confirmation that the owner's hosted Super Admin (`346bf4be-1922-49de-819d-d0c57af98244`, `Scorpio Marketing Agency`, `super_admin`, `agency`, `active`, `$2b$12$` bcrypt) has **`1` active revocable DB session**, proving live HTTPS authentication and PostgreSQL session persistence work end-to-end.
-  - **Defect Found & Fixed (Demo Preview Controls in Production):** Audited all Demo Preview UI controls while `VIEWORA_ENABLE_DEMO_PROVIDER=false` / `DEMO_MODE_ENABLED=false` and eliminated misleading production Demo Preview toggles, empty preview banners, and non-functional fixture quick-save buttons across 6 UI files (verified locally; pending owner-authorized deployment).
+  - **Defect Found, Fixed & Deployed Live (Demo Preview Controls in Production):** Audited all Demo Preview UI controls while `VIEWORA_ENABLE_DEMO_PROVIDER=false` / `DEMO_MODE_ENABLED=false`, eliminated misleading production Demo Preview toggles, empty preview banners, and non-functional fixture quick-save buttons across 6 UI files, and shipped the fix live in authorized deployment `dpl_4kCzhJk5xJJNboSSo52BMiZyjEer`.
 - **Exact Blocker — Live Authenticated Interactive Browser QA & Live Dark-Mode Screenshots:**
   - **Status:** **BLOCKED — Owner Interactive Browser Session Required**
   - **Cause:** Automated browser tooling does not have access to the owner's live hosted Super Admin password or authenticated browser cookies. Per permanent security rules, no passwords were requested or extracted, no browser cookies were copied, and **zero** live authenticated browser tests or screenshots were fabricated.
@@ -56,7 +57,7 @@ When `VIEWORA_ENABLE_DEMO_PROVIDER=false` and `DEMO_MODE_ENABLED=false` (live Ve
 3. `"Enable Explicit Demo Preview Mode"` action buttons and `"Or explicitly save a labeled demo fixture: Save @viewora.studio / @aurora.coffee / @nordic.design"` buttons in `SavedProfilesModule.tsx`, `Analytics`, `AiIntelligenceStudio.tsx`, `ActivityCalendarModule.tsx`, and `CompetitorStudio.tsx`.
 4. `"Explore Explicit Demo Preview Mode"` step-4 launch option in `src/app/[locale]/onboarding/page.tsx`.
 
-### Completed Code Fixes (Verified Locally — Ready for Next Authorized Deployment)
+### Completed Code Fixes (Deployed Live in `dpl_4kCzhJk5xJJNboSSo52BMiZyjEer`)
 
 | File | Fix Applied |
 |---|---|
@@ -96,10 +97,9 @@ When `VIEWORA_ENABLE_DEMO_PROVIDER=false` and `DEMO_MODE_ENABLED=false` (live Ve
 
 ## 5. Exact Owner Actions to Complete Stage 71 Live Sign-Off
 
-1. *(Optional, recommended first)* Authorize one controlled Vercel Production redeployment to ship the Stage 71 Demo Preview cleanup and Stage 74 `/api/health` hardening.
-2. Open https://instagram1-beta.vercel.app/en/login in your authenticated browser (desktop `1440px` and mobile `390px` via DevTools), sign in as the hosted Super Admin, and verify:
-   - Reload persistence across `/en/dashboard`, `/en/dashboard/profile`, and `/en/admin`.
-   - Create and delete one test note/folder in Saved Profiles / Research Pro and confirm persistence after hard reload.
-   - Switch locale (`pt-BR`, `es`, `de`, `fr`) and confirm zero browser console errors.
-   - Capture redacted live dark-mode screenshots of Dashboard and Super Admin Console.
-   - Click Sign Out and confirm `/en/dashboard` redirects back to `/en/login` and `/api/auth/session` returns unauthenticated.
+1. Open https://instagram1-beta.vercel.app/en/login in your authenticated browser (desktop `1440px` and mobile `390px` via DevTools) and sign in as the hosted Super Admin.
+2. Verify all 18 customer & admin modules (Operations HQ, Personal Digital HQ, Saved Profiles, Research Pro, Analytics, Competitor Intelligence, AI Studio, Timeline, Calendar, Report Builder, Reports & Exports, Agency & Team, Automation Center, Referrals, Notifications, Membership, Support, Privacy & Settings, Super Admin Console), confirming misleading Demo Preview controls no longer appear on `dpl_4kCzhJk5xJJNboSSo52BMiZyjEer`.
+3. Create and delete one test note/folder in Saved Profiles / Research Pro and confirm persistence after hard reload.
+4. Switch across all 5 languages (`en`, `pt-BR`, `es`, `de`, `fr`) and confirm zero browser console errors.
+5. Capture redacted live dark-mode screenshots of Customer Dashboard and Super Admin Console.
+6. Click Sign Out and confirm `/en/dashboard` redirects back to `/en/login` and `/api/auth/session` returns unauthenticated.

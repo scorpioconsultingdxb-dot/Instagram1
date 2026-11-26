@@ -104,6 +104,21 @@ Do **not** activate `PROVIDER_RESEND_ENABLED` until email authentication DNS rec
 
 ---
 
+## 8. Final 12-Point Domain Activation Checklist (Zero Purchases / Zero DNS Changes Made)
+
+- [ ] **1. Domain Ownership:** Purchase canonical `<DOMAIN>`, enable Registrar Lock, WHOIS Privacy, DNSSEC, and 2FA; publish `_vercel` TXT record if requested.
+- [ ] **2. DNS Configuration:** Configure apex `A` (`76.76.21.21` / Vercel project IP), `www` `CNAME` (`cname.vercel-dns.com`), and `CAA` (`0 issue "letsencrypt.org"`).
+- [ ] **3. Vercel Configuration:** Attach `<DOMAIN>` as Primary Production Domain and `www.<DOMAIN>` as 308 redirect in `scorpioconsultingdxb-9036/instagram1` while keeping `https://instagram1-beta.vercel.app` operational during verification.
+- [ ] **4. TLS & HSTS Verification:** Confirm Valid Configuration, TLS 1.2/1.3 Let's Encrypt issuance, HTTP→HTTPS 308, and `Strict-Transport-Security` header.
+- [ ] **5. Canonical URLs:** Update `NEXT_PUBLIC_APP_URL=https://<DOMAIN>` and redeploy so all 322 static pages emit `<link rel="canonical" href="https://<DOMAIN>/...">` and 6 `hrefLang` alternates.
+- [ ] **6. Authentication Origins:** Update `AUTH_URL=https://<DOMAIN>` so `isAllowedCsrfOrigin()` strictly enforces the new canonical origin.
+- [ ] **7. Host-Bound Session Cookies:** Verify `__Host-viewora_session` (`HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, no `Domain`) issues cleanly on fresh login to `https://<DOMAIN>/en/login`.
+- [ ] **8. Redirects:** Verify `http://<DOMAIN>`, `https://www.<DOMAIN>`, and `/` locale redirects (`308`/`307`) with zero redirect loops.
+- [ ] **9. Sitemap & Robots:** Verify `https://<DOMAIN>/sitemap.xml` (135 URLs) and `https://<DOMAIN>/robots.txt` reference `https://<DOMAIN>` exclusively.
+- [ ] **10. Search Console:** Verify Domain Property via DNS TXT and submit `https://<DOMAIN>/sitemap.xml`.
+- [ ] **11. Email Sending Subdomain:** Reserve `mail.<DOMAIN>` (or apex `<DOMAIN>`) for Stage 75 Resend transactional email (`noreply@mail.<DOMAIN>`, `support@<DOMAIN>`).
+- [ ] **12. SPF, DKIM & DMARC:** Publish Resend return-path `MX`/`SPF`, 2048-bit `DKIM`, and phased `_dmarc` (`p=none` → `p=quarantine` → `p=reject`) before activating Resend.
+
 ## 7. Estimated Domain & Email Infrastructure Costs
 
 | Item | Provider Option | Estimated Cost (USD) | Purchased? |

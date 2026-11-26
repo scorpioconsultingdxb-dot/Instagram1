@@ -1,10 +1,12 @@
 import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import {
+  getRuntimeDatabaseSecurityStatus,
   isBackgroundJobsEnabled,
   isDemoModeEnabled,
   isEmailDeliveryEnabled,
   isPaymentsEnabled,
+  isPublicRegistrationOpen,
 } from '@/lib/env';
 import { checkDatabaseHealth } from '@/lib/db/prisma';
 import { defaultProviderRegistry } from '@/lib/providers';
@@ -26,6 +28,9 @@ export async function GET() {
   const jobSummary = defaultJobQueue.getSummary();
   const aiSummary = getAiCostSummary();
 
+  const dbSecurity = getRuntimeDatabaseSecurityStatus();
+  const registrationOpen = isPublicRegistrationOpen();
+
   return NextResponse.json(
     {
       ok: true,
@@ -39,6 +44,11 @@ export async function GET() {
           reachable: dbHealth.reachable,
           status: dbHealth.status,
           latencyMs: dbHealth.latencyMs,
+          security: dbSecurity,
+        },
+        registration: {
+          publicOpen: registrationOpen,
+          mode: registrationOpen ? 'open' : 'invitation_only_closed',
         },
         demoMode: {
           enabled: isDemoModeEnabled(),

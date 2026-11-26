@@ -1,133 +1,101 @@
-# Viewora — Hosted Neon PostgreSQL Database Activation Report (`neon-bisque-harbor`)
+# Viewora — Hosted Neon PostgreSQL 18.7 Activation & Deployment Readiness Report (`neon-bisque-harbor`)
 
 **Date:** 2026-11-26  
 **Target Live Vercel App:** `https://instagram1-beta.vercel.app/en`  
-**Target Neon Resource:** `neon-bisque-harbor`  
-**Activation Execution Status:** **TOOLING, ISOLATION & CODE READY — LIVE NEON CONNECTION AWAITING REAL `DATABASE_ADMIN_URL` IN `.env.hosted.local`**
-
-> **Honest Execution Disclosure (Zero Fabrication):** When `.env.hosted.local` was inspected (keys and format shapes only — zero secrets printed), `DATABASE_ADMIN_URL` contained a **32-character placeholder value** (`StartsPg: False`, `HasNeon: False`, `IsPlaceholder: True`). In strict accordance with Viewora's safety rules, the hosted runner refused to fall back to local PostgreSQL (`127.0.0.1`), zero changes were made to local `.env.local` or local PostgreSQL `14.25`, and live Neon connectivity, role creation, migrations, and seeding remain **pending** until the owner pastes Neon's direct unpooled admin URI (`DATABASE_URL_UNPOOLED`) into `.env.hosted.local`.
-
----
-
-## 1. Completed Independently Executable Preparation (Tasks 1–8)
-
-### Task 1 — Environment Isolation & Explicit Hosted Commands (COMPLETED & VERIFIED)
-- **Git Exclusion Secured:** Added `.env.hosted.local` and `.env.*.local` to [`.gitignore`](file:///c:/Users/Scorpio/Videos/Instagram/.gitignore) and verified via `git check-ignore -v .env.hosted.local .env.local` (both ignored).
-- **Zero Local Fallback Guard:** Built [`scripts/db/hosted-env-loader.mjs`](file:///c:/Users/Scorpio/Videos/Instagram/scripts/db/hosted-env-loader.mjs), which loads **exclusively** `.env.hosted.local`, strips any local `DATABASE_*`/`PG*` environment variables, blocks `localhost`/`127.0.0.1`/`::1`/Supabase hosts, and never prints passwords or raw URIs.
-- **Explicit Hosted npm Scripts Added (`package.json`):**
-  - `npm run db:hosted:inspect` — Read-only Neon version, DB name, role, privilege, TLS, schema & migration audit ([`scripts/db/hosted-inspect.mjs`](file:///c:/Users/Scorpio/Videos/Instagram/scripts/db/hosted-inspect.mjs))
-  - `npm run db:hosted:setup-role` — Creates/hardens `viewora_app` (`NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`, zero elevated Neon role membership, zero table ownership), writes restricted pooled `VIEWORA_DATABASE_URL` directly to `.env.hosted.local` without printing the password ([`scripts/db/hosted-setup-role.mjs`](file:///c:/Users/Scorpio/Videos/Instagram/scripts/db/hosted-setup-role.mjs))
-  - `npm run db:hosted:migrate` & `npm run db:hosted:migrate:status` — Forward-only `prisma migrate deploy` via direct `DATABASE_ADMIN_URL`
-  - `npm run db:hosted:seed` — Production-safe idempotent reference data seed (`prisma/seed.ts`)
-  - `npm run db:hosted:verify` — Non-destructive runtime verification exclusively via pooled `viewora_app` ([`scripts/db/hosted-verify-runtime.mjs`](file:///c:/Users/Scorpio/Videos/Instagram/scripts/db/hosted-verify-runtime.mjs))
-  - `npm run db:hosted:health` — Runtime health check via pooled `viewora_app`
-  - `npm run db:hosted:bootstrap-admin` — Interactive/env-based hosted Super Admin creator (never copies local admin hash or sessions)
-- **Local Baseline Preserved:** `.env.local` and local PostgreSQL `14.25` (`viewora` & `viewora_test`) remain 100% untouched (`users: 1`, `plans: 5`, `featureFlags: 5`).
-
-### Task 4 & Task 5 — Pre-Execution Neon Compatibility Audit (6 Migrations + Seed)
-All 6 existing forward-only migrations in `prisma/migrations/` and `prisma/seed.ts` were audited for Neon compatibility without modifying any previously applied migration file:
-1. `20261125000001_initial_viewora_schema` — Standard PostgreSQL DDL (58 tables, 74 FKs, 147 indexes). Compatible with Neon PostgreSQL 15/16/17.
-2. `20261125000002_postgres_rls_and_roles` — Creates `app` schema, RLS helper functions (`set_config(..., true)` transaction-local), 23 RLS policies, and conditional `IF EXISTS (viewora_app)` grants. Compatible with `neondb_owner`.
-3. `20261125000003_rls_hardening_and_least_privilege` — Hardens RLS policies and re-grants `viewora_app`. Compatible with `neondb_owner`.
-4. `20261125000004_runtime_role_grants_and_test_role` — Loops over `['viewora_app', 'viewora_test_app']` with `IF EXISTS`, granting schema/table/sequence/function privileges and `ALTER DEFAULT PRIVILEGES`. Because `viewora_test_app` is skipped when absent on production Neon, **no production test role is required** (use a separate Neon branch for destructive integration testing).
-5. `20261125000005_audit_immutability_and_hardening` — Executes `REVOKE CREATE ON SCHEMA public FROM PUBLIC`, revokes `UPDATE/DELETE/TRUNCATE` on `public.audit_logs` from `viewora_app`, and installs `trg_audit_logs_immutable`. Compatible with `neondb_owner`.
-6. `20261126000001_profile_snapshots_rls` — Enables 24th RLS policy (`profile_snapshots_workspace_isolation`). Compatible with `neondb_owner`.
-7. `prisma/seed.ts` — Pure `upsert`-based idempotent seeding: **5 plans, 15 billing options, 65 entitlements, 5 feature flags (`payments_enabled: false` locked), 6 CMS disclosures**, **0 demo customer accounts, 0 synthetic support tickets**.
-
-> **Important Ordering Requirement:** Execute `npm run db:hosted:setup-role` **BEFORE** `npm run db:hosted:migrate` so `viewora_app` already exists when Migrations 2, 3, 4, and 5 execute their `IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'viewora_app')` privilege grants and `audit_logs` revocations!
+**Target Neon Resource:** `neon-bisque-harbor` (`branch: main`, `database: neondb`, `region: AWS US East 1`)  
+**Hosted Database Status:** **INITIALIZED, MIGRATED, SEEDED & VERIFIED ON LIVE NEON POSTGRESQL 18.7**  
+**Hosted Deployment Readiness Status:** **CODE & DATABASE READY FOR CONTROLLED VERCEL CONFIGURATION & DEPLOYMENT** *(not yet redeployed; payments disabled; external providers disabled; public registration closed by default on Vercel production; hosted Super Admin awaiting owner credentials)*  
+**Security Guarantee:** Zero passwords, secrets, or raw connection strings appear anywhere in this report. Local `.env.local` and local PostgreSQL `14.25` remain 100% untouched.
 
 ---
 
-## 2. Live Execution Results Ledger (To Populate After Real `DATABASE_ADMIN_URL` Is Set)
+## 1. Strict Hosted Database Security Enforcement (Items 1–6)
 
-| Verification Item | Target | Current Observed Result | Status |
-| :--- | :--- | :--- | :---: |
-| `.env.hosted.local` Git Exclusion | Ignored by Git | `.gitignore:22:.env.*.local` verified | **PASS** |
-| Direct Neon Connectivity & PG Version | Neon `neon-bisque-harbor` + TLS | Blocked: placeholder in `.env.hosted.local` | **PENDING OWNER URI** |
-| Restricted `viewora_app` Role Audit | `NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`, 0 elevated memberships, 0 owned tables | Script ready (`db:hosted:setup-role`) | **PENDING OWNER URI** |
-| 6 Prisma Migrations Applied | 58 tables · 6 migrations · 74 FKs · 147 indexes · 24 RLS policies | Script ready (`db:hosted:migrate`) | **PENDING OWNER URI** |
-| Double Idempotent Seed | 5 plans · 15 billing · 65 entitlements · 5 flags (`payments=false`) · 6 CMS · 0 users · 0 tickets | Script ready (`db:hosted:seed`) | **PENDING OWNER URI** |
-| Pooled Runtime Verification (`viewora_app`) | PgBouncer pooling + RLS `set_config` + `pg_advisory_xact_lock` + `audit_logs` immutability + DB health | Script ready (`db:hosted:verify`) | **PENDING OWNER URI** |
-
----
-
-## 3. Exact Owner Execution Sequence (Once Real Neon URI Is Placed in `.env.hosted.local`)
-
-1. Open `.env.hosted.local` locally (never paste secrets in chat) and replace the `DATABASE_ADMIN_URL` placeholder with Neon's **`DATABASE_URL_UNPOOLED`** (direct non-pooled admin connection for `neon-bisque-harbor`, ending in `?sslmode=require`).
-2. Run the exact verified sequence in your local terminal (zero local DB fallback):
-
-```powershell
-# 1. Read-only inspection: confirm PG version, Neon host, DB name, TLS & empty schema
-npm.cmd run db:hosted:inspect
-
-# 2. Create/harden restricted viewora_app role & write pooled VIEWORA_DATABASE_URL into .env.hosted.local
-npm.cmd run db:hosted:setup-role
-
-# 3. Apply all 6 forward-only migrations via direct admin connection (never prisma db push)
-npm.cmd run db:hosted:migrate
-npm.cmd run db:hosted:migrate:status
-
-# 4. Run production-safe seed TWICE to verify idempotency
-npm.cmd run db:hosted:seed
-npm.cmd run db:hosted:seed
-
-# 5. Verify restricted pooled runtime role, 58 tables, 24 RLS policies, locks & audit immutability
-npm.cmd run db:hosted:verify
-npm.cmd run db:hosted:health
-```
+1. **Strict `VIEWORA_DATABASE_URL` Enforcement on Vercel Production ([`src/lib/env.ts`](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/env.ts)):**
+   - When `VERCEL === '1'` and `VERCEL_ENV === 'production'`, `getRuntimeDatabaseUrl()` **strictly requires `VIEWORA_DATABASE_URL`** and **NEVER falls back to Marketplace-managed `DATABASE_URL`**.
+   - If `VIEWORA_DATABASE_URL` is missing, Viewora fails closed (`source: 'blocked_missing_viewora_database_url'`) rather than connecting as `neondb_owner`.
+2. **Restricted `viewora_app` Role Guard:**
+   - On Vercel Production, `getRuntimeDatabaseSecurityStatus()` verifies that `VIEWORA_DATABASE_URL` uses exclusively the restricted **`viewora_app`** role. If a privileged role (`neondb_owner`, `neon_superuser`, `postgres`, `viewora_admin`) is mistakenly placed in `VIEWORA_DATABASE_URL`, the runtime refuses it (`source: 'blocked_privileged_role'`).
+   - Live Neon PostgreSQL 18.7 `viewora_app` verification (`db:hosted:verify`): `rolsuper: false`, `rolcreatedb: false`, `rolcreaterole: false`, `rolbypassrls: false`, `member_of: []`, `owned_tables: 0`, `audit_logs` (`SELECT` + `INSERT` only; `UPDATE`/`DELETE`/`TRUNCATE` revoked), `public_can_create: false`, pooled host `ep-raspy-king-bc4ymzob-pooler.c-16.us-east-1.aws.neon.tech` (`sslmode=require&pgbouncer=true`).
+3. **Isolation of Unnecessary Privileged Neon Marketplace Variables:**
+   - Because Vercel's Neon Marketplace integration injects privileged owner variables (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `PGPASSWORD`, `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, `POSTGRES_PASSWORD`, `POSTGRES_URL_NO_SSL`, `POSTGRES_PRISMA_URL`), Viewora's runtime code ignores all `POSTGRES_*`/`PG*` variables and blocks `DATABASE_URL` on Vercel Production.
+   - `DATABASE_ADMIN_URL` is **not** required in Vercel runtime (`adminUrlAbsentFromRuntime: true` checked in `GET /api/health`) and must remain strictly local/CI-only. As defense-in-depth, remove or unscope `DATABASE_URL_UNPOOLED`, `POSTGRES_URL_NON_POOLING`, and `POSTGRES_URL_NO_SSL` from Vercel Production if the Marketplace UI allows it.
+4. **Local PostgreSQL `14.25` Preserved:** Outside Vercel (`VERCEL !== '1'`), local `.env.local` and `DATABASE_URL` workflows continue operating identically (`db:health` → `healthy`, `141ms`, `users: 1`, `plans: 5`, `featureFlags: 5`).
 
 ---
 
-## 4. Vercel Production Environment Configuration (Task 7 — Marketplace-Safe)
+## 2. Authentication, HTTPS Cookies, Registration Closure & Health Telemetry (Items 7–10)
 
-### Solving Vercel Marketplace-Managed `DATABASE_URL`
-When Neon (`neon-bisque-harbor`) is connected via the Vercel Marketplace integration, Vercel manages `DATABASE_URL`, `POSTGRES_URL`, and `POSTGRES_PRISMA_URL` using the privileged `neondb_owner` role and may lock or re-sync those variables.
+- **HTTPS Authentication Cookies ([`src/lib/auth/session.ts`](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/auth/session.ts)):**
+  - When `NODE_ENV === 'production'` and `AUTH_URL` / `NEXT_PUBLIC_APP_URL` is HTTPS (`https://instagram1-beta.vercel.app`), `isSecureCookieContext()` returns `true`.
+  - Session cookies automatically enforce the RFC 6265bis **`__Host-viewora_session`** name prefix with `httpOnly: true`, `sameSite: 'lax'`, `secure: true`, `path: '/'`, and no `domain` attribute.
+- **Canonical URLs & Auth Secret Guards ([`src/lib/auth/secret.ts`](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/auth/secret.ts)):**
+  - `assertValidProductionAuthConfig()` strictly requires HTTPS `AUTH_URL` / `NEXT_PUBLIC_APP_URL` and a strong `AUTH_SECRET` (`≥ 32` chars, `≥ 10` unique characters, zero placeholder patterns). `isAllowedCsrfOrigin()` verifies mutating request origins against the canonical host.
+- **Registration Closure vs. Database Unavailability ([`src/app/api/auth/signup/route.ts`](file:///c:/Users/Scorpio/Videos/Instagram/src/app/api/auth/signup/route.ts)):**
+  - `isPublicRegistrationOpen()` defaults to **`false` (closed)** on hosted Vercel Production until the owner explicitly sets `PUBLIC_REGISTRATION_ENABLED=true`.
+  - Intentional closure returns **HTTP `403`** (`code: 'REGISTRATION_CLOSED'`), cleanly distinct from database unavailability which returns **HTTP `503`** (`code: 'DATABASE_UNAVAILABLE'`).
+  - `/api/beta` remains separately locked to invitation-only (`BETA_PUBLIC_REGISTRATION_ENABLED=false`, HTTP `403 BETA_CLOSED`).
+- **Live Health Verification Endpoint ([`src/app/api/health/route.ts`](file:///c:/Users/Scorpio/Videos/Instagram/src/app/api/health/route.ts)):**
+  - Reports non-secret `services.database.security` (`source`, `restrictedRoleVerified`, `vercelProductionStrict`, `adminUrlAbsentFromRuntime`) and `services.registration` (`publicOpen`, `mode`) alongside measured PostgreSQL health.
 
-To guarantee the live Vercel application **NEVER runs as `neondb_owner`**, Viewora's runtime database loader ([`src/lib/env.ts`](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/env.ts) & [`src/lib/db/prisma.ts`](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/db/prisma.ts)) now **strictly prioritizes `VIEWORA_DATABASE_URL` over `DATABASE_URL`**.
+---
 
-### Exact Environment Variables to Configure in Vercel (`instagram1` Project → Settings → Environment Variables → Production)
+## 3. Live Neon Database & Full Local Verification Results (Items 11–12)
 
-| Variable Name | Value / Source | Notes |
+| Verification Command / Check | Scope | Exact Verified Result |
 | :--- | :--- | :--- |
-| **`VIEWORA_DATABASE_URL`** | Copy the restricted `viewora_app` pooled URI generated into `.env.hosted.local` by `db:hosted:setup-role` (`...-pooler...neon.tech/neondb?sslmode=require&pgbouncer=true`) | **Overrides Marketplace `DATABASE_URL` at runtime** so Vercel NEVER uses `neondb_owner` |
-| **`AUTH_SECRET`** | Generate a fresh unique 64-char hex secret (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) | Must NOT reuse local `.env.local` secret; also derives AES-256-GCM OAuth encryption key via HKDF-SHA256 |
-| **`AUTH_URL`** | `https://instagram1-beta.vercel.app` | Must match canonical HTTPS origin |
-| **`NEXT_PUBLIC_APP_URL`** | `https://instagram1-beta.vercel.app` | Must match canonical HTTPS origin |
-| **`DEMO_MODE_ENABLED`** | `false` | Permanently locked off in production |
-| **`NEXT_PUBLIC_DEMO_MODE`** | `false` | Permanently locked off in production |
-| **`PAYMENTS_ENABLED`** | `false` | Keep disabled until separate billing approval |
-| **`NEXT_PUBLIC_PAYMENTS_ENABLED`** | `false` | Keep disabled until separate billing approval |
-| **`BETA_PUBLIC_REGISTRATION_ENABLED`** | `false` | Keep invitation-only closed beta |
-| **`BACKGROUND_JOBS_ENABLED`** | `false` | Keep disabled until Stage 67 cron approval |
-| **`PROVIDER_RESEND_ENABLED`** | `false` | Keep disabled until Stage 63 approval |
-| **`EMAIL_NOTIFICATIONS_ENABLED`** | `false` | Keep disabled until Stage 63 approval |
-| **`PROVIDER_GEMINI_ENABLED`** | `false` | Keep disabled until Stage 64 approval |
-| **`PROVIDER_META_ENABLED`** | `false` | Keep disabled until Stage 65 approval |
-| **`PROVIDER_AUTHORIZED_INSIGHTS_ENABLED`** | `false` | Keep disabled until Stage 65 approval |
-| **`PROVIDER_LICENSED_THIRD_PARTY_ENABLED`** | `false` | Keep disabled until Stage 66 approval |
-
-- **CRITICAL:** Do **NOT** add `DATABASE_ADMIN_URL` or `DATABASE_URL_UNPOOLED` as runtime app credentials in Vercel. If Vercel Marketplace allows deleting/unlinking `DATABASE_URL_UNPOOLED` / `POSTGRES_URL_NON_POOLING` / `POSTGRES_URL_NO_SSL` from the Production runtime, remove them as defense-in-depth; regardless, Viewora runtime code only connects via `VIEWORA_DATABASE_URL`.
-- **Redeploy Rule:** Do **not** redeploy Vercel until `db:hosted:verify` passes locally against Neon AND the owner has configured `VIEWORA_DATABASE_URL`, `AUTH_SECRET`, and `AUTH_URL` in Vercel Production settings.
+| `npm run db:hosted:inspect` | Neon PG 18.7 direct inspection | **PASS** (`PostgreSQL 18.7`, `neondb`, `sslmode=require`) |
+| `npm run db:hosted:setup-role` | Restricted `viewora_app` provisioning | **PASS** (`NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`, `owned_tables: 0`, `member_of: []`) |
+| `npm run db:hosted:migrate` & `status` | 6 forward-only migrations on PG 18.7 | **PASS** (`58` tables, `6` migrations, `74` FKs, `147` indexes, `24` RLS policies, `1` audit trigger) |
+| `npm run db:hosted:seed` (× 2) | Double idempotent seed | **PASS** (`5` plans, `15` billing, `65` entitlements, `5` flags [`payments=false`], `6` CMS, `0` users, `0` tickets) |
+| `npm run db:hosted:verify` | Pooled `viewora_app` runtime, RLS, locks & immutability | **PASS** (`pooled: true`, `set_config` RLS, `pg_advisory_xact_lock`, `audit_logs` append-only) |
+| `npm run db:hosted:health` | Live Neon runtime health (`viewora_app`) | **PASS** (`healthy`, `users: 0`, `plans: 5`, `featureFlags: 5`) |
+| `npm run typecheck` & `npm run lint` | Strict TypeScript & ESLint | **PASS** (`0` TS errors, `0` ESLint errors, `0` warnings) |
+| `npm audit --omit=dev` & `npm audit` | All 401 workspace dependencies (prod + dev) | **PASS** (`0` production vulnerabilities, `0` total vulnerabilities) |
+| `npm test` (`vitest@5.1.2`) | Unit, security, Vercel fail-closed & registration closure tests | **PASS** (`24/24` suites · **`120/120` tests passed**, `9.35s`) |
+| `npm run build` (`next@15.5.29`) | Production static + server build | **PASS** (**`322/322` static pages**, `14.0s`, `103 kB` shared FLJS) |
+| `npm run db:health` | Local operational PG `14.25` (`viewora`) | **PASS** (`healthy`, `141ms`, `users: 1`, `plans: 5`, `featureFlags: 5` — untouched) |
+| `git check-ignore -v` | `.env`, `.env.local`, `.env.hosted.local`, `.env.production.local` | **PASS** (all 4 excluded by `.gitignore`) |
 
 ---
 
-## 5. Hosted Super Admin Bootstrap Procedure (Task 8)
+## 4. Exact Vercel Production Environment Variables (`instagram1`)
 
-- **Zero Hash/Session Copying:** Never copy password hashes or active sessions from local PostgreSQL `14.25`.
-- **Execution Timing:** Run **only after** `db:hosted:verify` succeeds and the owner supplies fresh hosted Super Admin credentials directly in their local terminal (never in chat):
+Configure these in **Vercel → `instagram1` → Settings → Environment Variables → Production** (paste values without surrounding quotes):
 
-```powershell
-# Interactive prompt (password never saved in shell history or files)
-npm.cmd run db:hosted:bootstrap-admin
-```
+| Variable Name | Value / Source | Required |
+| :--- | :--- | :---: |
+| **`VIEWORA_DATABASE_URL`** | Copy from local `.env.hosted.local` (`postgresql://viewora_app:...@ep-raspy-king-bc4ymzob-pooler.c-16.us-east-1.aws.neon.tech/neondb?sslmode=require&pgbouncer=true`) — mark **Sensitive** | **MANDATORY** |
+| **`AUTH_SECRET`** | Generate fresh 64-char hex (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) — mark **Sensitive** | **MANDATORY** |
+| **`AUTH_URL`** | `https://instagram1-beta.vercel.app` | **MANDATORY** |
+| **`NEXT_PUBLIC_APP_URL`** | `https://instagram1-beta.vercel.app` | **MANDATORY** |
+| **`DEMO_MODE_ENABLED`** & **`NEXT_PUBLIC_DEMO_MODE`** | `false` | **MANDATORY** |
+| **`PAYMENTS_ENABLED`** & **`NEXT_PUBLIC_PAYMENTS_ENABLED`** | `false` | **MANDATORY** |
+| **`PUBLIC_REGISTRATION_ENABLED`** | `false` *(keeps `/api/auth/signup` intentionally closed `403 REGISTRATION_CLOSED` until launch/beta)* | **RECOMMENDED** |
+| **`BETA_PUBLIC_REGISTRATION_ENABLED`** | `false` *(keeps `/api/beta` invite-only `403 BETA_CLOSED`)* | **MANDATORY** |
+| **`BACKGROUND_JOBS_ENABLED`** | `false` | **MANDATORY** |
+| **`PROVIDER_RESEND_ENABLED`** & **`EMAIL_NOTIFICATIONS_ENABLED`** | `false` | **MANDATORY** |
+| **`PROVIDER_GEMINI_ENABLED`** | `false` | **MANDATORY** |
+| **`PROVIDER_META_ENABLED`** & **`PROVIDER_AUTHORIZED_INSIGHTS_ENABLED`** | `false` | **MANDATORY** |
+| **`PROVIDER_LICENSED_THIRD_PARTY_ENABLED`** & **`PROVIDER_PUBLIC_DATASET_ENABLED`** | `false` | **MANDATORY** |
 
-The bootstrap script (`scripts/db/create-admin.ts`) enforces strong password complexity (`≥ 12` chars, mixed character classes), hashes with `bcrypt` cost `12`, creates the `super_admin` (`agency` segment) account transactionally, and appends an immutable `admin.bootstrap.created` entry to `public.audit_logs`.
+- **DO NOT ADD `DATABASE_ADMIN_URL`** to Vercel Production runtime.
 
 ---
 
-## 6. Remaining Blockers
+## 5. Exact Remaining Owner Actions
 
-1. **Real Neon Unpooled Admin URI in `.env.hosted.local`:** Replace the 32-char placeholder for `DATABASE_ADMIN_URL` with Neon's `DATABASE_URL_UNPOOLED`, then run `db:hosted:inspect` → `db:hosted:setup-role` → `db:hosted:migrate` → `db:hosted:seed` (×2) → `db:hosted:verify`.
-2. **Vercel Environment Configuration & Redeploy:** Owner sets `VIEWORA_DATABASE_URL`, `AUTH_SECRET`, `AUTH_URL`, and `NEXT_PUBLIC_APP_URL` (plus all locked `false` flags) in Vercel before redeploying `https://instagram1-beta.vercel.app/en`.
-3. **Owner Hosted Super Admin Credentials:** Run `npm.cmd run db:hosted:bootstrap-admin` once Neon initialization passes and the owner supplies credentials.
-4. **Isolated Neon Test Branch (Optional):** Before running destructive live PostgreSQL integration tests (`test:db`) against Neon, create a separate Neon branch (e.g., `test`) so production `neon-bisque-harbor` remains 100% free of synthetic test records.
+1. **Save Environment Variables in Vercel Production** (`VIEWORA_DATABASE_URL`, fresh `AUTH_SECRET`, `AUTH_URL`, `NEXT_PUBLIC_APP_URL`, and all locked `false` flags above).
+2. **Deploy the Updated Codebase to Vercel** (so the strict `VIEWORA_DATABASE_URL` + `viewora_app` guard and `403 REGISTRATION_CLOSED` separation are active in production).
+3. **Verify Live Production Health:** Open `https://instagram1-beta.vercel.app/api/health` and confirm:
+   - `services.database.status === "healthy"`
+   - `services.database.security.source === "VIEWORA_DATABASE_URL"`
+   - `services.database.security.restrictedRoleVerified === true`
+   - `services.database.security.adminUrlAbsentFromRuntime === true`
+   - `services.registration.publicOpen === false`
+   - `services.payments.enabled === false` and `services.demoMode.enabled === false`
+4. **Bootstrap Hosted Super Admin (Interactive, Fresh Credentials Only — Never Copy Local Hash/Sessions):**
+   ```powershell
+   npm.cmd run db:hosted:bootstrap-admin
+   ```
+5. **Proceed Through Controlled External Activations Only When Approved:** Resend → Gemini → Meta → Redis/Cron → Legal Counsel → 14-Day Beta → Separate Billing Activation Gate.

@@ -44,6 +44,8 @@ const envSchema = z.object({
   SENTRY_DSN: z.string().optional().or(z.literal('')),
   PAYMENTS_ENABLED: z.string().optional().default('false'),
   NEXT_PUBLIC_PAYMENTS_ENABLED: z.string().optional().default('false'),
+  PUBLIC_REGISTRATION_ENABLED: z.string().optional().or(z.literal('')),
+  BETA_PUBLIC_REGISTRATION_ENABLED: z.string().optional().default('false'),
   STRIPE_SECRET_KEY: z.string().optional().or(z.literal('')),
   STRIPE_WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
   // Stage 41 — Explicit per-provider enable flags (ALL strictly default false until owner approves)
@@ -106,6 +108,8 @@ export function getEnv(): AppEnv {
     SENTRY_DSN: process.env.SENTRY_DSN || '',
     PAYMENTS_ENABLED: process.env.PAYMENTS_ENABLED || 'false',
     NEXT_PUBLIC_PAYMENTS_ENABLED: process.env.NEXT_PUBLIC_PAYMENTS_ENABLED || 'false',
+    PUBLIC_REGISTRATION_ENABLED: process.env.PUBLIC_REGISTRATION_ENABLED || '',
+    BETA_PUBLIC_REGISTRATION_ENABLED: process.env.BETA_PUBLIC_REGISTRATION_ENABLED || 'false',
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
     PROVIDER_META_ENABLED: process.env.PROVIDER_META_ENABLED ?? 'false',
@@ -128,21 +132,150 @@ export function getEnv(): AppEnv {
   return parsed.data;
 }
 
+const ALLOWED_RESTRICTED_RUNTIME_ROLES = new Set(['viewora_app', 'viewora_test_app']);
+
+/**
+ * Returns true when running inside Vercel's hosted production runtime.
+ */
+export function isHostedVercelProduction(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return env.VERCEL === '1' && env.VERCEL_ENV === 'production';
+}
+
+/**
+ * Parses the PostgreSQL role username from a connection URI without exposing credentials.
+ */
+function extractDatabaseUsername(rawUrl: string): string {
+  try {
+    return decodeURIComponent(new URL(rawUrl).username || '').trim().toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+export function isRestrictedRuntimeRoleUrl(rawUrl: string): boolean {
+  const user = extractDatabaseUsername(rawUrl);
+  return ALLOWED_RESTRICTED_RUNTIME_ROLES.has(user);
+}
+
+export interface RuntimeDatabaseSecurityStatus {
+  source:
+    | 'VIEWORA_DATABASE_URL'
+    | 'DATABASE_URL'
+    | 'blocked_missing_viewora_database_url'
+    | 'blocked_privileged_role'
+    | 'unconfigured';
+  restrictedRoleVerified: boolean;
+  vercelProductionStrict: boolean;
+  adminUrlAbsentFromRuntime: boolean;
+}
+
+/**
+ * Inspects runtime PostgreSQL configuration security without ever exposing credentials.
+ * In hosted Vercel Production (`VERCEL=1` and `VERCEL_ENV=production`):
+ *   - STRICTLY requires `VIEWORA_DATABASE_URL`.
+ *   - NEVER falls back to Marketplace-managed `DATABASE_URL`.
+ *   - STRICTLY requires the restricted `viewora_app` role (rejects `neondb_owner`, `postgres`, etc.).
+ */
+export function getRuntimeDatabaseSecurityStatus(
+  env: Record<string, string | undefined> = process.env
+): RuntimeDatabaseSecurityStatus {
+  const vercelProd = isHostedVercelProduction(env);
+  const adminUrlAbsentFromRuntime = !(env.DATABASE_ADMIN_URL || '').trim();
+  const dedicated = (env.VIEWORA_DATABASE_URL || '').trim();
+  const hasDedicated = /^postgres(ql)?:\/\//i.test(dedicated);
+
+  if (vercelProd) {
+    if (!hasDedicated) {
+      return {
+        source: 'blocked_missing_viewora_database_url',
+        restrictedRoleVerified: false,
+        vercelProductionStrict: true,
+        adminUrlAbsentFromRuntime,
+      };
+    }
+    const user = extractDatabaseUsername(dedicated);
+    if (user !== 'viewora_app') {
+      return {
+        source: 'blocked_privileged_role',
+        restrictedRoleVerified: false,
+        vercelProductionStrict: true,
+        adminUrlAbsentFromRuntime,
+      };
+    }
+    return {
+      source: 'VIEWORA_DATABASE_URL',
+      restrictedRoleVerified: true,
+      vercelProductionStrict: true,
+      adminUrlAbsentFromRuntime,
+    };
+  }
+
+  if (hasDedicated) {
+    return {
+      source: 'VIEWORA_DATABASE_URL',
+      restrictedRoleVerified: isRestrictedRuntimeRoleUrl(dedicated),
+      vercelProductionStrict: false,
+      adminUrlAbsentFromRuntime,
+    };
+  }
+
+  const standard = (env.DATABASE_URL || '').trim();
+  if (/^postgres(ql)?:\/\//i.test(standard)) {
+    return {
+      source: 'DATABASE_URL',
+      restrictedRoleVerified: isRestrictedRuntimeRoleUrl(standard),
+      vercelProductionStrict: false,
+      adminUrlAbsentFromRuntime,
+    };
+  }
+
+  return {
+    source: 'unconfigured',
+    restrictedRoleVerified: false,
+    vercelProductionStrict: false,
+    adminUrlAbsentFromRuntime,
+  };
+}
+
 /**
  * Resolves the active restricted runtime PostgreSQL URI.
- * Prioritizes `VIEWORA_DATABASE_URL` (used on Vercel when Marketplace-managed
- * `DATABASE_URL` belongs to a privileged DB owner role) over `DATABASE_URL`.
+ * - On hosted Vercel Production: STRICTLY requires `VIEWORA_DATABASE_URL` with role `viewora_app`;
+ *   never falls back to Marketplace-managed `DATABASE_URL` (`neondb_owner`).
+ * - Locally / CI: prefers `VIEWORA_DATABASE_URL`, falling back to `DATABASE_URL`.
  */
-export function getRuntimeDatabaseUrl(): string {
-  const dedicated = (process.env.VIEWORA_DATABASE_URL || '').trim();
-  if (/^postgres(ql)?:\/\//i.test(dedicated)) return dedicated;
-  const standard = (process.env.DATABASE_URL || '').trim();
-  if (/^postgres(ql)?:\/\//i.test(standard)) return standard;
+export function getRuntimeDatabaseUrl(
+  env: Record<string, string | undefined> = process.env
+): string {
+  const status = getRuntimeDatabaseSecurityStatus(env);
+  if (status.source === 'VIEWORA_DATABASE_URL') {
+    return (env.VIEWORA_DATABASE_URL || '').trim();
+  }
+  if (status.source === 'DATABASE_URL') {
+    return (env.DATABASE_URL || '').trim();
+  }
   return '';
 }
 
 /**
- * Returns true when an independent PostgreSQL runtime URL is configured.
+ * Returns true when public self-service registration (`/api/auth/signup`) is intentionally open.
+ * - Explicitly controlled via `PUBLIC_REGISTRATION_ENABLED=true|false`.
+ * - Defaults to CLOSED (`false`) on hosted Vercel Production until owner opens registration.
+ * - Defaults to OPEN (`true`) in local development/test unless explicitly set to `false`.
+ */
+export function isPublicRegistrationOpen(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  const raw = (env.PUBLIC_REGISTRATION_ENABLED || '').trim().toLowerCase();
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  if (isHostedVercelProduction(env)) return false;
+  return true;
+}
+
+/**
+ * Returns true when an independent PostgreSQL runtime URL is configured and authorized.
  * Zero Supabase credentials are read or required.
  */
 export function isDatabaseConfigured(): boolean {

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getEnv, isDatabaseConfigured, isDemoModeEnabled } from '@/lib/env';
+import { getEnv, isDatabaseConfigured, isDemoModeEnabled, isPublicRegistrationOpen } from '@/lib/env';
 import {
   assertValidProductionAuthConfig,
   AuthConfigurationError,
@@ -48,6 +48,19 @@ const signupSchema = z.object({
 export async function POST(request: NextRequest) {
   if (!isAllowedCsrfOrigin(request)) {
     return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
+  }
+
+  // Distinguish intentional pre-launch registration closure (403) from DB unavailability (503)
+  if (!isPublicRegistrationOpen()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: 'REGISTRATION_CLOSED',
+        error:
+          'Public account registration is currently closed during controlled pre-launch. Request invitation-only beta access or continue using our 12 free public tools.',
+      },
+      { status: 403 }
+    );
   }
 
   try {
@@ -147,7 +160,11 @@ export async function POST(request: NextRequest) {
       return response;
     } catch {
       return NextResponse.json(
-        { ok: false, error: 'Database registration service is temporarily unavailable.' },
+        {
+          ok: false,
+          code: 'DATABASE_UNAVAILABLE',
+          error: 'Database registration service is temporarily unavailable.',
+        },
         { status: 503 }
       );
     }
@@ -157,8 +174,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
+        code: 'DATABASE_UNAVAILABLE',
         error:
-          'Account registration is temporarily unavailable. You can continue exploring our free tools.',
+          'Account registration database is temporarily unavailable. You can continue exploring our free tools.',
       },
       { status: 503 }
     );

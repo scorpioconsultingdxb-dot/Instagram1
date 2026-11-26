@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { computeCrc32, validateImageBuffer } from '@/lib/storage/image-validation';
 import { buildReportPdfBuffer } from '@/lib/reports/pdf';
 import { createDefaultSections, type CustomReportDocument } from '@/lib/reports/builder';
-import { getRuntimeDatabaseUrl } from '@/lib/env';
+import {
+  getRuntimeDatabaseSecurityStatus,
+  getRuntimeDatabaseUrl,
+  isPublicRegistrationOpen,
+} from '@/lib/env';
 
 function buildPngChunk(type: string, data: Buffer): Buffer {
   const len = Buffer.alloc(4);
@@ -188,22 +192,71 @@ describe('Phase 7 Stage 68 — Actual Image Decode Verification & Multilingual P
     }
   });
 
-  it('prioritizes restricted VIEWORA_DATABASE_URL over Marketplace-managed DATABASE_URL', () => {
-    const prevViewora = process.env.VIEWORA_DATABASE_URL;
-    const prevDb = process.env.DATABASE_URL;
-    try {
-      process.env.DATABASE_URL = 'postgresql://neondb_owner:x@ep-test.neon.tech/neondb?sslmode=require';
-      process.env.VIEWORA_DATABASE_URL = 'postgresql://viewora_app:y@ep-test-pooler.neon.tech/neondb?sslmode=require&pgbouncer=true';
-      expect(getRuntimeDatabaseUrl()).toContain('viewora_app');
-      expect(getRuntimeDatabaseUrl()).toContain('-pooler.');
+  it('strictly requires restricted viewora_app VIEWORA_DATABASE_URL on Vercel production and blocks Marketplace fallback', () => {
+    // 1. Hosted Vercel Production with valid restricted viewora_app VIEWORA_DATABASE_URL -> ALLOWED
+    const validVercelEnv = {
+      VERCEL: '1',
+      VERCEL_ENV: 'production',
+      DATABASE_URL: 'postgresql://neondb_owner:secret@ep-test.neon.tech/neondb?sslmode=require',
+      VIEWORA_DATABASE_URL:
+        'postgresql://viewora_app:secret@ep-test-pooler.neon.tech/neondb?sslmode=require&pgbouncer=true',
+    };
+    expect(getRuntimeDatabaseUrl(validVercelEnv)).toContain('viewora_app');
+    expect(getRuntimeDatabaseSecurityStatus(validVercelEnv)).toMatchObject({
+      source: 'VIEWORA_DATABASE_URL',
+      restrictedRoleVerified: true,
+      vercelProductionStrict: true,
+      adminUrlAbsentFromRuntime: true,
+    });
 
-      delete process.env.VIEWORA_DATABASE_URL;
-      expect(getRuntimeDatabaseUrl()).toContain('neondb_owner');
-    } finally {
-      if (prevViewora === undefined) delete process.env.VIEWORA_DATABASE_URL;
-      else process.env.VIEWORA_DATABASE_URL = prevViewora;
-      if (prevDb === undefined) delete process.env.DATABASE_URL;
-      else process.env.DATABASE_URL = prevDb;
-    }
+    // 2. Hosted Vercel Production missing VIEWORA_DATABASE_URL -> MUST NOT fall back to Marketplace DATABASE_URL
+    const missingVieworaEnv = {
+      VERCEL: '1',
+      VERCEL_ENV: 'production',
+      DATABASE_URL: 'postgresql://neondb_owner:secret@ep-test.neon.tech/neondb?sslmode=require',
+    };
+    expect(getRuntimeDatabaseUrl(missingVieworaEnv)).toBe('');
+    expect(getRuntimeDatabaseSecurityStatus(missingVieworaEnv)).toMatchObject({
+      source: 'blocked_missing_viewora_database_url',
+      restrictedRoleVerified: false,
+      vercelProductionStrict: true,
+    });
+
+    // 3. Hosted Vercel Production where VIEWORA_DATABASE_URL accidentally uses neondb_owner -> BLOCKED
+    const ownerInVieworaEnv = {
+      VERCEL: '1',
+      VERCEL_ENV: 'production',
+      VIEWORA_DATABASE_URL:
+        'postgresql://neondb_owner:secret@ep-test-pooler.neon.tech/neondb?sslmode=require&pgbouncer=true',
+    };
+    expect(getRuntimeDatabaseUrl(ownerInVieworaEnv)).toBe('');
+    expect(getRuntimeDatabaseSecurityStatus(ownerInVieworaEnv)).toMatchObject({
+      source: 'blocked_privileged_role',
+      restrictedRoleVerified: false,
+      vercelProductionStrict: true,
+    });
+
+    // 4. Local PostgreSQL (VERCEL unset) still falls back seamlessly to DATABASE_URL
+    const localEnv = {
+      DATABASE_URL: 'postgresql://viewora_app:local@127.0.0.1:5432/viewora',
+    };
+    expect(getRuntimeDatabaseUrl(localEnv)).toContain('127.0.0.1');
+    expect(getRuntimeDatabaseSecurityStatus(localEnv)).toMatchObject({
+      source: 'DATABASE_URL',
+      restrictedRoleVerified: true,
+      vercelProductionStrict: false,
+    });
+
+    // 5. Public registration defaults closed on hosted Vercel Production, open locally unless disabled
+    expect(isPublicRegistrationOpen({ VERCEL: '1', VERCEL_ENV: 'production' })).toBe(false);
+    expect(
+      isPublicRegistrationOpen({
+        VERCEL: '1',
+        VERCEL_ENV: 'production',
+        PUBLIC_REGISTRATION_ENABLED: 'true',
+      })
+    ).toBe(true);
+    expect(isPublicRegistrationOpen({ PUBLIC_REGISTRATION_ENABLED: 'false' })).toBe(false);
+    expect(isPublicRegistrationOpen({})).toBe(true);
   });
 });

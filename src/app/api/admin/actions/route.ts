@@ -30,7 +30,9 @@ import {
 import { persistReviewAffiliateApplication } from '@/lib/referrals/service';
 import {
   defaultApiGateway,
+  recordEmergencyHaltMetadata,
   setPersistentEmergencyKillSwitch,
+  updateProviderApprovalCheck,
   type IntegrationProviderId,
 } from '@/lib/integrations';
 import type { FeatureKey } from '@/lib/entitlements/types';
@@ -152,6 +154,20 @@ const adminActionSchema = z.discriminatedUnion('type', [
       'demo_fixture',
     ]),
     active: z.boolean(),
+    reason: z.string().trim().max(240).optional(),
+  }),
+  z.object({
+    type: z.literal('update_provider_approval_check'),
+    providerId: z.enum([
+      'meta_official',
+      'authorized_insights',
+      'licensed_third_party',
+      'permitted_public_dataset',
+      'gemini_ai',
+      'resend_email',
+    ]),
+    checkKey: z.string().trim().min(2).max(60),
+    approved: z.boolean(),
   }),
 ]);
 
@@ -619,6 +635,15 @@ async function handleAdminActionPost(request: NextRequest) {
         scope: action.scope as 'global' | IntegrationProviderId,
         active: action.active,
       });
+      await recordEmergencyHaltMetadata({
+        scope: action.scope,
+        active: action.active,
+        reason:
+          action.reason ||
+          (action.active ? 'Operator-initiated emergency halt' : 'Operator cleared emergency halt'),
+        actorEmail: actor.email,
+        updatedAt: new Date().toISOString(),
+      });
     }
     const audit = await persistAuditLog({
       actorId: actor.id,
@@ -626,7 +651,11 @@ async function handleAdminActionPost(request: NextRequest) {
       action: 'admin.api_kill_switch.toggled',
       targetType: 'cost_budget',
       targetId: action.scope,
-      diff: { scope: action.scope, killSwitchActive: action.active },
+      diff: {
+        scope: action.scope,
+        killSwitchActive: action.active,
+        reason: action.reason ?? null,
+      },
     });
     return NextResponse.json({
       ok: true,
@@ -634,6 +663,29 @@ async function handleAdminActionPost(request: NextRequest) {
       killSwitchActive: action.active,
       audit,
     });
+  }
+
+  if (action.type === 'update_provider_approval_check') {
+    if (!hasAdminCapability(actor.role, 'manage_flags')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" is not permitted to update provider activation approvals.` },
+        { status: 403 }
+      );
+    }
+    const approvals = await updateProviderApprovalCheck(
+      action.providerId,
+      action.checkKey,
+      action.approved
+    );
+    const audit = await persistAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'admin.provider_approval.updated',
+      targetType: 'provider_approval',
+      targetId: `${action.providerId}:${action.checkKey}`,
+      diff: { providerId: action.providerId, checkKey: action.checkKey, approved: action.approved },
+    });
+    return NextResponse.json({ ok: true, approvals, audit });
   }
 
   // update_cms

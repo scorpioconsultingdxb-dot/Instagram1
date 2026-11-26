@@ -179,6 +179,72 @@ export async function failDbBackgroundJob(
   });
 }
 
+export async function cancelDbBackgroundJob(
+  jobId: string,
+  reason = 'Cancelled by operator',
+  client: PrismaClient = getPrismaClient()
+): Promise<DbBackgroundJobRecord | null> {
+  const existing = await client.backgroundJob.findUnique({ where: { id: jobId } });
+  if (!existing || existing.status === 'completed') return null;
+  const updated = await client.backgroundJob.update({
+    where: { id: jobId },
+    data: {
+      status: 'cancelled',
+      lockedAt: null,
+      lockedBy: null,
+      lastError: reason.slice(0, 300),
+    },
+  });
+  return mapJobRow(updated);
+}
+
+export async function listDbBackgroundJobs(
+  limit = 25,
+  client: PrismaClient = getPrismaClient()
+): Promise<DbBackgroundJobRecord[]> {
+  const rows = await client.backgroundJob.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: Math.min(100, Math.max(1, limit)),
+  });
+  return rows.map(mapJobRow);
+}
+
+/**
+ * Checks whether a provider currently has active running jobs at or above its
+ * concurrency limit, or whether global/provider emergency shutdown is active in PostgreSQL.
+ */
+export async function canWorkerExecuteExternalJob(
+  providerId: string | null,
+  maxConcurrentPerProvider = 3,
+  client: PrismaClient = getPrismaClient()
+): Promise<{ allowed: boolean; reason?: string }> {
+  const scopes = ['global_api', ...(providerId ? [`provider:${providerId}`] : [])];
+  const halted = await client.costBudget.findFirst({
+    where: { scope: { in: scopes }, killSwitchActive: true },
+  });
+  if (halted) {
+    return {
+      allowed: false,
+      reason: `Blocked by durable PostgreSQL emergency kill switch (${halted.scope}).`,
+    };
+  }
+  if (providerId) {
+    const runningForProvider = await client.backgroundJob.count({
+      where: {
+        status: 'running',
+        payload: { path: ['providerId'], equals: providerId },
+      },
+    });
+    if (runningForProvider >= maxConcurrentPerProvider) {
+      return {
+        allowed: false,
+        reason: `Per-provider concurrency cap reached (${runningForProvider}/${maxConcurrentPerProvider}) for ${providerId}.`,
+      };
+    }
+  }
+  return { allowed: true };
+}
+
 export async function getDbBackgroundJobSummary(client: PrismaClient = getPrismaClient()) {
   const rows = await client.backgroundJob.groupBy({
     by: ['status'],

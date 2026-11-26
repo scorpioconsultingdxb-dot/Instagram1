@@ -79,6 +79,8 @@ import {
   recordProfileSnapshotWithDedup,
 } from '@/lib/db/repositories/snapshots.repo';
 import {
+  cancelDbBackgroundJob,
+  canWorkerExecuteExternalJob,
   claimNextDbBackgroundJob,
   completeDbBackgroundJob,
   enqueueDbBackgroundJob,
@@ -89,6 +91,21 @@ import {
   reserveDistributedApiBudget,
   setPersistentEmergencyKillSwitch,
 } from '@/lib/integrations/distributed-store';
+import {
+  loadAdminCustomerUsageSummary,
+  reconcileApiSpendReservation,
+  recordEmergencyHaltMetadata,
+  updateProviderApprovalCheck,
+} from '@/lib/integrations/financial-controls';
+import { reserveAtomicAiMonthlyQuota } from '@/lib/ai/studio';
+import {
+  addEmailSuppression,
+  isEmailSuppressed,
+  recordDbEmailDelivery,
+  recordEmailWebhookReplayCheck,
+  updateDbEmailDeliveryByProviderId,
+} from '@/lib/db/repositories/email.repo';
+import { executeDataRetentionCleanup } from '@/lib/retention/policy';
 import { hasAdminCapability } from '@/lib/admin/rbac';
 import { withUserRlsContext } from '@/lib/db/prisma';
 import type { SavedProfileRecord } from '@/lib/dashboard/store';
@@ -1297,6 +1314,203 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
         .catch(() => undefined);
       await adminClient.costBudget
         .deleteMany({ where: { scope: { in: ['global_api', `provider:${budgetTestScope}`] } } })
+        .catch(() => undefined);
+    }
+  });
+
+  it('verifies Phase 5 (Stages 46–50) PostgreSQL persistence: concurrent atomic AI quota lock, RLS AI conversations, durable email deliveries/suppression/webhook replay, job cancellation & kill-switch guard, financial reconciliation, and retention audit_logs preservation', async () => {
+    const emailA = `p5-s46-a-${randomUUID().slice(0, 8)}@viewora.test`;
+    const emailB = `p5-s46-b-${randomUUID().slice(0, 8)}@viewora.test`;
+
+    const [regA, regB] = await Promise.all([
+      registerUserWithWorkspace(
+        {
+          email: emailA,
+          password: 'Stage46Alpha!2026',
+          fullName: 'Stage 46 Alpha',
+          segment: 'business',
+          preferredLocale: 'en',
+          emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+        },
+        appClient
+      ),
+      registerUserWithWorkspace(
+        {
+          email: emailB,
+          password: 'Stage46Beta!2026',
+          fullName: 'Stage 46 Beta',
+          segment: 'personal',
+          preferredLocale: 'en',
+          emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+        },
+        appClient
+      ),
+    ]);
+    expect(regA.ok && regB.ok).toBe(true);
+    if (!regA.ok || !regB.ok) return;
+    createdUserIds.push(regA.user.id, regB.user.id);
+
+    const testDedupeKey = `s47-dedupe-${randomUUID()}`;
+    const testWebhookId = `s47-wh-${randomUUID()}`;
+    const testSuppressedEmail = `bounced-${randomUUID().slice(0, 8)}@viewora.test`;
+    const testCancelJobKey = `s48-cancel-${randomUUID()}`;
+
+    try {
+      // 1. Stage 46: Concurrent atomic AI monthly quota enforcement (Starter limit = 3; Free limit = 0)
+      const freeBlocked = await reserveAtomicAiMonthlyQuota({
+        userId: regB.user.id,
+        monthlyLimit: 0,
+        reportType: 'profile_intelligence_summary',
+        executionMode: 'template_fallback',
+        modelName: 'deterministic_template',
+        client: appClient,
+      });
+      expect(freeBlocked.ok).toBe(false);
+      if (!freeBlocked.ok) expect(freeBlocked.code).toBe('AI_NOT_INCLUDED');
+
+      const race = await Promise.all(
+        [1, 2, 3, 4, 5].map((n) =>
+          reserveAtomicAiMonthlyQuota({
+            userId: regA.user.id,
+            monthlyLimit: 3,
+            reportType: `cap_${n}`,
+            executionMode: 'template_fallback',
+            modelName: 'deterministic_template',
+            client: appClient,
+          })
+        )
+      );
+      expect(race.filter((r) => r.ok)).toHaveLength(3);
+      expect(race.filter((r) => !r.ok && r.code === 'AI_QUOTA_EXCEEDED')).toHaveLength(2);
+
+      // 2. Stage 46: RLS-isolated AI Research Conversations in user_preferences._modules.aiConversations
+      await updateDbUserModuleState<{
+        userId: string;
+        conversations: Array<{ id: string; title: string }>;
+        updatedAt: string;
+      }>(
+        regA.user.id,
+        'aiConversations',
+        () => ({ userId: regA.user.id, conversations: [], updatedAt: '' }),
+        (cur) => ({
+          ...cur,
+          conversations: [{ id: 'c-alpha', title: 'Private Alpha Thread' }],
+          updatedAt: new Date().toISOString(),
+        }),
+        appClient
+      );
+      const leakedConvB = await readDbUserModuleState<{ conversations: unknown[] }>(
+        regB.user.id,
+        'aiConversations',
+        () => ({ conversations: [] }),
+        appClient
+      );
+      expect(leakedConvB.conversations).toHaveLength(0);
+
+      // 3. Stage 47: Durable email_deliveries deduplication, status transition, suppression & webhook replay
+      const d1 = await recordDbEmailDelivery(
+        {
+          userId: regA.user.id,
+          recipientEmail: emailA,
+          templateKey: 'welcome',
+          dedupeKey: testDedupeKey,
+          status: 'accepted_by_provider',
+          providerMessageId: `re_${testDedupeKey}`,
+        },
+        appClient
+      );
+      expect(d1.deduplicated).toBe(false);
+      const d2 = await recordDbEmailDelivery(
+        {
+          userId: regA.user.id,
+          recipientEmail: emailA,
+          templateKey: 'welcome',
+          dedupeKey: testDedupeKey,
+          status: 'accepted_by_provider',
+        },
+        appClient
+      );
+      expect(d2.deduplicated).toBe(true);
+
+      const updatedCount = await updateDbEmailDeliveryByProviderId(
+        `re_${testDedupeKey}`,
+        'delivered',
+        null,
+        appClient
+      );
+      expect(updatedCount).toBe(1);
+
+      await addEmailSuppression(testSuppressedEmail, 'hard_bounce', appClient);
+      const sup = await isEmailSuppressed(testSuppressedEmail, appClient);
+      expect(sup?.reason).toBe('hard_bounce');
+
+      const wh1 = await recordEmailWebhookReplayCheck(testWebhookId, true, { type: 'email.delivered' }, appClient);
+      const wh2 = await recordEmailWebhookReplayCheck(testWebhookId, true, { type: 'email.delivered' }, appClient);
+      expect(wh1.replayed).toBe(false);
+      expect(wh2.replayed).toBe(true);
+
+      // 4. Stage 48: Job cancellation, kill-switch worker respect & retention dry-run audit preservation
+      const { job: cancelTarget } = await enqueueDbBackgroundJob(
+        { jobType: 'competitor_refresh', idempotencyKey: testCancelJobKey, payload: { providerId: 'meta_official' } },
+        appClient
+      );
+      const cancelled = await cancelDbBackgroundJob(cancelTarget.id, 'QA cancellation', appClient);
+      expect(cancelled?.status).toBe('cancelled');
+
+      await setPersistentEmergencyKillSwitch({
+        scope: 'meta_official',
+        active: true,
+        client: appClient,
+      });
+      const workerCheck = await canWorkerExecuteExternalJob('meta_official', 3, appClient);
+      expect(workerCheck.allowed).toBe(false);
+      expect(workerCheck.reason).toMatch(/kill switch/i);
+
+      const retention = await executeDataRetentionCleanup({ dryRun: true, client: appClient });
+      expect(retention.auditLogsDeleted).toBe(0);
+
+      // 5. Stage 49: Spend reconciliation, halt metadata, 10-point approval & privacy-safe usage summary
+      const rec = await reconcileApiSpendReservation({
+        providerId: 'gemini_ai',
+        reservedUsd: 0.05,
+        actualUsd: 0.02,
+        outcome: 'settled',
+        client: appClient,
+      });
+      expect(rec.deltaUsd).toBe(-0.03);
+      expect(rec.recorded).toBe(true);
+
+      await recordEmergencyHaltMetadata(
+        {
+          scope: 'meta_official',
+          active: true,
+          reason: 'Stage 49 QA test halt',
+          actorEmail: 'qa@viewora.test',
+          updatedAt: new Date().toISOString(),
+        },
+        appClient
+      );
+      const approvals = await updateProviderApprovalCheck('meta_official', 'owner_approval', true, appClient);
+      expect(approvals.meta_official?.owner_approval).toBe(true);
+
+      const usageSummary = await loadAdminCustomerUsageSummary(appClient);
+      expect(usageSummary.backend).toBe('postgresql');
+      expect(usageSummary.aiReports30d).toBeGreaterThanOrEqual(3);
+    } finally {
+      await adminClient.aiUsageRecord.deleteMany({ where: { userId: regA.user.id } }).catch(() => undefined);
+      await adminClient.emailDelivery.deleteMany({ where: { dedupeKey: testDedupeKey } }).catch(() => undefined);
+      await adminClient.webhookEvent.deleteMany({ where: { eventId: testWebhookId } }).catch(() => undefined);
+      await adminClient.backgroundJob.deleteMany({ where: { idempotencyKey: testCancelJobKey } }).catch(() => undefined);
+      await adminClient.costBudget.deleteMany({ where: { scope: 'provider:meta_official' } }).catch(() => undefined);
+      await adminClient.operationalMetric.deleteMany({ where: { metricName: 'api_spend_usd' } }).catch(() => undefined);
+      await adminClient.systemSetting
+        .deleteMany({
+          where: {
+            key: {
+              in: ['email_suppressions_v1', 'api_emergency_halt_metadata_v1', 'provider_activation_approvals_v1'],
+            },
+          },
+        })
         .catch(() => undefined);
     }
   });

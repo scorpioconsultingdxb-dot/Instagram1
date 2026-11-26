@@ -23,7 +23,17 @@ import { defaultJobQueue } from '@/lib/jobs/queue';
 import { loadReferralOverview } from '@/lib/referrals/service';
 import { checkDatabaseHealth } from '@/lib/db/prisma';
 import { getBackupDirectorySummary } from '@/lib/admin/backup-status';
-import { defaultApiGateway, loadPersistentIntegrationTelemetry } from '@/lib/integrations';
+import { getEnv, isDatabaseConfigured, isEmailDeliveryEnabled } from '@/lib/env';
+import {
+  defaultApiGateway,
+  isProviderEffectivelyEnabled,
+  loadAdminCustomerUsageSummary,
+  loadEmergencyHaltMetadata,
+  loadPersistentIntegrationTelemetry,
+  loadProviderApprovalMap,
+} from '@/lib/integrations';
+import { getDbBackgroundJobSummary } from '@/lib/db/repositories/jobs.repo';
+import { loadAdminCommunicationOverview } from '@/lib/db/repositories/email.repo';
 import { AdminConsole } from '@/components/admin/AdminConsole';
 
 export const dynamic = 'force-dynamic';
@@ -80,6 +90,7 @@ export default async function AdminPage({
     );
   }
 
+  const env = getEnv();
   const [
     initialUsers,
     providerHealth,
@@ -93,6 +104,11 @@ export default async function AdminPage({
     referralOverview,
     databaseHealth,
     distributedTelemetry,
+    communicationOverview,
+    customerUsageSummary,
+    haltMetadata,
+    providerApprovals,
+    dbJobSummary,
   ] = await Promise.all([
     loadAdminUsers(),
     defaultProviderRegistry.checkAllHealth(),
@@ -106,6 +122,16 @@ export default async function AdminPage({
     loadReferralOverview(),
     checkDatabaseHealth(),
     loadPersistentIntegrationTelemetry().catch(() => null),
+    loadAdminCommunicationOverview(
+      isEmailDeliveryEnabled() && isProviderEffectivelyEnabled('resend_email'),
+      env.EMAIL_FROM_ADDRESS
+    ).catch(() => null),
+    loadAdminCustomerUsageSummary().catch(() => null),
+    loadEmergencyHaltMetadata().catch(() => []),
+    loadProviderApprovalMap().catch(() => ({})),
+    isDatabaseConfigured()
+      ? getDbBackgroundJobSummary().catch(() => defaultJobQueue.getSummary())
+      : Promise.resolve(defaultJobQueue.getSummary()),
   ]);
 
   return (
@@ -119,6 +145,10 @@ export default async function AdminPage({
       backupSummary={getBackupDirectorySummary()}
       integrationCenter={defaultApiGateway.getIntegrationCenterSnapshot()}
       distributedTelemetry={distributedTelemetry}
+      communicationOverview={communicationOverview}
+      customerUsageSummary={customerUsageSummary}
+      haltMetadata={haltMetadata}
+      initialProviderApprovals={providerApprovals}
       apiUsage={getApiUsageMetrics()}
       searchAnalytics={getSearchAnalyticsMetrics()}
       conversionAnalytics={conversionAnalytics}
@@ -128,7 +158,7 @@ export default async function AdminPage({
       initialBroadcasts={initialBroadcasts}
       initialAuditLogs={initialAuditLogs}
       initialFlags={initialFlags}
-      jobQueueSummary={defaultJobQueue.getSummary()}
+      jobQueueSummary={dbJobSummary}
       storageUsage={getLocalStorageUsageSummary()}
       referralOverview={referralOverview}
     />

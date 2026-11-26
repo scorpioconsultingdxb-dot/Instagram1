@@ -21,6 +21,9 @@ import { StatusBanner } from '@/components/layout/PageShell';
 
 export function AutomationCenterModule({ defaultTimezone = 'UTC' }: { defaultTimezone?: string }) {
   const [state, setState] = useState<UserAutomationState | null>(null);
+  const [schedulerStatusLabel, setSchedulerStatusLabel] = useState<string>(
+    'Configured — Scheduled Runner Inactive (BACKGROUND_JOBS_ENABLED=false)'
+  );
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
@@ -43,8 +46,11 @@ export function AutomationCenterModule({ defaultTimezone = 'UTC' }: { defaultTim
     let active = true;
     fetch('/api/automation')
       .then((r) => r.json())
-      .then((json: { ok?: boolean; automation?: UserAutomationState }) => {
-        if (active && json?.ok && json.automation) setState(json.automation);
+      .then((json: { ok?: boolean; automation?: UserAutomationState; schedulerStatusLabel?: string }) => {
+        if (active && json?.ok && json.automation) {
+          setState(json.automation);
+          if (json.schedulerStatusLabel) setSchedulerStatusLabel(json.schedulerStatusLabel);
+        }
       })
       .catch(() => undefined)
       .finally(() => {
@@ -96,10 +102,15 @@ export function AutomationCenterModule({ defaultTimezone = 'UTC' }: { defaultTim
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="font-display text-lg font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
-          Workflow &amp; Automation Center
-        </h2>
-        <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-display text-lg font-extrabold text-[#0F172A] dark:text-[#F8FAFC]">
+            Workflow &amp; Automation Center
+          </h2>
+          <span className="rounded-full bg-slate-100 px-3 py-1 font-mono text-[10px] font-bold uppercase text-slate-700 dark:bg-[#192337] dark:text-slate-300">
+            {schedulerStatusLabel}
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
           Automate internal reminders, research follow-up tasks, project deadlines, and report prep schedules with idempotent background job execution.
         </p>
       </div>

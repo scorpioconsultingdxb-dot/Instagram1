@@ -11,6 +11,8 @@ import {
 } from '@/lib/entitlements/service';
 import { defaultProviderRegistry } from '@/lib/providers';
 import { generateAiProfileReport } from '@/lib/ai/gemini';
+import { reserveAtomicAiMonthlyQuota } from '@/lib/ai/studio';
+import { isProviderEffectivelyEnabled } from '@/lib/integrations';
 import { loadUserWorkspaceState, persistSavedAiReport } from '@/lib/dashboard/store';
 import { loadIsFeatureFlagEnabled } from '@/lib/admin/store';
 
@@ -90,6 +92,24 @@ async function handleAiReportPost(request: NextRequest) {
       return NextResponse.json({ ok: false, error: err.message }, { status: 403 });
     }
     throw err;
+  }
+
+  const atomicQuota = await reserveAtomicAiMonthlyQuota({
+    userId: user.id,
+    monthlyLimit: entitlements.rules.ai_profile_reports.numericLimit,
+    reportType: parsed.data.reportType,
+    executionMode: isProviderEffectivelyEnabled('gemini_ai') ? 'live_gemini' : 'template_fallback',
+    modelName: isProviderEffectivelyEnabled('gemini_ai') ? 'gemini-2.5-flash' : 'deterministic_template',
+  });
+  if (!atomicQuota.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: atomicQuota.code,
+        error: `Monthly AI report allocation reached (${atomicQuota.usedThisMonth}/${atomicQuota.limit}).`,
+      },
+      { status: 403 }
+    );
   }
 
   const lookup = await defaultProviderRegistry.lookupPublicProfile(parsed.data.username, {

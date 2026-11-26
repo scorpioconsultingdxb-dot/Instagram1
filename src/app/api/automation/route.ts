@@ -2,8 +2,14 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getCurrentSessionUser } from '@/lib/auth/session';
 import { isAllowedCsrfOrigin } from '@/lib/auth/secret';
-import { isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
+import { isBackgroundJobsEnabled, isDatabaseConfigured, isLocalDevFallbackAllowed } from '@/lib/env';
 import { defaultJobQueue } from '@/lib/jobs/queue';
+import { getDbBackgroundJobSummary } from '@/lib/db/repositories/jobs.repo';
+import {
+  loadConfiguredPlans,
+  loadUserEntitlementOverrides,
+  resolveEntitlements,
+} from '@/lib/entitlements/service';
 import {
   AUTOMATION_TEMPLATES,
   executePersistedAutomationRule,
@@ -72,11 +78,19 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: 'Storage is unavailable.' }, { status: 503 });
   }
 
+  const queueSummary = isDatabaseConfigured()
+    ? await getDbBackgroundJobSummary().catch(() => defaultJobQueue.getSummary())
+    : defaultJobQueue.getSummary();
+
   return NextResponse.json({
     ok: true,
+    schedulerEnabled: isBackgroundJobsEnabled(),
+    schedulerStatusLabel: isBackgroundJobsEnabled()
+      ? 'External Scheduler Active'
+      : 'Configured — Scheduled Runner Inactive (BACKGROUND_JOBS_ENABLED=false)',
     automation: await loadUserAutomationState(user.id),
     templates: AUTOMATION_TEMPLATES,
-    queueSummary: defaultJobQueue.getSummary(),
+    queueSummary,
   });
 }
 
@@ -103,6 +117,36 @@ export async function POST(request: NextRequest) {
   const now = new Date().toISOString();
 
   if (action.type === 'create_rule') {
+    const [plans, overrides, currentAuto] = await Promise.all([
+      loadConfiguredPlans(),
+      loadUserEntitlementOverrides(user.id),
+      loadUserAutomationState(user.id),
+    ]);
+    const entitlements = resolveEntitlements({
+      planCode: user.planCode,
+      billingInterval: user.billingInterval,
+      userId: user.id,
+      plans,
+      overrides,
+    });
+    const maxRulesByPlan: Record<string, number> = {
+      free: 3,
+      starter: 8,
+      premium: 15,
+      pro: 30,
+      agency: 60,
+    };
+    const allowedRules = maxRulesByPlan[entitlements.planCode] ?? 3;
+    if (currentAuto.rules.length >= allowedRules) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Automation rule limit reached for your ${entitlements.planCode} plan (${currentAuto.rules.length}/${allowedRules}).`,
+        },
+        { status: 403 }
+      );
+    }
+
     const externalInactive = isExternalInactiveTrigger(action.trigger);
     const rule = {
       id: `rul-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,

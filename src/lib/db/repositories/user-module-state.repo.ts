@@ -6,7 +6,8 @@ export type UserModuleKey =
   | 'customReports'
   | 'agencyOrg'
   | 'automation'
-  | 'referralCampaigns';
+  | 'referralCampaigns'
+  | 'aiConversations';
 
 function extractRecord(raw: unknown): Record<string, unknown> {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {

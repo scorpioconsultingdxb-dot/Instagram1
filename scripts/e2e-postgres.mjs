@@ -290,7 +290,27 @@ async function main() {
     const homeMobileOverflow = await cdp.eval(`document.documentElement.scrollWidth > window.innerWidth`);
     assert(!homeMobileOverflow, 'Mobile 390px homepage horizontal overflow detected');
     report.screenshots.push(await cdp.screenshot('pg_e2e_home_390px.png'));
-    report.passed.push('Homepage & free tools verified at 1440px and 390px with zero overflow and zero Supabase copy');
+
+    // Stage 50: Verify all 6 viewport widths (375, 390, 768, 1024, 1440, 1920) & all 5 locales + dark theme
+    for (const [w, h] of [[375, 812], [768, 1024], [1024, 768], [1920, 1080]]) {
+      await cdp.setViewport(w, h);
+      await cdp.goto(`${BASE_URL}/en`, 650);
+      const ov = await cdp.eval(`document.documentElement.scrollWidth > window.innerWidth`);
+      assert(!ov, `Homepage horizontal overflow at ${w}x${h}`);
+    }
+    await cdp.setViewport(1440, 900);
+    for (const loc of ['pt-BR', 'es', 'de', 'fr']) {
+      await cdp.goto(`${BASE_URL}/${loc}`, 650);
+      const locOk = await cdp.eval(`Boolean(document.querySelector('h1')) && !document.querySelector('[data-error-boundary]')`);
+      assert(locOk, `Locale /${loc} failed render check`);
+    }
+    // Dark theme toggle check
+    await cdp.goto(`${BASE_URL}/en`, 650);
+    await cdp.eval(`(() => { document.documentElement.classList.add('dark'); })()`);
+    await sleep(200);
+    report.screenshots.push(await cdp.screenshot('phase5_home_dark_1440px.png'));
+    await cdp.eval(`(() => { document.documentElement.classList.remove('dark'); })()`);
+    report.passed.push('Homepage & free tools verified across 6 viewports (375–1920px), 5 locales, and dark theme with zero overflow');
 
     // 3. Real Registration via UI -> Onboarding -> Dashboard
     await cdp.setViewport(1440, 900);
@@ -642,6 +662,12 @@ async function main() {
       const ovJson = await ov.json();
       const intRes = await fetch('/api/admin/integrations');
       const intJson = await intRes.json();
+      const commRes = await fetch('/api/admin/communications');
+      const commJson = await commRes.json();
+      const autoRes = await fetch('/api/automation');
+      const autoJson = await autoRes.json();
+      const aiStudioGet = await fetch('/api/ai/studio');
+      const aiStudioJson = await aiStudioGet.json();
       const lockPay = await fetch('/api/admin/actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -671,6 +697,16 @@ async function main() {
         allPaidDisabled: intJson?.integrationCenter?.allPaidProvidersDisabled === true,
         providerCount: (intJson?.integrationCenter?.providers || []).length,
         distributedBackend: intJson?.distributedTelemetry?.backend || null,
+        hasBudgetAlerts: Boolean(intJson?.budgetAlerts?.daily && intJson?.budgetAlerts?.monthly),
+        hasCustomerUsage: Boolean(intJson?.customerUsageSummary),
+        commStatus: commRes.status,
+        commTemplatesCount: (commJson?.templates || []).length,
+        commDisabled: commJson?.overview?.providerEnabled === false,
+        autoStatus: autoRes.status,
+        autoSchedulerDisabled: autoJson?.schedulerEnabled === false,
+        aiStudioStatus: aiStudioGet.status,
+        aiCapabilitiesCount: (aiStudioJson?.capabilities || []).length,
+        aiGeminiDisabled: aiStudioJson?.providerStatus?.geminiEnabled === false,
         lockPayStatus: lockPay.status,
         pdfStatus: pdfRes.status,
         pdfContentType: pdfRes.headers.get('content-type') || '',
@@ -684,8 +720,18 @@ async function main() {
       adminCheck.integrationsStatus === 200 &&
         adminCheck.allPaidDisabled &&
         adminCheck.providerCount === 7 &&
-        adminCheck.distributedBackend === 'postgresql',
-      `Admin Integration Center API check failed: ${JSON.stringify(adminCheck)}`
+        adminCheck.distributedBackend === 'postgresql' &&
+        adminCheck.hasBudgetAlerts &&
+        adminCheck.hasCustomerUsage &&
+        adminCheck.commStatus === 200 &&
+        adminCheck.commTemplatesCount === 19 &&
+        adminCheck.commDisabled &&
+        adminCheck.autoStatus === 200 &&
+        adminCheck.autoSchedulerDisabled &&
+        adminCheck.aiStudioStatus === 200 &&
+        adminCheck.aiCapabilitiesCount === 12 &&
+        adminCheck.aiGeminiDisabled,
+      `Phase 5 (Stages 46–49) Integration/Communications/Automation/AI Studio API check failed: ${JSON.stringify(adminCheck)}`
     );
     assert(adminCheck.lockPayStatus === 403, `Expected 403 on locked payments_enabled, got ${adminCheck.lockPayStatus}`);
     assert(
@@ -703,7 +749,14 @@ async function main() {
     })()`);
     await sleep(500);
     report.screenshots.push(await cdp.screenshot('phase5_integration_center_1440px.png'));
-    // Agency-tier account saves 2 profiles & verifies Competitor Intelligence Studio matrix (Stage 45)
+    // Switch to Admin Communications Center tab and capture screenshot (Stage 47)
+    await cdp.eval(`(() => {
+      const btn = Array.from(document.querySelectorAll('button[role="tab"]')).find(b => b.textContent && b.textContent.includes('Communications'));
+      if (btn) btn.click();
+    })()`);
+    await sleep(450);
+    report.screenshots.push(await cdp.screenshot('phase5_communications_center_1440px.png'));
+    // Agency-tier account saves 2 profiles & verifies Competitor Studio, AI Studio & Automation Center
     const compSetup = await cdp.eval(`(async () => {
       const s1 = await fetch('/api/dashboard/workspace', {
         method: 'POST',
@@ -725,6 +778,22 @@ async function main() {
       'Competitor Intelligence Studio matrix did not render expected profiles/controls'
     );
     report.screenshots.push(await cdp.screenshot('phase5_competitor_studio_1440px.png'));
+    // Stage 46 AI Intelligence Studio (Desktop 1440px + Mobile 390px)
+    await cdp.goto(`${BASE_URL}/en/dashboard/ai-insights`, 1200);
+    const aiText = await cdp.eval(`document.body.innerText`);
+    assert(aiText.includes('Research Assistant') && aiText.includes('12 Intelligence Tools'), 'AI Studio tabs missing');
+    report.screenshots.push(await cdp.screenshot('phase5_ai_studio_1440px.png'));
+    await cdp.setViewport(390, 844);
+    await sleep(300);
+    const aiMobOv = await cdp.eval(`document.documentElement.scrollWidth > window.innerWidth`);
+    assert(!aiMobOv, 'Mobile 390px AI Studio horizontal overflow detected');
+    report.screenshots.push(await cdp.screenshot('phase5_ai_studio_390px.png'));
+    await cdp.setViewport(1440, 900);
+    // Stage 48 Automation Center (Desktop 1440px)
+    await cdp.goto(`${BASE_URL}/en/dashboard/automation`, 1200);
+    const autoText = await cdp.eval(`document.body.innerText`);
+    assert(autoText.includes('Workflow & Automation Center') && autoText.includes('BACKGROUND_JOBS_ENABLED=false'), 'Automation Center inactive scheduler disclosure missing');
+    report.screenshots.push(await cdp.screenshot('phase5_automation_center_1440px.png'));
     await cdp.setViewport(390, 844);
     await cdp.goto(`${BASE_URL}/en/admin`, 1100);
     await cdp.eval(`(() => {

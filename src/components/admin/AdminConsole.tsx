@@ -11,6 +11,7 @@ import {
   HeartPulse,
   LifeBuoy,
   Lock,
+  Mail,
   Pencil,
   Plug,
   Plus,
@@ -41,6 +42,15 @@ import type { DatabaseHealthResult } from '@/lib/db/prisma';
 import type { BackupDirectorySummary } from '@/lib/admin/backup-status';
 import type { IntegrationCenterSnapshot, IntegrationProviderId } from '@/lib/integrations/types';
 import type { PersistentEmergencyStates } from '@/lib/integrations/distributed-store';
+import {
+  evaluateBudgetUtilization,
+  PROVIDER_ACTIVATION_CHECKLIST_ITEMS,
+  type AdminCustomerUsageSummary,
+  type EmergencyHaltMetadataRecord,
+  type ProviderApprovalMap,
+} from '@/lib/integrations/financial-shared';
+import type { AdminCommunicationOverview } from '@/lib/db/repositories/email.repo';
+import { EMAIL_TEMPLATE_CATALOG } from '@/lib/email/catalog';
 import { ConfirmDialog, StatusBanner } from '@/components/layout/PageShell';
 
 export type AdminTab =
@@ -48,6 +58,7 @@ export type AdminTab =
   | 'plans'
   | 'entitlements'
   | 'integrations'
+  | 'communications'
   | 'support'
   | 'cms'
   | 'notifications'
@@ -68,6 +79,10 @@ export interface AdminConsoleProps {
   backupSummary?: BackupDirectorySummary;
   integrationCenter?: IntegrationCenterSnapshot;
   distributedTelemetry?: PersistentEmergencyStates | null;
+  communicationOverview?: AdminCommunicationOverview | null;
+  customerUsageSummary?: AdminCustomerUsageSummary | null;
+  haltMetadata?: EmergencyHaltMetadataRecord[];
+  initialProviderApprovals?: ProviderApprovalMap;
   apiUsage: ApiUsageMetric[];
   searchAnalytics: SearchAnalyticsMetric[];
   conversionAnalytics: {
@@ -138,6 +153,10 @@ export function AdminConsole({
   backupSummary,
   integrationCenter,
   distributedTelemetry,
+  communicationOverview,
+  customerUsageSummary,
+  haltMetadata = [],
+  initialProviderApprovals = {},
   apiUsage,
   searchAnalytics,
   conversionAnalytics,
@@ -208,6 +227,12 @@ export function AdminConsole({
     nextActive: boolean;
   } | null>(null);
   const [killSwitchBusy, setKillSwitchBusy] = useState(false);
+  const [providerApprovals, setProviderApprovals] = useState<ProviderApprovalMap>(
+    initialProviderApprovals
+  );
+  const [selectedApprovalProvider, setSelectedApprovalProvider] = useState<
+    'meta_official' | 'authorized_insights' | 'licensed_third_party' | 'gemini_ai' | 'resend_email'
+  >('meta_official');
   const [banner, setBanner] = useState<{ tone: 'success' | 'error'; message: string } | null>(
     null
   );
@@ -268,6 +293,7 @@ export function AdminConsole({
     { id: 'plans', label: 'Plans', icon: CreditCard },
     { id: 'entitlements', label: 'Entitlements', icon: Sliders },
     { id: 'integrations', label: 'Integration Center', icon: Plug },
+    { id: 'communications', label: 'Communications', icon: Mail },
     { id: 'support', label: 'Support', icon: LifeBuoy },
     { id: 'cms', label: 'Content CMS', icon: FileText },
     { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -1749,7 +1775,7 @@ export function AdminConsole({
                             Timeout: {prov.policy.timeoutMs}ms · Retries: {prov.policy.maxRetries} · Rate: {prov.policy.maxRequestsPerMinute}/min · TTL: {prov.policy.cacheTtlSeconds}s
                           </p>
                           <p className="mt-0.5 text-[10px] text-[#64748B]">
-                            Calls: {prov.usage.totalCalls} · Cache hits: {prov.usage.cacheHits} · Errors: {prov.usage.errors}
+                            Calls: {prov.usage.totalCalls} · Cache hits: {prov.usage.totalCalls > 0 ? prov.usage.cacheHits : 'Unavailable'} · Avg Latency: {prov.usage.totalCalls > 0 ? `${prov.usage.avgLatencyMs}ms` : 'Unavailable'} · Last Request: {prov.usage.lastCalledAt ? new Date(prov.usage.lastCalledAt).toLocaleTimeString() : 'Unavailable'}
                           </p>
                         </div>
                         <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-[#263047] dark:bg-[#131C2E]">
@@ -1790,6 +1816,153 @@ export function AdminConsole({
                 ) : null}
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-bold text-[#0F172A] dark:text-white">
+                      Budget Utilization &amp; Threshold Alerts (50% / 75% / 90% / 100%)
+                    </h3>
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                      Estimated API Cost — Not Confirmed Provider Invoice
+                    </span>
+                  </div>
+                  {(() => {
+                    const dailyUtil = evaluateBudgetUtilization(
+                      'global_daily',
+                      distributedTelemetry?.dailySpentUsd ?? integrationCenter.costControl.dailySpentUsd,
+                      distributedTelemetry?.dailyCapUsd ?? integrationCenter.costControl.dailyCapUsd
+                    );
+                    const monthlyUtil = evaluateBudgetUtilization(
+                      'global_monthly',
+                      distributedTelemetry?.monthlySpentUsd ?? integrationCenter.costControl.monthlySpentUsd,
+                      distributedTelemetry?.monthlyCapUsd ?? integrationCenter.costControl.monthlyCapUsd
+                    );
+                    return (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {[
+                          { label: 'Daily Global Budget', util: dailyUtil },
+                          { label: 'Monthly Global Budget', util: monthlyUtil },
+                        ].map(({ label, util }) => (
+                          <div key={label} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-[#263047] dark:bg-[#131C2E]">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-[#0F172A] dark:text-white">{label}</span>
+                              <span className="font-mono text-[10px] font-bold uppercase text-[#6941EF] dark:text-[#A99AFF]">
+                                {util.utilizationPercent}% · {util.alertLevel.replace(/_/g, ' ')}
+                              </span>
+                            </div>
+                            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-[#0F172A]">
+                              <div
+                                className="h-full rounded-full bg-[#7957FF]"
+                                style={{ width: `${Math.min(100, util.utilizationPercent)}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                  {haltMetadata.length > 0 ? (
+                    <div className="mt-3 space-y-1 font-mono text-[10px] text-[#64748B]">
+                      {haltMetadata.slice(0, 4).map((hm) => (
+                        <p key={hm.scope}>
+                          Halt Log [{hm.scope}]: {hm.active ? 'HALTED' : 'CLEARED'} by {hm.actorEmail} — {hm.reason} ({new Date(hm.updatedAt).toLocaleString()})
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                {customerUsageSummary ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                    <h3 className="font-bold text-[#0F172A] dark:text-white">
+                      Customer Usage Administration (Privacy-Safe Aggregates)
+                    </h3>
+                    <p className="mt-0.5 text-[11px] text-[#64748B]">{customerUsageSummary.privacyNotice}</p>
+                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 tabular-nums">
+                      <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-[#263047] dark:bg-[#131C2E]">
+                        <p className="text-[10px] text-[#64748B]">Searches (24h)</p>
+                        <p className="font-display text-lg font-extrabold">{customerUsageSummary.searches24h}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-[#263047] dark:bg-[#131C2E]">
+                        <p className="text-[10px] text-[#64748B]">AI Usage (30d)</p>
+                        <p className="font-display text-lg font-extrabold">{customerUsageSummary.aiReports30d}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-[#263047] dark:bg-[#131C2E]">
+                        <p className="text-[10px] text-[#64748B]">Saved Profiles</p>
+                        <p className="font-display text-lg font-extrabold">{customerUsageSummary.savedProfilesTotal}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-[#263047] dark:bg-[#131C2E]">
+                        <p className="text-[10px] text-[#64748B]">Report Exports (30d)</p>
+                        <p className="font-display text-lg font-extrabold">{customerUsageSummary.reportExports30d}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* 10-Point Provider Activation Approval Workflow (Stage 49.6) */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="font-bold text-[#0F172A] dark:text-white">
+                        Provider Activation Readiness Checklist (10-Point Gate)
+                      </h3>
+                      <p className="mt-0.5 text-[11px] text-[#64748B]">
+                        Providers never auto-activate when credentials are detected. Track all 10 governance checks before flipping server flags.
+                      </p>
+                    </div>
+                    <select
+                      aria-label="Select provider approval checklist"
+                      value={selectedApprovalProvider}
+                      onChange={(e) =>
+                        setSelectedApprovalProvider(e.target.value as typeof selectedApprovalProvider)
+                      }
+                      className="h-8 rounded-lg border border-slate-300 bg-white px-2.5 font-mono text-xs dark:border-[#263047] dark:bg-[#131C2E] dark:text-white"
+                    >
+                      <option value="meta_official">meta_official</option>
+                      <option value="authorized_insights">authorized_insights</option>
+                      <option value="licensed_third_party">licensed_third_party</option>
+                      <option value="gemini_ai">gemini_ai</option>
+                      <option value="resend_email">resend_email</option>
+                    </select>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {PROVIDER_ACTIVATION_CHECKLIST_ITEMS.map((item) => {
+                      const checked = Boolean(providerApprovals[selectedApprovalProvider]?.[item.key]);
+                      return (
+                        <label
+                          key={item.key}
+                          className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-[#263047] dark:bg-[#131C2E]"
+                        >
+                          <input
+                            type="checkbox"
+                            disabled={!canManageEntitlements}
+                            checked={checked}
+                            onChange={async () => {
+                              const nextVal = !checked;
+                              const res = await runAction(
+                                {
+                                  type: 'update_provider_approval_check',
+                                  providerId: selectedApprovalProvider,
+                                  checkKey: item.key,
+                                  approved: nextVal,
+                                },
+                                `Updated ${selectedApprovalProvider} approval check "${item.label}".`
+                              );
+                              if (res.ok && res.data?.approvals) {
+                                setProviderApprovals(res.data.approvals as ProviderApprovalMap);
+                              }
+                            }}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <strong className="block text-[#0F172A] dark:text-white">{item.label}</strong>
+                            <span className="text-[10px] text-[#64748B]">{item.description}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
                   <h3 className="font-bold text-[#0F172A] dark:text-white">
                     Recent Redacted External API Logs ({integrationCenter.recentLogs.length})
                   </h3>
@@ -1820,6 +1993,94 @@ export function AdminConsole({
             ) : (
               <p className="text-xs text-[#64748B]">Integration Center telemetry unavailable.</p>
             )}
+          </div>
+        ) : null}
+
+        {tab === 'communications' ? (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-base font-bold text-[#0F172A] dark:text-white">
+                  Admin Communication &amp; Transactional Email Center (Stage 47)
+                </h2>
+                <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8]">
+                  Durable PostgreSQL email lifecycle tracking across Resend. API keys, verification tokens, and private message bodies are strictly excluded from this view.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                    communicationOverview?.providerEnabled
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                  }`}
+                >
+                  Resend: {communicationOverview?.providerEnabled ? 'Enabled' : 'Disabled By Flag'}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 font-mono text-[10px] font-bold text-slate-700 dark:bg-[#192337] dark:text-slate-300">
+                  From: {communicationOverview?.fromAddress ?? 'noreply@viewora.app'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7 text-xs tabular-nums">
+              {(
+                [
+                  ['queued', 'Queued'],
+                  ['accepted_by_provider', 'Accepted'],
+                  ['delivered', 'Delivered'],
+                  ['bounced', 'Bounced'],
+                  ['failed', 'Failed'],
+                  ['suppressed', 'Suppressed'],
+                  ['disabled', 'Disabled'],
+                ] as const
+              ).map(([k, label]) => (
+                <div
+                  key={k}
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-[#263047] dark:bg-[#0F172A]"
+                >
+                  <p className="text-[10px] font-semibold uppercase text-[#64748B]">{label}</p>
+                  <p className="mt-1 font-display text-lg font-extrabold text-[#0F172A] dark:text-white">
+                    {communicationOverview?.countsByStatus[k] ?? 0}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-bold text-[#0F172A] dark:text-white">
+                  Multilingual Email Template Catalog ({EMAIL_TEMPLATE_CATALOG.length} Templates × 5 Locales)
+                </h3>
+                <span className="font-mono text-[10px] text-[#64748B]">
+                  en · pt-BR · es · de · fr · HTML + Plain Text · Suppressed Addresses: {communicationOverview?.suppressedCount ?? 0}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {EMAIL_TEMPLATE_CATALOG.map((tpl) => (
+                  <div
+                    key={tpl.key}
+                    className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-[#263047] dark:bg-[#131C2E]"
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-mono text-[11px] font-bold text-[#0F172A] dark:text-white">
+                        {tpl.key}
+                      </span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                          tpl.category === 'mandatory_security'
+                            ? 'bg-violet-100 text-[#6941EF] dark:bg-violet-950 dark:text-[#A99AFF]'
+                            : 'bg-slate-100 text-slate-600 dark:bg-[#0F172A] dark:text-slate-300'
+                        }`}
+                      >
+                        {tpl.category === 'mandatory_security' ? 'Security' : 'Engagement'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[10px] text-[#64748B]">{tpl.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         ) : null}
 

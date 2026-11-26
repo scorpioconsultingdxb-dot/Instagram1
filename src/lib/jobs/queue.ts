@@ -5,16 +5,24 @@
  */
 
 export type JobType =
+  | 'profile_refresh'
   | 'authorized_profile_refresh'
   | 'business_analytics_refresh'
   | 'historical_snapshot'
+  | 'competitor_refresh'
+  | 'report_generation'
   | 'ai_report_generation'
+  | 'ai_research_processing'
   | 'pdf_export'
   | 'csv_export'
   | 'email_delivery'
   | 'weekly_summary'
+  | 'research_reminder'
+  | 'membership_usage_notification'
   | 'usage_reset'
   | 'retention_cleanup'
+  | 'data_retention_cleanup'
+  | 'expired_token_cleanup'
   | 'provider_health_check'
   | 'automation_rule_run';
 

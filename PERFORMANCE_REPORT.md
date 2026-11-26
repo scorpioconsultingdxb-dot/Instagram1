@@ -1,34 +1,34 @@
-# Viewora — Performance & Core Web Vitals Readiness Report (Updated Stage 60)
+# Viewora — Performance & Core Web Vitals Verification Report (Updated Stage 68)
 
 **Date:** 2026-11-26  
-**Local Production Build & Database Measurements:** **VERIFIED**  
-**Hosted HTTPS Lighthouse & Field RUM Core Web Vitals:** **PENDING (Commercial Launch Gate #8 — Requires Hosted HTTPS Staging URL)**
+**Laboratory Build & Local Runtime Measurements:** **VERIFIED**  
+**Hosted HTTPS Lighthouse Laboratory Scores:** **PENDING (Requires Hosted HTTPS Staging URL — Stage 61)**  
+**Real-User Field Core Web Vitals (CrUX / RUM):** **NOT AVAILABLE YET (Zero Public Traffic — Pre-Launch)**
 
 ---
 
-## 1. Verified Local Production Build & Runtime Metrics (`next build` 15.5.29)
+## 1. Laboratory vs. Field Data Honesty Distinction
 
-- **Static Pre-Rendering Coverage:** **322/322** static pages generated across all 5 locales (`en`, `pt-BR`, `es`, `de`, `fr`), 12 free tools, launch page (`/launch`), closed beta shell (`/beta`), guides, glossary, and legal pages — zero database round-trip required on public routes.
-- **Production Compile Time:** **`13.5 s`** full clean production build (`npm run build`).
-- **Client/Server Bundle Separation:** Server-only modules (`PrismaClient`, `crypto`, `fs`, provider secrets, billing/financial backend logic) remain strictly server-bundled with zero client bundle leakage.
-- **Live PostgreSQL 14.25 Latency (Local Measured):**
-  - `npm run db:health` multi-table health probe: **`136 ms`** (`healthy`, `users: 1`, `plans: 5`, `featureFlags: 5`).
-  - `npm run env:check` 4-connection verification (`viewora` + `viewora_test` runtime & admin pools): **4/4 reachable**.
-  - Full unit test suite (`vitest@5.1.2`, 23 files / 115 tests): **`9.31 s`**.
-  - Live PostgreSQL integration suite (`viewora_test`, 9 tests): **`11.41 s`**.
+Viewora strictly separates three performance tiers and never presents local build measurements as hosted Lighthouse scores or real-user field telemetry:
+
+| Evidence Tier | Current Status | Measured Values / Targets |
+| :--- | :---: | :--- |
+| **Tier 1: Local Production Build & DB Telemetry** | **VERIFIED** | `322/322` pre-rendered static pages (zero DB round-trip on public routes) · Shared First Load JS **`103 kB`** (`chunks/1255` `46.6 kB` + `chunks/4bd1b696` `54.2 kB`) · Middleware **`34.9 kB`** · Tools Hub `134 kB` FLJS · Local `db:health` healthy · `0` console/page errors across all 42 desktop/mobile captures |
+| **Tier 2: Hosted HTTPS Staging Lighthouse (Lab)** | **PENDING STAGING** | Target thresholds to verify on `https://staging.<domain>`: **Mobile Performance ≥ 90**, **Accessibility ≥ 95**, **Best Practices ≥ 95**, **SEO ≥ 95**, **LCP ≤ 2.5 s**, **CLS ≤ 0.10**, **INP ≤ 200 ms** |
+| **Tier 3: Production Field RUM / CrUX Data** | **POST-LAUNCH ONLY** | Collect over first 28 days of real user traffic after Stage 70 Commercial GA (requires counsel-approved privacy/cookie notice) |
 
 ---
 
-## 2. Hosted HTTPS Staging Performance Targets (Launch Gate #8 — Not Yet Measured)
+## 2. Hosted Staging Lighthouse Execution Command (Ready Upon Stage 61 Deploy)
 
-Once deployed to hosted HTTPS staging behind CDN/TLS 1.3, capture and archive verified Lighthouse & field RUM metrics against these release targets (do **not** claim attainment prior to hosted measurement):
+```bash
+# Run against key public & landing routes on hosted HTTPS staging
+for ROUTE in /en /en/tools /en/pricing /en/launch /pt-BR /de; do
+  npx lighthouse "https://staging.<owner-domain>${ROUTE}" \
+    --preset=perf --form-factor=mobile --throttling-method=simulate \
+    --output=json --output-path="./lighthouse_staging_${ROUTE//\//_}.json" \
+    --chrome-flags="--headless=new --no-sandbox"
+done
+```
 
-| Metric | Target Threshold | Current Status |
-| :--- | :---: | :---: |
-| Lighthouse Performance (Mobile & Desktop) | **≥ 90** | **Pending Hosted Staging** |
-| Lighthouse Accessibility | **≥ 95** | **Pending Hosted Staging** |
-| Lighthouse Best Practices | **≥ 95** | **Pending Hosted Staging** |
-| Lighthouse SEO | **≥ 95** | **Pending Hosted Staging** |
-| Largest Contentful Paint (LCP) | **≤ 2.5 s** | **Pending Hosted Staging** |
-| Cumulative Layout Shift (CLS) | **≤ 0.10** | **Pending Hosted Staging** |
-| Interaction to Next Paint (INP) | **≤ 200 ms** | **Pending Hosted Staging** |
+All 6 audited staging routes must meet or exceed the targets above before clearing Launch Gate #8 in [COMMERCIAL_GO_NO_GO_REPORT.md](file:///c:/Users/Scorpio/Videos/Instagram/COMMERCIAL_GO_NO_GO_REPORT.md).

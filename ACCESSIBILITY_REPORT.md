@@ -1,25 +1,28 @@
-# Viewora — Accessibility (WCAG 2.2 AA Target) Verification Report (Updated Stage 60)
+# Viewora — Accessibility (WCAG 2.2 AA) Verification Report (Updated Stage 68)
 
 **Date:** 2026-11-26  
-**Automated & Visual Responsive Checks:** **PASS** (`27` screenshots across `6` viewports, `5` locales, light/dark themes, `0` console/page errors)  
-**Manual Screen-Reader Sign-Off (NVDA / VoiceOver / JAWS):** **PENDING (Commercial Launch Gate #8 — Hosted HTTPS Staging)**
+**Automated & Visual Responsive Verification (Local Built Server):** **PASS — 42/42 Desktop (`1440px`) + Mobile (`390px`) Executive Views (`0px` horizontal overflow across all 21 mobile routes, `0` runtime errors)**  
+**Manual Assistive Technology Sign-Off (NVDA & VoiceOver):** **PENDING (Hosted HTTPS Staging Gate — Must Complete Before Commercial GA)**
 
 ---
 
-## 1. Verified Automated & Code-Level Accessibility Controls
+## 1. Verified Accessibility Engineering Controls
 
-- **Semantic Landmarks & ARIA Structure:** `<header>`, `<nav>`, `<main>`, `<aside>`, `<footer>`, `role="tab"`, `role="dialog"` (`aria-modal="true"`, `aria-labelledby`), `role="status"`, `role="alert"`, `aria-pressed`, and descriptive `aria-label` attributes verified across public pages (`/launch`, `/beta`, `/pricing`, `/tools`), Customer Dashboard 3.0, AI Intelligence Studio, Competitor Studio, Report Studio 3.0, Automation Center, Integration Center 2.0, and Communications Center.
-- **Keyboard Operability & Focus Safety:** `ConfirmDialog` traps initial focus on Cancel and dismisses on `Escape`; Dashboard 3.0 supports keyboard `ArrowUp`/`ArrowDown` widget reordering alongside Drag-and-Drop; `CommandPalette` opens via `Cmd/Ctrl+K`; `/beta` form inputs feature explicit `<label>` bindings and accessible error feedback (`role="alert"`).
-- **Account-Persisted Accessibility Modes (Personal Digital HQ 3.0):** `[data-reduced-motion="true"]` and `[data-high-contrast="true"]` persisted per user in PostgreSQL `user_preferences`.
-- **Responsive Zero-Overflow QA (`test:e2e:pg` Stage 60):** Verified in headless Chromium across **6 viewports** (`375px`, `390px`, `768px`, `1024px`, `1440px`, `1920px`), **5 locales** (`en`, `pt-BR`, `es`, `de`, `fr`), and **light/dark themes** — including newly audited `/en/launch` (`phase6_launch_1440px.png`, `phase6_launch_390px.png`) and `/en/beta` (`phase6_beta_1440px.png`) with **`0px` horizontal overflow** and **`0` runtime errors**.
+- **Zero Horizontal Overflow Across All 21 Application Views (`390px` Mobile):** Confirmed programmatically during `capture-executive-evidence.mjs` (`mobileOverflows: []`) across Homepage, Public Tools, Registration, Login, Onboarding, Personal Digital HQ, Customer Dashboard, Profile Intelligence, Historical Analytics, Competitor Studio, Research Center, Report Studio, AI Intelligence Studio, Automation Center, Membership, Agency Center, Super Admin, Integration Center, Communications Center, Launch Page, and Beta Page.
+- **Semantic Landmarks, Dialogs & Live Regions:** `<header>`, `<nav>`, `<main>`, `<aside>`, `<footer>`, `role="tab"`, `role="dialog"` (`aria-modal="true"`, `aria-labelledby`), `role="status"`, `role="alert"`, `aria-pressed`, explicit `<label htmlFor>` bindings, and keyboard-accessible `ConfirmDialog` (`Escape` cancel, focus trap).
+- **Customer-Persisted Accessibility Preferences:** Personal Digital HQ 3.0 persists `[data-reduced-motion="true"]` and `[data-high-contrast="true"]` in PostgreSQL `user_preferences`, and Dashboard 3.0 widgets support keyboard `ArrowUp`/`ArrowDown` reordering.
+- **Multilingual Readability (`en`, `pt-BR`, `es`, `de`, `fr`) & Dark/Light Contrast:** Verified across all 5 locales and both themes with zero layout collapse.
 
 ---
 
-## 2. Pending Manual Screen-Reader Sign-Off Script (Launch Gate #8)
+## 2. Mandatory Manual Screen-Reader Test Protocol (Pending Hosted Staging Execution)
 
-Execute on hosted HTTPS staging with **NVDA (Windows/Firefox)** and **VoiceOver (macOS/Safari)** before public commercial launch:
-1. Navigate header, locale switcher, dark/light toggle, and `/launch` segment cards strictly via keyboard (`Tab` / `Shift+Tab` / `Enter`).
-2. Test `/beta` invite form with empty/invalid invite code and confirm `role="alert"` error messaging announces cleanly.
-3. Open AI Intelligence Studio → confirm disabled-provider notice announces clearly and private-note opt-in checkbox defaults unchecked.
-4. Open Competitor Studio → confirm sort controls and `Unavailable` cells read clearly rather than silent blanks.
-5. Open Admin Integration Center 2.0 → trigger `Halt All` dialog, confirm modal focus & `Escape` dismissal without mutation.
+Execute on hosted HTTPS staging using **NVDA (Windows + Firefox)** and **VoiceOver (macOS + Safari)** before flipping the Commercial Launch GO decision:
+
+| Test Flow | Required Screen-Reader & Keyboard Verification | Status |
+| :--- | :--- | :---: |
+| **1. Public Shell & Launch Page** | Full `Tab`/`Shift+Tab` traversal of navbar, locale selector, theme toggle, cookie consent dialog, and `/launch` CTAs with visible focus rings | **PENDING STAGING** |
+| **2. Registration, Login & Closed Beta** | Error validation (`role="alert"`), form labels, password visibility announcements, `/beta` `403 BETA_CLOSED` feedback | **PENDING STAGING** |
+| **3. Dashboard 3.0 & Widget Reorder** | Keyboard `ArrowUp`/`ArrowDown` widget reorder, `Cmd/Ctrl+K` Command Palette focus trap & `Escape` exit | **PENDING STAGING** |
+| **4. AI Studio, Competitor Studio & Report Studio** | Disabled-provider status announcement, unchecked private-note opt-in announcement, `Unavailable` table cell reading, PDF download button label | **PENDING STAGING** |
+| **5. Admin Integration Center & Emergency Halt** | Tab switching via arrow/Enter keys, `Halt All` modal focus trap on Cancel, clean `Escape` dismissal without mutation | **PENDING STAGING** |

@@ -1,36 +1,31 @@
-# Viewora — Comprehensive Test & Verification Report (Stage 60 Final)
+# Viewora — Comprehensive Test & Verification Report (Stage 70 Final)
 
 **Date:** 2026-11-26  
-**Database Safety:** All synthetic and destructive tests ran **exclusively against isolated `viewora_test`** under restricted `viewora_test_app` (`NOBYPASSRLS`). Operational `viewora` verified **100% untouched**.  
-**External API & Billing Honesty:** All external paid providers remain disabled (`PROVIDER_*_ENABLED=false`), billing remains hard-locked off (`PAYMENTS_ENABLED=false`, `NEXT_PUBLIC_PAYMENTS_ENABLED=false`), and beta registration remains closed (`BETA_PUBLIC_REGISTRATION_ENABLED=false`). External adapter/acceptance/Redis/webhook tests verify local contracts and isolated fixtures (`fixture_contract_test`) — **NOT** live upstream API calls.
+**Database Safety:** All synthetic, destructive, and screenshot-capture workloads ran **exclusively against isolated `viewora_test`** under restricted `viewora_test_app` (`NOBYPASSRLS`). Operational `viewora` verified **100% untouched**.  
+**External API & Billing Honesty:** All external paid providers (`PROVIDER_*_ENABLED=false`), billing (`PAYMENTS_ENABLED=false`, `NEXT_PUBLIC_PAYMENTS_ENABLED=false`), external scheduler (`BACKGROUND_JOBS_ENABLED=false`), and public beta registration (`BETA_PUBLIC_REGISTRATION_ENABLED=false`) remain disabled. External adapter tests verify local contracts (`fixture_contract_test`), not live upstream APIs.
 
 ---
 
-## 1. Stage 60 Executed Verification Commands (Exact Results)
+## 1. Phase 7 Executed Verification Pipeline (Exact Results)
 
-| Command | Scope | Actual Executed Result |
+| Command / Suite | Scope | Actual Executed Result |
 | :--- | :--- | :--- |
-| `npm run env:check` | `.env.local` validation, 4 live PG connection probes, zero Supabase, `PAYMENTS_ENABLED=false` | **PASS — `ok: true`, 4/4 reachable, 0 errors, 0 warnings** |
-| `npm run db:health` | Live operational `viewora` multi-table health probe | **PASS — `healthy`, `136ms`, `users: 1`, `plans: 5`, `featureFlags: 5`** |
-| `prisma validate` & `npm run db:generate` | Schema validation & Prisma Client `6.19.3` generation (58 tables, 6 migrations, 74 FKs, 147 indexes, 24 RLS policies) | **PASS** |
-| `npm run typecheck` (`tsc --noEmit`) | Strict TypeScript type checking | **PASS — 0 errors** |
-| `npm run lint` (`eslint .`) | Full codebase ESLint check | **PASS — 0 errors, 0 warnings** |
-| `npm audit --omit=dev` | Production dependency security audit | **PASS — 0 vulnerabilities** |
-| `npm audit` (full workspace, 401 packages) | Full dependency audit incl. devDependencies (after `vitest@5.1.2` upgrade) | **PASS — 0 vulnerabilities** |
-| `npm test` (`vitest@5.1.2`) | All unit, security, AI safety, 19×5 email, Redis mock, financial micro-USD, SSRF, OAuth, PDF, Stage 53 acceptance, Stage 54 billing lifecycle, Stage 55 financial model, Stage 57 SEO (135 sitemap URLs), and Stage 59 closed beta tests | **PASS — 23/23 files · 115/115 tests passed (`9.31s`)** |
-| `npm run test:db` | Live PostgreSQL 14.25 integration on isolated `viewora_test` (58 tables, 24 RLS policies, Migration 5 & 6, AES-256-GCM `provider_connections`, `profile_snapshots` RLS, `FOR UPDATE SKIP LOCKED` jobs, atomic API budget & AI monthly quota locks, durable `email_deliveries` & webhook replay, spend reconciliation, retention dry-run) | **PASS — 1/1 file · 9/9 live PostgreSQL tests passed (`11.41s`)** |
-| `npm run build` | Production Next.js `15.5.29` build | **PASS — 322/322 static pages generated (`13.5s`)** |
-| `npm run test:e2e:pg` | Live PG headless Chromium E2E across 6 viewports (`375–1920px`), 5 locales, dark theme, process restart, `/launch` (1440px & 390px), `/beta` + `/api/beta` HTTP `403 BETA_CLOSED` gate, AI Studio, Automation Center, Competitor Studio, Profile Intelligence, Integration Center 2.0, Communications Center, `%PDF-1.4` download & account deletion | **PASS — 7/7 milestones · 27 screenshots · 0 consoleErrors · 0 pageErrors** |
-| `inspect_test_data.mjs` | Read-only 58-table audit of operational `viewora` DB | **PASS — `users: 1` (`Scorpio Marketing Agency`), `support_tickets: 0`, `audit_logs: 6`** |
+| `npm run typecheck` (`tsc --noEmit`) | Strict TypeScript verification | **PASS — `0` errors** |
+| `npm run lint` (`eslint .`) | Full codebase ESLint check | **PASS — `0` errors, `0` warnings** |
+| `npm audit --omit=dev` | Production runtime dependency security audit | **PASS — `0` vulnerabilities** |
+| `npm audit` *(all 401 packages)* | Full workspace dependency audit incl. devDependencies | **PASS — `0` vulnerabilities** |
+| `npm test` (`vitest@5.1.2`) | All unit, security, Stage 68 actual binary image-decode (PNG CRC-32 + `zlib.inflateSync`, JPEG SOF→SOS→EOI, WebP RIFF/VP8L, polyglot rejection), 5-locale `%PDF-1.4` WinAnsi octal validation, AI safety, 19×5 email, billing lifecycle, financial model, SEO & closed-beta tests | **PASS — `24/24` files · `119/119` tests passed (`17.87s`)** |
+| `npm run test:db` | Live PostgreSQL 14.25 integration on isolated `viewora_test` (58 tables, 24 RLS policies, Migration 5 & 6, AES-256-GCM `provider_connections`, `profile_snapshots` RLS, `FOR UPDATE SKIP LOCKED` jobs, atomic API budget & AI monthly quota locks, durable `email_deliveries` & webhook replay, spend reconciliation, retention dry-run) | **PASS — `1/1` file · `9/9` live PostgreSQL tests passed (`20.23s`)** |
+| `npm run build` (`next@15.5.29`) | Production static + server build | **PASS — `322/322` static pages generated (`103 kB` shared First Load JS)** |
+| `scripts/capture-executive-evidence.mjs` | Live built server (`viewora_test`) capturing all **21 required views** at Desktop (`1440×900`) & Mobile (`390×844`) + Chromium PDFium visual verification of `pt-BR` & `de` `%PDF-1.4` exports + ZIP packaging | **PASS — `21/21` views · `42/42` screenshots · `0` mobile overflows · `2` PDFium renders visually verified · `0` pageErrors · `0` unexpectedConsoleErrors · `viewora_executive_visual_evidence.zip` (`5,870,375 B`)** |
+| `npm run test:e2e:pg` | Full live PG headless Chromium E2E across 6 viewports (`375–1920px`), 5 locales, dark theme, process restart persistence, `/launch`, `/beta` (`403 BETA_CLOSED`), AI Studio, Automation, Competitor Studio, Integration Center 2.0, Communications Center, `%PDF-1.4` download & account deletion | **PASS — `7/7` milestones · `27` screenshots · `0` consoleErrors · `0` pageErrors** |
+| `npm run db:health` | Live operational `viewora` health probe | **PASS — `healthy`, `users: 1` (`Scorpio Marketing Agency`), `plans: 5`, `featureFlags: 5`** |
 
 ---
 
-## 2. Production Resilience Scenarios Verified
+## 2. Pending Hosted Staging Verification Gates (Honest Disclosure)
 
-| Scenario | Status | Evidence |
-| :--- | :---: | :--- |
-| **Scenario A (PG Connected & Restart Persistence)** | **Verified** | `test:db` (9/9) & `test:e2e:pg` (7/7 milestones) |
-| **Scenario B (No DB + Read-Only FS)** | **Verified** | `runtime-recovery.test.ts` + `78/78` public routes HTTP 200; protected routes fail closed HTTP 503 |
-| **Scenario C (All External Providers & Billing Disabled)** | **Verified** | Zero fabricated social stats, `template_generated` AI labeling, `disabled` email status, `PAYMENTS_DISABLED`, `403 BETA_CLOSED` |
-| **Scenario D (Simulated Upstream Failures / Timeouts / Malformed JSON)** | **Verified** | `gateway.test.ts`, `phase5-stages-42-to-45.test.ts`, `phase6-stages-51-to-60.test.ts` |
-| **Scenario E (Global & Per-Provider Emergency Halt)** | **Verified** | Live PG `test:db` #8–#9 (`cost_budgets.kill_switch_active` blocks interactive & background workers) |
+The following tests require hosted Linux HTTPS staging, owner credentials, or specialist execution and have **not** been fabricated locally:
+1. Hosted PostgreSQL 17 migration + fresh encrypted 6-migration `pg_dump`/`pg_restore` drill (blocked locally by Windows Application Control).
+2. Live upstream staging acceptance (`live_provider_verified`) for Resend (actual test mailbox inbox receipt), Gemini AI, Meta Graph API/OAuth, and optional Redis/Cron.
+3. Hosted HTTPS Lighthouse (90+/95+/95+/95+, LCP/CLS/INP), manual NVDA/VoiceOver screen-reader pass, independent penetration test, payment gateway Test Mode sandbox, and 14-day controlled beta observation.

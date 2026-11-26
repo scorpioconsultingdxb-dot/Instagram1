@@ -1,33 +1,33 @@
-# Viewora — Development & Launch Operations Backlog (Post Phase 6 — Stage 60)
+# Viewora — Post-Phase 7 Production Activation & Launch Backlog (Stage 70)
 
 **Updated:** 2026-11-26
 
 ---
 
-## Recently Completed (Resolved in Phase 6 Stage 60)
+## Recently Completed (Resolved in Phase 7 Stages 61–70)
 
-- **[DONE] Dev Toolchain Major Upgrade (`vitest` `3.2.4` → `5.1.2`):** Eliminated all 3 remaining dev-only advisories (`vitest`, `tinypool`, `@vitest/mocker`). Both `npm audit --omit=dev` and full `npm audit` across all **401 packages** now report **`0` vulnerabilities** with 115/115 unit tests and 9/9 live PG tests passing.
-
----
-
-## Priority 1 — Hosted Linux Staging & Owner-Controlled Commercial Launch Gates
-
-1. **Managed Linux Staging & PostgreSQL 16/17 Provisioning (Gate #3):** Provision hosted Next.js compute, Managed PostgreSQL 16/17 HA, TLS 1.3, and cloud secret vault per [PRODUCTION_INFRASTRUCTURE_PLAN.md](file:///c:/Users/Scorpio/Videos/Instagram/PRODUCTION_INFRASTRUCTURE_PLAN.md).
-2. **Fresh Encrypted 6-Migration Backup & Restore Drill on Linux Staging (Gate #4):** Verify encrypted `pg_dump -Fc` / `pg_restore` covering all 58 tables, 6 migrations, and 24 RLS policies outside local Windows Application Control restrictions.
-3. **Off-Host WORM / SIEM Audit-Log Archival & Alerting (Gate #5):** Stream `public.audit_logs` to immutable off-host storage and wire `GET /api/health` + 5xx alerts.
-4. **Stage 52 External Provider Activations on Staging (Gates #6–#7):**
-   - **Resend Email:** Publish SPF/DKIM/DMARC records, register `/api/webhooks/resend` Svix secret, test live bounce/unsubscribe.
-   - **Gemini AI:** Set strict staging daily/monthly micro-USD caps and server API key; verify live token reconciliation.
-   - **Meta Official & OAuth:** Complete Meta Business Verification & App Review; pass `runProviderAcceptanceSuite()` in `live_provider_verified` mode.
-   - **Licensed Data Vendor (Optional):** Execute written SaaS redistribution contract before enabling.
-   - **Upstash Redis & External Cron:** Provision Redis before ≥2 stateless pods; schedule authenticated `POST /api/jobs/run` (`CRON_SECRET`) when enabling `BACKGROUND_JOBS_ENABLED=true`.
-5. **Qualified Legal Counsel Sign-Off (Gate #9):** Obtain formal UAE PDPL + GDPR counsel approval of Terms, Privacy, Cookie, Refund, DPA, Subprocessor Register, and Affiliate Agreement.
+- **[DONE] Stage 68 Actual Binary Image Decode Verification:** Upgraded `src/lib/storage/image-validation.ts` beyond header checks to verify PNG chunk CRC-32 + bounded `zlib.inflateSync` scanlines, full JPEG SOF→SOS→entropy→EOI walks, and WebP RIFF/VP8/VP8L bitstreams (`119/119` unit tests passing).
+- **[DONE] Stage 68 Visual Multilingual PDF Reader Proof:** Rendered `pt-BR` and `de` `%PDF-1.4` exports directly in Chromium PDFium verifying all diacritics (`ç`, `ã`, `ó`, `é`, `€`, `Ö`, `ü`, `ß`).
+- **[DONE] Stage 70 Redacted Executive Visual Evidence & ZIP Archive:** Captured 42/42 desktop+mobile screenshots across all 21 required views (`0px` mobile overflow, `0` errors) and archived `viewora_executive_visual_evidence.zip`.
 
 ---
 
-## Priority 2 — Pre-GA QA, Billing Sandbox & Controlled Beta
+## Priority 1 — Owner Decisions & Hosted Linux Staging Activation
 
-6. **Hosted HTTPS Staging Lighthouse CWV & Manual NVDA/VoiceOver Sign-Off (Gate #8):** Capture verified mobile/desktop Lighthouse scores (90+/95+/95+/95+) and complete manual screen-reader verification scripts.
-7. **Stripe (or Approved Gateway) Sandbox Implementation (Gate #10):** Only after written owner approval — implement concrete `PaymentGatewayAdapter`, test HMAC webhooks, idempotency, proration, 7-day grace period, refunds, and VAT in Test Mode while keeping production `PAYMENTS_ENABLED=false`.
-8. **Controlled Invitation-Only Beta Pilot (Gate #11):** Issue SHA-256 invite codes to the 5 pilot cohorts for a 14-day soak targeting 0 open S0/S1 defects.
-9. **Support Ticket Assignment UI & Post-GA Enhancements:** Surface `support_tickets.assigned_to_id` assignment controls in the Admin Support tab and collect consented pilot testimonials after Stage 59 exit.
+1. **Provision Hosted Linux Staging + Managed PostgreSQL 17 (or 16) (Stage 61):** Follow [HOSTING_PROVIDER_COMPARISON.md](file:///c:/Users/Scorpio/Videos/Instagram/HOSTING_PROVIDER_COMPARISON.md) & [STAGING_DEPLOYMENT_GUIDE.md](file:///c:/Users/Scorpio/Videos/Instagram/STAGING_DEPLOYMENT_GUIDE.md).
+2. **Execute Fresh Encrypted 6-Migration Backup & Disposable Restore Drill on Linux Staging (Stage 62):** Record measured backup & restore durations in [BACKUP_RESTORE_REPORT.md](file:///c:/Users/Scorpio/Videos/Instagram/BACKUP_RESTORE_REPORT.md) and provision off-host WORM `audit_logs` archival.
+3. **Engage Qualified Legal Counsel (Stage 68):** Clear all 12 items in [LEGAL_APPROVAL_CHECKLIST.md](file:///c:/Users/Scorpio/Videos/Instagram/LEGAL_APPROVAL_CHECKLIST.md) (UAE PDPL, GDPR, Terms, Privacy, Cookie, Refund, B2B DPA, Subprocessors, Affiliate terms).
+4. **Activate Core External Providers Sequentially on Staging (Stages 63–65):**
+   - Resend domain DNS (SPF/DKIM/DMARC) + Svix webhooks + authorized test mailbox verification.
+   - Google Gemini paid API key + recommended Flash-Lite model + conservative \$2/day / \$15/mo staging caps.
+   - Meta Business Verification + App Review + Data Deletion Callback + authorized Business/Creator test accounts.
+5. **Provision Optional Upstash Redis & External Cron (Stage 67):** Required before scaling ≥ 2 stateless pods or enabling `BACKGROUND_JOBS_ENABLED=true`.
+
+---
+
+## Priority 2 — Pre-GA Verification, Beta Pilot & Separate Billing Gate
+
+6. **Hosted HTTPS Staging Lighthouse CWV, Manual NVDA/VoiceOver QA & External Penetration Test (Stage 68).**
+7. **Execute 14-Day 25-Participant Invitation-Only Beta (Stage 69):** Ratify numerical activation/retention targets with Owner, issue SHA-256 invites, track daily metrics, verify 0 open S0/S1 defects.
+8. **Separate Billing Activation Gate (Stage 68 / 70):** Only upon explicit owner approval — install approved payment SDK (Stripe candidate), pass all 8 sandbox tests in [PAYMENT_SANDBOX_TEST_PLAN.md](file:///c:/Users/Scorpio/Videos/Instagram/PAYMENT_SANDBOX_TEST_PLAN.md), and obtain separate Managing Director authorization before flipping `PAYMENTS_ENABLED=true`.
+9. **Optional Future Phase 2 Enhancements:** Support ticket assignment UI (`support_tickets.assigned_to_id`), optional Phyllo/Modash/HypeAuditor commercial data add-on pack (only after written license & Pro/Agency unit-margin sign-off), and consented beta testimonials.

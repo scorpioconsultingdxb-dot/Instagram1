@@ -1,8 +1,10 @@
+import { deflateSync } from 'zlib';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_CUSTOMER_MEDIA_TOTAL_BYTES,
   MAX_IMAGE_DIMENSION_PX,
   MAX_IMAGE_UPLOAD_BYTES,
+  computeCrc32,
   validateImageBuffer,
 } from '@/lib/storage/image-validation';
 import { buildReportPdfBuffer } from '@/lib/reports/pdf';
@@ -13,34 +15,43 @@ import {
 } from '@/lib/reports/builder';
 import type { SavedProfileRecord } from '@/lib/dashboard/store';
 
+function pngChunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.byteLength, 0);
+  const t = Buffer.from(type, 'ascii');
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(computeCrc32(Buffer.concat([t, data])), 0);
+  return Buffer.concat([len, t, data, crc]);
+}
+
 function makeValidPngBuffer(width = 64, height = 64): Buffer {
-  const buf = Buffer.alloc(33);
-  // PNG signature
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buf, 0);
-  // IHDR length = 13
-  buf.writeUInt32BE(13, 8);
-  buf.write('IHDR', 12, 'ascii');
-  buf.writeUInt32BE(width, 16);
-  buf.writeUInt32BE(height, 20);
-  buf[24] = 8; // bit depth
-  buf[25] = 2; // color type
-  return buf;
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  // For bomb tests (width/height exceeding safety ceiling), omit massive IDAT allocation since IHDR fails first
+  const safeToAllocate = width > 0 && height > 0 && width <= 1024 && height <= 1024;
+  const idat = safeToAllocate
+    ? pngChunk('IDAT', deflateSync(Buffer.alloc(height * (1 + width * 3), 0)))
+    : Buffer.alloc(0);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr),
+    idat,
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
 function makeValidJpegBuffer(width = 320, height = 240): Buffer {
-  // SOI + APP0 (minimal) + SOF0 (length 11: precision + height + width + components) + EOI
-  const buf = Buffer.alloc(22);
-  buf[0] = 0xff;
-  buf[1] = 0xd8;
-  buf[2] = 0xff;
-  buf[3] = 0xc0; // SOF0
-  buf.writeUInt16BE(11, 4);
-  buf[6] = 8; // precision
-  buf.writeUInt16BE(height, 7);
-  buf.writeUInt16BE(width, 9);
-  buf[11] = 3; // components
-  buf[15] = 0xff;
-  buf[16] = 0xd9; // EOI
+  // Valid SOI + SOF0 + SOS + entropy bytes + EOI
+  const buf = Buffer.from([
+    0xff, 0xd8,
+    0xff, 0xc0, 0x00, 0x0b, 0x08, (height >> 8) & 0xff, height & 0xff, (width >> 8) & 0xff, width & 0xff, 0x01, 0x01, 0x11, 0x00,
+    0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00,
+    0x7f, 0x00, 0xd2,
+    0xff, 0xd9,
+  ]);
   return buf;
 }
 

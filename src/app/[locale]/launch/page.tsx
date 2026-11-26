@@ -130,7 +130,7 @@ export default async function LaunchPage({
           <ul className="mt-3 space-y-2 text-xs leading-relaxed text-[#475569] dark:text-[#94A3B8]">
             <li>• 12 deterministic public analytics &amp; calculation tools across 5 languages</li>
             <li>• Personal Digital HQ 3.0, Dashboard 3.0 &amp; Research Workspace Pro</li>
-            <li>• Compatibility-checked Competitor Studio &amp; Report Studio 3.0 (`%PDF-1.4` &amp; CSV)</li>
+            <li>• Compatibility-checked Competitor Studio &amp; Report Studio 3.0 (<code className="font-mono text-[11px]">%PDF-1.4</code> &amp; CSV)</li>
             <li>• AI Intelligence Studio conversational workspace with transparent deterministic templates</li>
             <li>• Independent PostgreSQL persistence with 24 Row-Level Security isolation policies</li>
           </ul>
@@ -145,7 +145,7 @@ export default async function LaunchPage({
             <li>• Live Meta Business Discovery &amp; first-party connected-account OAuth insights</li>
             <li>• Live Google Gemini AI synthesis (deterministic templates clearly labeled today)</li>
             <li>• Live Resend transactional email dispatch (19×5 templates ready)</li>
-            <li>• Scheduled external background job runner &amp; paid subscription billing (`PAYMENTS_ENABLED=false`)</li>
+            <li>• Scheduled external background job runner &amp; paid subscription billing (<code className="font-mono text-[11px]">PAYMENTS_ENABLED=false</code>)</li>
           </ul>
         </div>
       </section>

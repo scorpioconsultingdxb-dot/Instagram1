@@ -1,40 +1,42 @@
-# Viewora — Pre-Launch Security Review & Verification Report (Stage 60)
+# Viewora — Comprehensive Security Review & Penetration Test Scope Report (Updated Stage 68)
 
 **Date:** 2026-11-26  
-**Dependency Security Posture:** **`0` Production Vulnerabilities (`npm audit --omit=dev`) · `0` Total Workspace Vulnerabilities (`npm audit` across all 401 packages)** following safe upgrade of dev-only `vitest` (`3.2.4` → **`5.1.2`**).
+**Dependency Security Posture:** **`0` Production Vulnerabilities (`npm audit --omit=dev`) · `0` Total Workspace Vulnerabilities (`npm audit` across all 401 packages)**  
+**Stage 68 Security Upgrades Completed:** Actual binary image payload decoding verification ([`src/lib/storage/image-validation.ts`](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/storage/image-validation.ts)) + Chromium PDFium visual verification of multilingual `%PDF-1.4` exports (`pt-BR` & `de`).
 
 ---
 
-## 1. 20-Point Security Architecture Verification
+## 1. Complete 18-Domain Security Control Verification Matrix
 
-| # | Security Domain | Verified Control | Verification Evidence |
+| # | Security Domain | Verified Control & Stage 68 Enhancement | Verification Evidence |
 | :-: | :--- | :--- | :--- |
-| 1 | **Production Dependencies** | `0` vulnerabilities across all runtime packages | `npm audit --omit=dev` = `0` |
-| 2 | **Dev & Build Dependencies** | `0` vulnerabilities across all 401 workspace packages (`vitest@5.1.2`) | `npm audit` = `0` |
-| 3 | **Multi-Tenant Database Isolation** | **24 PostgreSQL RLS policies** enforced under `NOBYPASSRLS` `viewora_app` / `viewora_test_app` | `npm run test:db` (9/9 live PG tests) |
-| 4 | **Immutable Security Audit Trail** | Migration 5 `REVOKE UPDATE/DELETE/TRUNCATE` + `trg_audit_logs_immutable` (`ERRCODE 42501`) + `auditLogsDeleted: 0` in retention engine | Live PG `test:db` + unit tests |
-| 5 | **Public Schema Hardening** | `REVOKE CREATE ON SCHEMA public FROM PUBLIC` (Migration 5) | Applied on `viewora` & `viewora_test` |
-| 6 | **Authentication & Revocable Sessions** | Server-side revocable sessions, secure password hashing, Admin "Revoke All Active Sessions", constant-time secret checks | Unit + live PG E2E |
-| 7 | **RBAC & Last-Super-Admin Lock** | Server-side RBAC on all `/api/admin/*` routes + `pg_advisory_xact_lock` preventing final `super_admin` demotion (`HTTP 409`) | Live PG `test:db` + unit tests |
-| 8 | **OAuth Token Cryptography** | **AES-256-GCM** authenticated encryption (`src/lib/security/token-crypto.ts`) + HMAC-SHA256 user-bound OAuth CSRF state | Unit + live PG `provider_connections` test |
-| 9 | **SSRF & Outbound Payload Defense** | Per-provider HTTPS port-443 host allowlists (`src/lib/integrations/ssrf.ts`) + `1 MB` bounded JSON ceiling | `phase5-stages-42-to-45.test.ts` |
-| 10 | **Webhook Security & Replay Protection** | Raw-body HMAC verification (Meta 256 KB cap + Resend Svix SHA-256) + durable `webhook_events` replay deduplication | Unit + live PG `test:db` |
-| 11 | **Scheduler Endpoint Hardening** | Constant-time `CRON_SECRET` verification + replay & rate limiting on `POST /api/jobs/run` | `phase5-stages-46-to-50.test.ts` |
-| 12 | **Secret & PII Redaction** | Centralized secret/header/email redactor; placeholder rejection; zero server keys in `NEXT_PUBLIC_*` | `env:check` + `credentials.ts` tests |
-| 13 | **Media Upload Bomb Defense** | PNG/JPEG/WebP binary header dimension checks (`<= 8192px`, `<= 25 MP`) + atomic PostgreSQL `3 MB` per-user quota (`HTTP 413`) | Unit + live PG `test:db` |
-| 14 | **CSV & PDF Export Safety** | Formula-injection neutralization (`=`, `+`, `-`, `@`) on CSV exports; pure TypeScript `%PDF-1.4` binary validation | Unit + live PG E2E download check |
-| 15 | **AI Prompt-Injection & Privacy Defense** | Injection neutralization, unsupported-claim guardrails, private research notes excluded from external AI by default | `phase5-stages-46-to-50.test.ts` |
-| 16 | **Atomic Quota & Financial Locking** | `pg_advisory_xact_lock` on monthly AI quotas, UTC-day searches, and micro-USD `cost_budgets` spend caps | Live PG `test:db` |
-| 17 | **Emergency Halt Kill Switches** | Durable PostgreSQL global & per-provider halts immediately block both interactive gateway and background workers | Live PG `test:db` #8–#9 |
-| 18 | **Default-Off External & Billing Locks** | All `PROVIDER_*_ENABLED=false`, `PAYMENTS_ENABLED=false`, `NEXT_PUBLIC_PAYMENTS_ENABLED=false`, `BETA_PUBLIC_REGISTRATION_ENABLED=false`, zero Stripe SDK | `env:check` + `phase6-stages-51-to-60.test.ts` |
-| 19 | **Closed Beta Invite Security** | SHA-256 hashed invite codes, Admin RBAC issuance, `403 BETA_CLOSED` uninvited rejection, `noIndex: true` + `robots.ts` disallow | Live PG E2E + unit tests |
-| 20 | **Zero Supabase & Zero Scraping Compliance** | Zero Supabase packages/env vars; zero scraping; zero private Instagram access; zero Instagram password collection | `env:check` + `acceptance.ts` tests |
+| 1 | **Authentication** | Independent bcrypt password hashing, single-use expiring verification/reset tokens, zero Instagram password collection | `auth-security.test.ts`, `db-persistence.test.ts` |
+| 2 | **Session Management** | Server-side revocable PostgreSQL sessions, `HttpOnly`/`SameSite` cookies, Admin "Revoke All Active Sessions", full restart persistence | `test:db` + `test:e2e:pg` |
+| 3 | **OAuth & CSRF State** | HMAC-SHA256 user-bound OAuth CSRF state + origin verification (`isAllowedCsrfOrigin`) on all state-changing endpoints | `phase5-stages-42-to-45.test.ts` |
+| 4 | **Token Encryption** | **AES-256-GCM** authenticated encryption (`src/lib/security/token-crypto.ts`) for `provider_connections` | Unit + live PG `test:db` |
+| 5 | **Row-Level Security (RLS)** | **24 PostgreSQL RLS policies** enforced under restricted `NOBYPASSRLS` `viewora_app` / `viewora_test_app` | `npm run test:db` (9/9) |
+| 6 | **RBAC & Admin Guardrails** | Server-side RBAC on `/api/admin/*`, `pg_advisory_xact_lock` Last-Super-Admin lock (`HTTP 409`), self-suspension block (`HTTP 400`) | Live PG `test:db` |
+| 7 | **CSRF Protection** | Strict origin/referer verification across all POST/PATCH/DELETE API routes | Unit + live PG E2E |
+| 8 | **XSS & Export Safety** | React escaping, strict CSP (`default-src 'none'` on media responses), `X-Content-Type-Options: nosniff`, CSV formula-injection neutralization, WinAnsi `%PDF-1.4` visually verified in Chromium PDFium (`pdf_reader_pt_br_1440px.png`, `pdf_reader_de_1440px.png`) | `phase7-stage-68.test.ts` + PDFium proof |
+| 9 | **SSRF Protection** | Strict per-provider HTTPS port-443 host allowlists (`src/lib/integrations/ssrf.ts`) + `1 MB` bounded JSON decoding | `phase5-stages-42-to-45.test.ts` |
+| 10 | **IDOR & Tenant Isolation** | Workspace/user ownership enforced both in repository queries AND PostgreSQL RLS policies; private customer notes inaccessible to admins | Live PG `test:db` cross-tenant tests |
+| 11 | **Webhook Authentication** | Raw-body HMAC-SHA256 verification (Meta 256 KB cap + Resend Svix) + durable `webhook_events` replay deduplication | Unit + live PG `test:db` |
+| 12 | **Scheduler Authentication** | Constant-time `CRON_SECRET` (`crypto.timingSafeEqual`) + replay/rate limiting on `POST /api/jobs/run` | `phase5-stages-46-to-50.test.ts` |
+| 13 | **API Spending Limits** | Atomic `pg_advisory_xact_lock` integer micro-USD `cost_budgets`, 50/75/90/100% alerts, durable Global & Per-Provider Emergency Halts | Live PG `test:db` #8–#9 |
+| 14 | **Customer Data Isolation** | Private research notes excluded from shared PDF/CSV exports and excluded from external AI unless explicitly opted in | `phase4-1.test.ts` + `phase5-stages-46-to-50.test.ts` |
+| 15 | **Upload Security (Stage 68 Upgraded)** | **Actual binary payload decode verification (`decodeVerified: true`)**: PNG chunk-by-chunk IEEE CRC-32 + bounded `zlib.inflateSync` scanline & filter-byte verification; JPEG full SOF→SOS→entropy→EOI walk; WebP exact RIFF size + mandatory VP8/VP8L bitstream verification; rejects header-only stubs, bad CRCs, corrupted zlib, embedded EXIF/tEXt/COM scripts, trailing polyglots, and decompression bombs (`≤ 8192px`, `≤ 25 MP`, `3 MB` atomic user quota) | `phase7-stage-68.test.ts` (4/4 passing) + `phase4-1.test.ts` |
+| 16 | **Audit Protection** | Migration 5 `REVOKE UPDATE/DELETE/TRUNCATE` + `trg_audit_logs_immutable` (`ERRCODE 42501`) + `auditLogsDeleted: 0` in retention engine | Live PG `test:db` #6 |
+| 17 | **Backup Security** | AES-256 PBKDF2 encrypted `pg_dump -Fc` + write-only off-host WORM bucket architecture (**Linux staging drill pending Gate #4**) | [BACKUP_RESTORE_REPORT.md](file:///c:/Users/Scorpio/Videos/Instagram/BACKUP_RESTORE_REPORT.md) |
+| 18 | **Secret Management & Zero CVEs** | `0/401` npm advisories; placeholder rejection; zero server keys in `NEXT_PUBLIC_*`; `.env.local` git-ignored | `npm audit`, `npm run env:check` |
 
 ---
 
-## 2. Residual Infrastructure Security Actions (Hosted Staging / Production)
+## 2. Independent External Penetration Testing Scope (To Execute on Hosted HTTPS Staging)
 
-1. Provision off-host WORM/SIEM archival sink for `audit_logs` (Gate #5).
-2. Enforce TLS 1.3 + HSTS + Edge WAF/DDoS protection at hosted reverse proxy (Gate #3).
-3. Execute fresh encrypted 6-migration `pg_dump`/`pg_restore` drill on Linux staging outside Windows Application Control (Gate #4).
-4. Complete external penetration test / security header scan on hosted HTTPS staging prior to commercial GA.
+Prior to Commercial GA, commission an independent CREST/OSCP-accredited gray-box web application & API penetration test against `https://staging.<owner-domain>` covering:
+1. **Authentication & Session Attacks:** Brute-force/credential stuffing, session fixation, token entropy, password reset race conditions, cross-tenant session revocation.
+2. **Multi-Tenant Authorization (IDOR / BOLA / BFLA):** Horizontal cross-customer data access across `/api/dashboard/*`, `/api/reports/builder`, `/api/ai/studio`, `/api/auth/media`, and vertical privilege escalation to `/api/admin/*`.
+3. **File Upload & Parser Fuzzing:** Malformed/polyglot PNG/JPEG/WebP uploads against `/api/auth/media` and CSV formula/encoding fuzzing.
+4. **SSRF, Webhook & Scheduler Abuse:** Webhook signature bypass/replay on `/api/webhooks/{meta,resend}`, `CRON_SECRET` timing/replay probes on `/api/jobs/run`, OAuth redirect manipulation on `/api/meta/oauth/*`.
+5. **AI Prompt Injection & Data Exfiltration:** Attempted extraction of system instructions, cross-tenant context, or non-opted-in private research notes via `/api/ai/studio`.
+6. **Edge & TLS Hardening:** TLS 1.3 cipher suite, HSTS, CSP, cookie flags, rate-limiting bypass, and closed beta `/api/beta` invite brute-force resistance.

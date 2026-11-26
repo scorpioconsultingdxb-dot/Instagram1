@@ -1,8 +1,13 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { deflateSync } from 'zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { validateImageBuffer, MAX_IMAGE_UPLOAD_BYTES } from '@/lib/storage/image-validation';
+import {
+  computeCrc32,
+  validateImageBuffer,
+  MAX_IMAGE_UPLOAD_BYTES,
+} from '@/lib/storage/image-validation';
 import { LocalFileStorage } from '@/lib/storage/local-files';
 import {
   CUSTOMER_GOALS,
@@ -107,22 +112,34 @@ describe('Phase 3 (Stages 21–29) — Integration, Security & Governance Suite'
     expect(loaded.coverPosition).toBe('top');
   });
 
-  it('Stage 23: enforces strict magic-byte validation and blocks SVG/HTML/oversized/cross-user media', async () => {
-    const validPng = Buffer.alloc(33);
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(validPng, 0);
-    validPng.writeUInt32BE(13, 8);
-    validPng.write('IHDR', 12, 'ascii');
-    validPng.writeUInt32BE(64, 16);
-    validPng.writeUInt32BE(64, 20);
-    const validJpeg = Buffer.alloc(22);
-    validJpeg[0] = 0xff;
-    validJpeg[1] = 0xd8;
-    validJpeg[2] = 0xff;
-    validJpeg[3] = 0xc0;
-    validJpeg.writeUInt16BE(11, 4);
-    validJpeg[6] = 8;
-    validJpeg.writeUInt16BE(64, 7);
-    validJpeg.writeUInt16BE(64, 9);
+  it('Stage 23: enforces strict magic-byte + payload decode validation and blocks SVG/HTML/oversized/cross-user media', async () => {
+    const pngChunk = (type: string, data: Buffer) => {
+      const len = Buffer.alloc(4);
+      len.writeUInt32BE(data.byteLength, 0);
+      const t = Buffer.from(type, 'ascii');
+      const crc = Buffer.alloc(4);
+      crc.writeUInt32BE(computeCrc32(Buffer.concat([t, data])), 0);
+      return Buffer.concat([len, t, data, crc]);
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(4, 0);
+    ihdr.writeUInt32BE(4, 4);
+    ihdr[8] = 8;
+    ihdr[9] = 2;
+    const rawScanlines = Buffer.alloc(4 * (1 + 4 * 3), 0);
+    const validPng = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      pngChunk('IHDR', ihdr),
+      pngChunk('IDAT', deflateSync(rawScanlines)),
+      pngChunk('IEND', Buffer.alloc(0)),
+    ]);
+    const validJpeg = Buffer.from([
+      0xff, 0xd8,
+      0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x40, 0x00, 0x40, 0x01, 0x01, 0x11, 0x00,
+      0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00,
+      0x7f, 0x00, 0xd2,
+      0xff, 0xd9,
+    ]);
     const validWebp = Buffer.alloc(30);
     validWebp.write('RIFF', 0, 'ascii');
     validWebp.writeUInt32LE(22, 4);

@@ -1,9 +1,12 @@
 import { z } from 'zod';
 import { getEnv } from '@/lib/env';
 import {
+  buildTenantScopedCacheKey,
   checkProviderCredentials,
   defaultApiGateway,
   isProviderEffectivelyEnabled,
+  readBoundedResponseJson,
+  validateOutboundProviderUrl,
 } from '@/lib/integrations';
 import type {
   InstagramDataProvider,
@@ -128,15 +131,44 @@ export class LicensedThirdPartyProvider implements InstagramDataProvider {
       };
     }
 
+    const baseHost = (() => {
+      try {
+        return new URL(env.LICENSED_PROVIDER_API_URL || '').hostname;
+      } catch {
+        return '';
+      }
+    })();
     const url = new URL('/profiles/' + encodeURIComponent(username), env.LICENSED_PROVIDER_API_URL);
+    const ssrf = validateOutboundProviderUrl('licensed_third_party', url.toString(), baseHost ? [baseHost] : []);
+    if (!ssrf.ok) {
+      return {
+        data: null,
+        meta: {
+          providerId: this.id,
+          providerKind: this.kind,
+          providerLabel: this.label,
+          availability: 'unavailable',
+          dataClass: 'cached',
+          confidence: 'low',
+          freshness: { fetchedAt: now, ttlSeconds: 0, isStale: true },
+          limitations: ['Blocked by outbound SSRF/allowlist validation.'],
+          notice: ssrf.error,
+        },
+      };
+    }
 
     const gw = await defaultApiGateway.execute({
       providerId: 'licensed_third_party',
       operation: 'licensed.profile',
-      cacheKey: `profile:${username.toLowerCase()}`,
+      cacheKey: buildTenantScopedCacheKey({
+        providerId: 'licensed_third_party',
+        operation: 'licensed.profile',
+        subject: username,
+        authorizationScope: 'public',
+      }),
       schema: licensedProfileResponseSchema,
       execute: async (signal) => {
-        const res = await fetch(url.toString(), {
+        const res = await fetch(ssrf.url.toString(), {
           headers: {
             Authorization: `Bearer ${env.LICENSED_DATA_PROVIDER_API_KEY}`,
             Accept: 'application/json',
@@ -144,12 +176,12 @@ export class LicensedThirdPartyProvider implements InstagramDataProvider {
           cache: 'no-store',
           signal,
         });
-        const body = await res.json().catch(() => null);
+        const bounded = await readBoundedResponseJson(res);
         return {
-          ok: res.ok,
+          ok: res.ok && bounded.ok,
           status: res.status,
-          data: body,
-          errorMessage: `Licensed provider returned HTTP ${res.status}`,
+          data: bounded.ok ? bounded.data : null,
+          errorMessage: !bounded.ok ? bounded.error : `Licensed provider returned HTTP ${res.status}`,
         };
       },
     });

@@ -19,7 +19,7 @@ import { defaultJobQueue } from '@/lib/jobs/queue';
 import { loadReferralOverview } from '@/lib/referrals/service';
 import { checkDatabaseHealth } from '@/lib/db/prisma';
 import { getBackupDirectorySummary } from '@/lib/admin/backup-status';
-import { defaultApiGateway } from '@/lib/integrations';
+import { defaultApiGateway, loadPersistentIntegrationTelemetry } from '@/lib/integrations';
 
 export async function GET() {
   try {
@@ -38,6 +38,7 @@ export async function GET() {
       featureFlags,
       databaseHealth,
       referralOverview,
+      distributedTelemetry,
     ] = await Promise.all([
       loadAdminUsers(),
       defaultProviderRegistry.checkAllHealth(),
@@ -50,6 +51,7 @@ export async function GET() {
       loadFeatureFlags(),
       checkDatabaseHealth(),
       loadReferralOverview(),
+      loadPersistentIntegrationTelemetry().catch(() => null),
     ]);
 
     return NextResponse.json({
@@ -72,6 +74,7 @@ export async function GET() {
       storageUsage: getLocalStorageUsageSummary(),
       backupSummary: getBackupDirectorySummary(),
       integrationCenter: defaultApiGateway.getIntegrationCenterSnapshot(),
+      distributedTelemetry,
       referralOverview,
     });
   } catch {

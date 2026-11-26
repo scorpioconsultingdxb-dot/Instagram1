@@ -27,6 +27,9 @@ import {
   type SavedProfileRecord,
 } from '@/lib/dashboard/store';
 import { loadIsFeatureFlagEnabled } from '@/lib/admin/store';
+import { isDatabaseConfigured } from '@/lib/env';
+import { evaluateProviderRouting } from '@/lib/integrations';
+import { recordProfileSnapshotWithDedup } from '@/lib/db/repositories/snapshots.repo';
 
 const workspaceActionSchema = z.discriminatedUnion('type', [
   z.object({
@@ -94,6 +97,10 @@ const workspaceActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('create_workspace'),
     name: z.string().trim().min(2).max(80),
+  }),
+  z.object({
+    type: z.literal('refresh_profile'),
+    username: z.string().trim().min(1).max(60),
   }),
 ]);
 
@@ -398,6 +405,91 @@ async function handleWorkspacePost(request: NextRequest) {
       return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
     }
     return NextResponse.json({ ok: true, workspace: result.workspace });
+  }
+
+  if (action.type === 'refresh_profile') {
+    const cleanHandle = action.username.replace(/^@+/, '').trim().toLowerCase();
+    const current = await loadUserWorkspaceState(user.id, defaultWs);
+    const existing = current.savedProfiles.find(
+      (p) => p.username.toLowerCase() === cleanHandle
+    );
+    if (!existing) {
+      return NextResponse.json(
+        { ok: false, error: `Saved profile @${cleanHandle} was not found in your workspace.` },
+        { status: 404 }
+      );
+    }
+
+    const routingCandidates = evaluateProviderRouting({
+      requiredCapability: 'publicProfiles',
+      planCode: user.planCode,
+      allowDemoFallback: false,
+    });
+    const hasEligibleLiveProvider = routingCandidates.some((c) => c.eligible);
+    if (!hasEligibleLiveProvider) {
+      return NextResponse.json({
+        ok: true,
+        refreshed: false,
+        status: 'live_providers_disabled',
+        routing: routingCandidates,
+        message:
+          'Live external profile providers are currently disabled by platform policy. Existing saved profile metadata was preserved without fabricating fresh numbers.',
+        workspace: current,
+      });
+    }
+
+    const lookup = await defaultProviderRegistry.lookupPublicProfile(existing.username, {
+      allowDemoFallback: false,
+    });
+    if (!lookup.data || lookup.meta.availability === 'unavailable') {
+      return NextResponse.json({
+        ok: true,
+        refreshed: false,
+        status: 'provider_unavailable',
+        routing: routingCandidates,
+        message:
+          lookup.meta.notice ||
+          'No fresh live profile data was returned by enabled providers. Existing saved data was preserved.',
+        workspace: current,
+      });
+    }
+
+    const updatedRecord: SavedProfileRecord = {
+      ...existing,
+      dataClass: lookup.meta.dataClass,
+      providerLabel: lookup.meta.providerLabel,
+      profile: lookup.data,
+    };
+    const saved = await persistSavedProfile(user.id, updatedRecord, defaultWs);
+    if (!saved.ok) {
+      return NextResponse.json({ ok: false, error: saved.error }, { status: 500 });
+    }
+
+    let snapshotRecorded = false;
+    if (isDatabaseConfigured()) {
+      const snap = await recordProfileSnapshotWithDedup({
+        userId: user.id,
+        savedProfileId: existing.id,
+        username: existing.username,
+        dataClass: lookup.meta.dataClass,
+        providerId: lookup.meta.providerId,
+        followersCount: lookup.data.followersCount,
+        followingCount: lookup.data.followingCount,
+        postsCount: lookup.data.postsCount,
+        engagementRate: lookup.data.estimatedEngagementRate,
+        bioSnapshot: lookup.data.bio,
+      }).catch(() => null);
+      snapshotRecorded = Boolean(snap?.created);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      refreshed: true,
+      snapshotRecorded,
+      status: 'refreshed',
+      message: `Refreshed @${existing.username} via ${lookup.meta.providerLabel}.`,
+      workspace: saved.workspace,
+    });
   }
 
   if (action.type === 'create_workspace') {

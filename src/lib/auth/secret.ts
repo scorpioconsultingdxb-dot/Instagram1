@@ -138,3 +138,21 @@ export function isAllowedCsrfOrigin(
 
   return allowedOrigins.has(originUrl.origin);
 }
+
+/**
+ * Determines whether cookies should carry the `Secure` attribute.
+ * Returns true in production when configured on HTTPS (or non-localhost origins).
+ */
+export function isSecureCookieContext(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  if (env.NODE_ENV !== 'production') return false;
+  const appUrl = (env.AUTH_URL || env.NEXT_PUBLIC_APP_URL || '').trim();
+  if (!appUrl) return true;
+  try {
+    const parsed = new URL(appUrl);
+    return parsed.protocol === 'https:';
+  } catch {
+    return true;
+  }
+}

@@ -6,6 +6,7 @@ import { getCurrentSessionUser } from '@/lib/auth/session';
 import { loadIsFeatureFlagEnabled, recordSearchMetric } from '@/lib/admin/store';
 import { isDatabaseConfigured } from '@/lib/env';
 import { persistDbSearchEvent } from '@/lib/db/repositories/admin.repo';
+import { countDbDailyCustomerSearches } from '@/lib/integrations/distributed-store';
 import {
   loadConfiguredPlans,
   loadUserEntitlementOverrides,
@@ -96,7 +97,9 @@ export async function GET(request: NextRequest) {
         searchRule && searchRule.enabled && typeof searchRule.numericLimit === 'number'
           ? searchRule.numericLimit
           : null;
-      dailySearchesUsed = getAuthDailySearchCount(sessionUser.id);
+      dailySearchesUsed = isDatabaseConfigured()
+        ? await countDbDailyCustomerSearches(sessionUser.id)
+        : getAuthDailySearchCount(sessionUser.id);
       if (dailySearchLimit !== null && dailySearchesUsed >= dailySearchLimit) {
         return NextResponse.json(
           {

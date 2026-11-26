@@ -1,5 +1,24 @@
 # Viewora — Changelog
 
+## [Phase 5 — Stages 42–45: Social Data Integration, Intelligence Engines & Distributed PostgreSQL Controls] — 2026-11-26
+### Added
+- **Stage 42 (Official Meta API, SSRF Hardening & Capability Routing):**
+  - Added AES-256-GCM authenticated OAuth token encryption (`src/lib/security/token-crypto.ts`), HMAC-SHA256 user-bound OAuth CSRF state & Graph API error normalization (`src/lib/meta/oauth.ts`), RLS-isolated `provider_connections` repository (`src/lib/db/repositories/provider-connections.repo.ts`), OAuth start/callback/disconnect routes (`/api/meta/oauth/start`, `/api/meta/oauth/callback`, `/api/meta/connections`), and 256 KB / HMAC / replay-deduplicated Meta webhooks (`/api/webhooks/meta`).
+  - Added strict per-provider outbound HTTPS SSRF host allowlists & 1 MB bounded JSON response decoding (`src/lib/integrations/ssrf.ts`), plus deterministic capability-based routing, `COMMERCIAL_RIGHTS_BY_PROVIDER` licensing metadata, and tenant-scoped cache keys (`src/lib/integrations/router.ts`).
+- **Stage 43 (Profile Intelligence Engine):**
+  - Added 6-state Profile Intelligence analyzer (`src/lib/analytics/profile-intelligence.ts`), manual `refresh_profile` workspace API action (`src/app/api/dashboard/workspace/route.ts`), and upgraded `SavedProfilesModule` with per-card Refresh and expandable Intelligence Breakdown panels (completeness %, bio CTA/hashtag/mention signals, format mix, freshness age, missing-field disclosures).
+- **Stage 44 (Historical Analytics, Migration 6 RLS & Durable PostgreSQL Jobs):**
+  - Added deduplicated observed snapshot persistence (`recordProfileSnapshotWithDedup`), SQL-enforced `historical_analytics_days` lookback (`listProfileSnapshotsWithEntitlement`), and non-fabricated trend analysis (`computeObservedHistoricalTrends`) in `src/lib/db/repositories/snapshots.repo.ts`.
+  - Added additive **Migration 6** (`20261126000001_profile_snapshots_rls`) enabling database-level Row-Level Security (`profile_snapshots_workspace_isolation`, bringing total RLS policies to **24**), applied to both `viewora` and `viewora_test`.
+  - Added durable PostgreSQL background job queue (`src/lib/db/repositories/jobs.repo.ts`, `POST /api/jobs/run`) with `idempotency_key` deduplication, atomic `FOR UPDATE SKIP LOCKED` leasing, stale-lease recovery, exponential backoff, and dead-letter handling (`BACKGROUND_JOBS_ENABLED=false` by default).
+- **Stage 45 (Compatibility-Checked Competitor Intelligence Studio):**
+  - Added compatibility-aware benchmarking engine (`src/lib/analytics/competitor-benchmark.ts`) flagging mixed provenance & differing capture dates and excluding `null` metrics from averages.
+  - Upgraded `CompetitorStudio.tsx` with `30D/90D/ALL` windows, metric column visibility pills, compatibility notice banners, formula-safe Matrix CSV export, and 1-click **Generate Competitor Report**.
+- **Distributed PostgreSQL API Coordination & Super Admin Emergency Controls:**
+  - Added `src/lib/integrations/distributed-store.ts` enforcing atomic `pg_advisory_xact_lock` USD spend caps (`cost_budgets` + `operational_metrics`), durable global & per-provider kill switches, redacted `api_usage_logs` persistence, durable UTC-day `search_events` quotas in `/api/search`, and an inactive/standby optional Upstash Redis adapter status check.
+  - Upgraded Super Admin Integration Center (`AdminConsole.tsx`, `/api/admin/integrations`, `/api/admin/actions`) with `COORDINATION: POSTGRESQL DURABLE` status and confirmed Global & Per-Provider **Emergency Halt** controls.
+- **Verification & 16 Deliverables:** Verified **21/21 unit suites (101/101 tests)**, **8/8 live PostgreSQL tests** (`viewora_test`), **307/307 static pages**, **7/7 live PG E2E milestones (19 screenshots, 0 errors)**, **0 production CVEs**, and **100% untouched operational `viewora` baseline**; authored/updated all 16 mandatory Phase 5 Stage 42–45 reports.
+
 ## [Phase 5 Preparation — Stage 41: External API Integration Readiness & Phase 4.1 Verification] — 2026-11-26
 ### Added
 - **Centralized External API Integration Framework (`src/lib/integrations/`):** Typed provider contracts (`types.ts`), 7-provider capability & commercial licensing catalog (`catalog.ts`), dual-key server credential/flag guard + secret/PII redactor (`credentials.ts`), and `ExternalApiGateway` (`gateway.ts`) enforcing default-off flags, timeouts, bounded retries, circuit breakers, rate limits, TTL caching, in-flight deduplication, Zod payload validation, USD cost caps, kill switches, and redacted request logs.

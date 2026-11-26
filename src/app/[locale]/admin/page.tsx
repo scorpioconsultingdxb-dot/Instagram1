@@ -23,7 +23,7 @@ import { defaultJobQueue } from '@/lib/jobs/queue';
 import { loadReferralOverview } from '@/lib/referrals/service';
 import { checkDatabaseHealth } from '@/lib/db/prisma';
 import { getBackupDirectorySummary } from '@/lib/admin/backup-status';
-import { defaultApiGateway } from '@/lib/integrations';
+import { defaultApiGateway, loadPersistentIntegrationTelemetry } from '@/lib/integrations';
 import { AdminConsole } from '@/components/admin/AdminConsole';
 
 export const dynamic = 'force-dynamic';
@@ -92,6 +92,7 @@ export default async function AdminPage({
     initialFlags,
     referralOverview,
     databaseHealth,
+    distributedTelemetry,
   ] = await Promise.all([
     loadAdminUsers(),
     defaultProviderRegistry.checkAllHealth(),
@@ -104,6 +105,7 @@ export default async function AdminPage({
     loadFeatureFlags(),
     loadReferralOverview(),
     checkDatabaseHealth(),
+    loadPersistentIntegrationTelemetry().catch(() => null),
   ]);
 
   return (
@@ -116,6 +118,7 @@ export default async function AdminPage({
       databaseHealth={databaseHealth}
       backupSummary={getBackupDirectorySummary()}
       integrationCenter={defaultApiGateway.getIntegrationCenterSnapshot()}
+      distributedTelemetry={distributedTelemetry}
       apiUsage={getApiUsageMetrics()}
       searchAnalytics={getSearchAnalyticsMetrics()}
       conversionAnalytics={conversionAnalytics}

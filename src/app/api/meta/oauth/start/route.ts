@@ -1,7 +1,7 @@
-import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getCurrentSessionUser } from '@/lib/auth/session';
-import { buildMetaOAuthUrl } from '@/lib/meta/oauth';
+import { isSecureCookieContext } from '@/lib/auth/secret';
+import { buildMetaOAuthUrl, createSignedMetaOAuthState } from '@/lib/meta/oauth';
 
 export async function GET() {
   const user = await getCurrentSessionUser();
@@ -9,7 +9,7 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: 'Authentication required.' }, { status: 401 });
   }
 
-  const state = randomUUID();
+  const state = createSignedMetaOAuthState(user.id);
   const result = buildMetaOAuthUrl(state);
   if (!result.ok) {
     return NextResponse.json(
@@ -22,6 +22,7 @@ export async function GET() {
   res.cookies.set('viewora_meta_oauth_state', state, {
     httpOnly: true,
     sameSite: 'lax',
+    secure: isSecureCookieContext(),
     path: '/',
     maxAge: 600,
   });

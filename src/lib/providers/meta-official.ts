@@ -1,10 +1,14 @@
 import { z } from 'zod';
 import { getEnv } from '@/lib/env';
 import {
+  buildTenantScopedCacheKey,
   checkProviderCredentials,
   defaultApiGateway,
   isProviderEffectivelyEnabled,
+  readBoundedResponseJson,
+  validateOutboundProviderUrl,
 } from '@/lib/integrations';
+import { normalizeMetaGraphError } from '@/lib/meta/oauth';
 import type {
   InstagramDataProvider,
   ProviderHealth,
@@ -146,28 +150,52 @@ export class MetaOfficialProvider implements InstagramDataProvider {
       `business_discovery.username(${username}){username,name,biography,website,followers_count,follows_count,media_count,media.limit(6){id,caption,like_count,comments_count,media_type,timestamp}}`
     );
     const endpoint = `https://graph.facebook.com/${env.META_API_VERSION}/${env.META_INSTAGRAM_BUSINESS_ACCOUNT_ID}?fields=${fields}`;
+    const ssrf = validateOutboundProviderUrl('meta_official', endpoint);
+    if (!ssrf.ok) {
+      return {
+        data: null,
+        meta: {
+          providerId: this.id,
+          providerKind: this.kind,
+          providerLabel: this.label,
+          availability: 'unavailable',
+          dataClass: 'live',
+          confidence: 'low',
+          freshness: { fetchedAt: now, ttlSeconds: 0, isStale: true },
+          limitations: ['Blocked by outbound SSRF/allowlist validation.'],
+          notice: ssrf.error,
+        },
+      };
+    }
 
     const gw = await defaultApiGateway.execute({
       providerId: 'meta_official',
       operation: 'business_discovery.profile',
-      cacheKey: `profile:${username.toLowerCase()}`,
+      cacheKey: buildTenantScopedCacheKey({
+        providerId: 'meta_official',
+        operation: 'business_discovery.profile',
+        subject: username,
+        authorizationScope: 'public',
+      }),
       schema: metaBusinessDiscoverySchema,
       execute: async (signal) => {
-        const response = await fetch(endpoint, {
+        const response = await fetch(ssrf.url.toString(), {
           headers: {
             Authorization: `Bearer ${env.META_GRAPH_API_ACCESS_TOKEN}`,
           },
           cache: 'no-store',
           signal,
         });
-        const payload = await response.json().catch(() => null);
+        const bounded = await readBoundedResponseJson(response);
+        const payload = bounded.ok ? bounded.data : null;
+        const errCode = (payload as { error?: { code?: number } } | null)?.error?.code;
         return {
-          ok: response.ok,
+          ok: response.ok && bounded.ok,
           status: response.status,
           data: payload,
-          errorMessage:
-            (payload as { error?: { message?: string } } | null)?.error?.message ||
-            `Meta Graph API returned HTTP ${response.status}`,
+          errorMessage: !bounded.ok
+            ? bounded.error
+            : normalizeMetaGraphError(errCode, response.status).userMessage,
         };
       },
     });

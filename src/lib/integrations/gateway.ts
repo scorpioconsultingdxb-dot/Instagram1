@@ -1,7 +1,11 @@
 import type { ZodType } from 'zod';
-import { getEnv } from '@/lib/env';
+import { getEnv, isDatabaseConfigured } from '@/lib/env';
 import { getCatalogEntry, getProviderCatalog } from './catalog';
 import { checkProviderCredentials, redactSecretsAndPii } from './credentials';
+import {
+  recordPersistentApiUsageLog,
+  reserveDistributedApiBudget,
+} from './distributed-store';
 import type {
   ApiCostControlSummary,
   ApiLogOutcome,
@@ -36,6 +40,8 @@ export interface GatewayFetchRequest<T> {
   policyOverride?: Partial<ProviderPolicyConfig>;
   estimatedCostUsd?: number;
   schema?: ZodType<T>;
+  /** Set true in isolated unit tests that should skip live PostgreSQL coordination. */
+  bypassDistributedStore?: boolean;
   /**
    * Executes the upstream call with an AbortSignal enforced by the gateway timeout.
    * Return `{ ok, status, data, errorMessage }` so retries/circuit-breakers/logging remain centralized.
@@ -320,6 +326,47 @@ export class ExternalApiGateway {
       };
     }
 
+    // 2b. Durable PostgreSQL multi-instance kill-switch & atomic spend reservation
+    if (!req.bypassDistributedStore && isDatabaseConfigured()) {
+      const reservation = await reserveDistributedApiBudget({
+        providerId: req.providerId,
+        estimatedCostUsd: estimatedCallCost,
+      }).catch(() => null);
+      if (reservation && !reservation.allowed) {
+        const isKillSwitch = /kill switch/i.test(reservation.reason ?? '');
+        const outcome: ApiLogOutcome = isKillSwitch ? 'disabled' : 'budget_exceeded';
+        const httpStatus = isKillSwitch ? 503 : 429;
+        if (isKillSwitch) {
+          usageRec.disabledRejections += 1;
+        } else {
+          usageRec.errors += 1;
+        }
+        const reason = reservation.reason ?? 'Blocked by distributed PostgreSQL budget guard.';
+        this.pushLog({
+          providerId: req.providerId,
+          operation: req.operation,
+          outcome,
+          httpStatus,
+          latencyMs: Date.now() - startedAt,
+          attempts: 0,
+          estimatedCostUsd: 0,
+          message: reason,
+        });
+        return {
+          ok: false,
+          data: null,
+          fromCache: false,
+          fetchedAt: nowIso,
+          ttlSeconds: 0,
+          outcome,
+          httpStatus,
+          latencyMs: Date.now() - startedAt,
+          attempts: 0,
+          error: reason,
+        };
+      }
+    }
+
     // 3. Server-side TTL cache lookup
     const fullCacheKey = req.cacheKey ? `${req.providerId}:${req.cacheKey}` : null;
     if (fullCacheKey && ttlSeconds > 0) {
@@ -477,6 +524,14 @@ export class ExternalApiGateway {
               estimatedCostUsd: actualCost,
               message: `Upstream ${req.operation} succeeded (HTTP ${res.status}).`,
             });
+            if (!req.bypassDistributedStore && isDatabaseConfigured()) {
+              void recordPersistentApiUsageLog({
+                providerId: req.providerId,
+                endpoint: req.operation,
+                statusCode: res.status,
+                latencyMs,
+              }).catch(() => undefined);
+            }
 
             return {
               ok: true,
@@ -535,6 +590,14 @@ export class ExternalApiGateway {
         estimatedCostUsd: 0,
         message: lastMessage,
       });
+      if (!req.bypassDistributedStore && isDatabaseConfigured()) {
+        void recordPersistentApiUsageLog({
+          providerId: req.providerId,
+          endpoint: req.operation,
+          statusCode: lastStatus ?? 502,
+          latencyMs,
+        }).catch(() => undefined);
+      }
 
       return {
         ok: false,

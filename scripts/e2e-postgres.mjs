@@ -357,6 +357,19 @@ async function main() {
         body: JSON.stringify({ type: 'save_profile', input: 'viewora.studio', folderId: fJson.folder?.id ?? null })
       });
       const sJson = await sRes.json();
+      const s2Res = await fetch('/api/dashboard/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'save_profile', input: 'aurora.coffee', folderId: fJson.folder?.id ?? null })
+      });
+      const refreshRes = await fetch('/api/dashboard/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'refresh_profile', username: 'viewora.studio' })
+      });
+      const refreshJson = await refreshRes.json();
+      const metaConnRes = await fetch('/api/meta/connections');
+      const metaConnJson = await metaConnRes.json();
       const nRes = await fetch('/api/dashboard/workspace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -372,17 +385,46 @@ async function main() {
         });
         rStatus = rRes.status;
       }
-      return { fStatus: fRes.status, sStatus: sRes.status, nStatus: nRes.status, rStatus };
+      return {
+        fStatus: fRes.status,
+        sStatus: sRes.status,
+        s2Status: s2Res.status,
+        refreshStatus: refreshRes.status,
+        refreshState: refreshJson.status,
+        metaConnStatus: metaConnRes.status,
+        metaOauthEnabled: metaConnJson.oauthEnabled,
+        nStatus: nRes.status,
+        rStatus
+      };
     })()`);
     assert(
-      wsMutations.fStatus === 201 && wsMutations.sStatus === 201 && wsMutations.nStatus === 200 && wsMutations.rStatus === 200,
+      wsMutations.fStatus === 201 &&
+        wsMutations.sStatus === 201 &&
+        wsMutations.s2Status === 403 &&
+        wsMutations.refreshStatus === 200 &&
+        wsMutations.refreshState === 'live_providers_disabled' &&
+        wsMutations.metaConnStatus === 200 &&
+        wsMutations.metaOauthEnabled === false &&
+        wsMutations.nStatus === 200 &&
+        wsMutations.rStatus === 200,
       `Workspace PostgreSQL mutations failed: ${JSON.stringify(wsMutations)}`
     );
 
     await cdp.goto(`${BASE_URL}/en/dashboard/profiles`, 1400);
     const dashBody = await cdp.eval(`document.body.innerText`);
     assert(dashBody.includes('viewora.studio') && dashBody.includes('PG Verified Folder'), 'Saved profile/folder missing after reload');
+    // Expand Profile Intelligence breakdown panel on first saved profile card
+    await cdp.eval(`(() => {
+      const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.trim().startsWith('Intelligence'));
+      if (btn) btn.click();
+    })()`);
+    await sleep(400);
+    report.screenshots.push(await cdp.screenshot('phase5_profile_intel_1440px.png'));
     report.screenshots.push(await cdp.screenshot('pg_e2e_dashboard_1440px.png'));
+
+    // Competitor Intelligence Studio check (Stage 45)
+    await cdp.goto(`${BASE_URL}/en/dashboard/competitors`, 1200);
+    report.screenshots.push(await cdp.screenshot('phase5_competitor_studio_1440px.png'));
 
     // Mobile 390px dashboard check
     await cdp.setViewport(390, 844);
@@ -526,7 +568,7 @@ async function main() {
       const sup = await (await fetch('/api/support')).json();
       return {
         savedUsernames: (ws.workspace?.savedProfiles || []).map(p => p.username),
-        savedNote: ws.workspace?.savedProfiles?.[0]?.privateNote,
+        savedNote: (ws.workspace?.savedProfiles || []).find(p => p.username === 'viewora.studio')?.privateNote,
         folders: (ws.workspace?.folders || []).map(f => f.name),
         readNotifCount: (ws.workspace?.notifications || []).filter(n => n.read).length,
         title: prof.profile?.professionalTitle,
@@ -628,6 +670,7 @@ async function main() {
         integrationsStatus: intRes.status,
         allPaidDisabled: intJson?.integrationCenter?.allPaidProvidersDisabled === true,
         providerCount: (intJson?.integrationCenter?.providers || []).length,
+        distributedBackend: intJson?.distributedTelemetry?.backend || null,
         lockPayStatus: lockPay.status,
         pdfStatus: pdfRes.status,
         pdfContentType: pdfRes.headers.get('content-type') || '',
@@ -637,7 +680,13 @@ async function main() {
       };
     })()`);
     assert(adminCheck.overviewStatus === 200 && adminCheck.hasDbHealth && adminCheck.hasBackupSummary, `Admin overview failed: ${JSON.stringify(adminCheck)}`);
-    assert(adminCheck.integrationsStatus === 200 && adminCheck.allPaidDisabled && adminCheck.providerCount === 7, `Admin Integration Center API check failed: ${JSON.stringify(adminCheck)}`);
+    assert(
+      adminCheck.integrationsStatus === 200 &&
+        adminCheck.allPaidDisabled &&
+        adminCheck.providerCount === 7 &&
+        adminCheck.distributedBackend === 'postgresql',
+      `Admin Integration Center API check failed: ${JSON.stringify(adminCheck)}`
+    );
     assert(adminCheck.lockPayStatus === 403, `Expected 403 on locked payments_enabled, got ${adminCheck.lockPayStatus}`);
     assert(
       adminCheck.pdfStatus === 200 &&
@@ -654,10 +703,38 @@ async function main() {
     })()`);
     await sleep(500);
     report.screenshots.push(await cdp.screenshot('phase5_integration_center_1440px.png'));
+    // Agency-tier account saves 2 profiles & verifies Competitor Intelligence Studio matrix (Stage 45)
+    const compSetup = await cdp.eval(`(async () => {
+      const s1 = await fetch('/api/dashboard/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'save_profile', input: 'viewora.studio' })
+      });
+      const s2 = await fetch('/api/dashboard/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'save_profile', input: 'aurora.coffee' })
+      });
+      return { s1: s1.status, s2: s2.status };
+    })()`);
+    assert(compSetup.s1 === 201 && compSetup.s2 === 201, `Agency competitor profile save failed: ${JSON.stringify(compSetup)}`);
+    await cdp.goto(`${BASE_URL}/en/dashboard/competitors`, 1300);
+    const compText = await cdp.eval(`document.body.innerText`);
+    assert(
+      compText.includes('viewora.studio') && compText.includes('aurora.coffee') && compText.includes('Generate Competitor Report'),
+      'Competitor Intelligence Studio matrix did not render expected profiles/controls'
+    );
+    report.screenshots.push(await cdp.screenshot('phase5_competitor_studio_1440px.png'));
     await cdp.setViewport(390, 844);
     await cdp.goto(`${BASE_URL}/en/admin`, 1100);
+    await cdp.eval(`(() => {
+      const btn = Array.from(document.querySelectorAll('button[role="tab"]')).find(b => b.textContent && b.textContent.includes('Integration Center'));
+      if (btn) btn.click();
+    })()`);
+    await sleep(400);
     const adminMobOverflow = await cdp.eval(`document.documentElement.scrollWidth > window.innerWidth`);
     assert(!adminMobOverflow, 'Mobile 390px Admin Console horizontal overflow detected');
+    report.screenshots.push(await cdp.screenshot('phase5_integration_center_390px.png'));
     report.screenshots.push(await cdp.screenshot('phase41_admin_390px.png'));
     await cdp.setViewport(1440, 900);
     report.passed.push('Administrator 3.0 dashboard, PG health, backup summary, locked payments_enabled guard, and real %PDF-1.4 export verified');

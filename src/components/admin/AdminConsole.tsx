@@ -39,7 +39,8 @@ import type { FunnelEventName } from '@/lib/analytics/funnel';
 import type { ExperimentDefinition } from '@/lib/experiments/ab';
 import type { DatabaseHealthResult } from '@/lib/db/prisma';
 import type { BackupDirectorySummary } from '@/lib/admin/backup-status';
-import type { IntegrationCenterSnapshot } from '@/lib/integrations/types';
+import type { IntegrationCenterSnapshot, IntegrationProviderId } from '@/lib/integrations/types';
+import type { PersistentEmergencyStates } from '@/lib/integrations/distributed-store';
 import { ConfirmDialog, StatusBanner } from '@/components/layout/PageShell';
 
 export type AdminTab =
@@ -66,6 +67,7 @@ export interface AdminConsoleProps {
   databaseHealth?: DatabaseHealthResult;
   backupSummary?: BackupDirectorySummary;
   integrationCenter?: IntegrationCenterSnapshot;
+  distributedTelemetry?: PersistentEmergencyStates | null;
   apiUsage: ApiUsageMetric[];
   searchAnalytics: SearchAnalyticsMetric[];
   conversionAnalytics: {
@@ -135,6 +137,7 @@ export function AdminConsole({
   databaseHealth,
   backupSummary,
   integrationCenter,
+  distributedTelemetry,
   apiUsage,
   searchAnalytics,
   conversionAnalytics,
@@ -190,6 +193,21 @@ export function AdminConsole({
   const [auditLogs, setAuditLogs] = useState(initialAuditLogs);
   const [auditSearch, setAuditSearch] = useState('');
   const [flags, setFlags] = useState(initialFlags);
+  const [globalKillSwitch, setGlobalKillSwitch] = useState<boolean>(
+    distributedTelemetry?.globalKillSwitchActive ??
+      integrationCenter?.costControl.globalKillSwitchActive ??
+      false
+  );
+  const [providerKillSwitches, setProviderKillSwitches] = useState<Record<string, boolean>>({
+    ...(integrationCenter?.costControl.perProviderKillSwitches ?? {}),
+    ...(distributedTelemetry?.providerKillSwitches ?? {}),
+  });
+  const [killSwitchConfirm, setKillSwitchConfirm] = useState<{
+    scope: 'global' | IntegrationProviderId;
+    label: string;
+    nextActive: boolean;
+  } | null>(null);
+  const [killSwitchBusy, setKillSwitchBusy] = useState(false);
   const [banner, setBanner] = useState<{ tone: 'success' | 'error'; message: string } | null>(
     null
   );
@@ -1568,6 +1586,18 @@ export function AdminConsole({
               </div>
               {integrationCenter ? (
                 <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                      distributedTelemetry?.backend === 'postgresql'
+                        ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200'
+                        : 'bg-slate-200 text-slate-700 dark:bg-[#192337] dark:text-slate-300'
+                    }`}
+                  >
+                    Coordination: {distributedTelemetry?.backend === 'postgresql' ? 'PostgreSQL Durable' : 'Process-Local Fallback'}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase text-slate-700 dark:bg-[#192337] dark:text-slate-300">
+                    Redis: {distributedTelemetry?.redisAdapterConfigured ? 'Configured (Standby)' : 'Standby / Inactive'}
+                  </span>
                   <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold uppercase text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]">
                     {integrationCenter.allPaidProvidersDisabled
                       ? 'All Paid APIs Disabled'
@@ -1582,24 +1612,57 @@ export function AdminConsole({
 
             {integrationCenter ? (
               <>
-                <div className="grid gap-3 sm:grid-cols-4 text-xs tabular-nums">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-xs tabular-nums">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-[#263047] dark:bg-[#0F172A]">
                     <p className="text-[10px] font-semibold uppercase text-[#64748B]">Daily Spend / Cap</p>
                     <p className="mt-1 font-display text-base font-extrabold text-[#0F172A] dark:text-white">
-                      ${integrationCenter.costControl.dailySpentUsd.toFixed(2)} / ${integrationCenter.costControl.dailyCapUsd.toFixed(2)}
+                      ${(distributedTelemetry?.dailySpentUsd ?? integrationCenter.costControl.dailySpentUsd).toFixed(2)} / ${(distributedTelemetry?.dailyCapUsd ?? integrationCenter.costControl.dailyCapUsd).toFixed(2)}
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-[#263047] dark:bg-[#0F172A]">
                     <p className="text-[10px] font-semibold uppercase text-[#64748B]">Monthly Spend / Cap</p>
                     <p className="mt-1 font-display text-base font-extrabold text-[#0F172A] dark:text-white">
-                      ${integrationCenter.costControl.monthlySpentUsd.toFixed(2)} / ${integrationCenter.costControl.monthlyCapUsd.toFixed(2)}
+                      ${(distributedTelemetry?.monthlySpentUsd ?? integrationCenter.costControl.monthlySpentUsd).toFixed(2)} / ${(distributedTelemetry?.monthlyCapUsd ?? integrationCenter.costControl.monthlyCapUsd).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-[#263047] dark:bg-[#0F172A]">
+                    <p className="text-[10px] font-semibold uppercase text-[#64748B]">Persisted 24h Calls / Err</p>
+                    <p className="mt-1 font-display text-base font-extrabold text-[#0F172A] dark:text-white">
+                      {distributedTelemetry?.persistedApiCalls24h ?? 0} / {distributedTelemetry?.persistedApiErrors24h ?? 0}
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-[#263047] dark:bg-[#0F172A]">
                     <p className="text-[10px] font-semibold uppercase text-[#64748B]">Global Kill Switch</p>
-                    <p className="mt-1 font-display text-base font-extrabold text-[#0F172A] dark:text-white">
-                      {integrationCenter.costControl.globalKillSwitchActive ? 'ACTIVE' : 'Standby'}
-                    </p>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span
+                        className={`font-display text-base font-extrabold ${
+                          globalKillSwitch
+                            ? 'text-rose-600 dark:text-[#F87171]'
+                            : 'text-[#0F172A] dark:text-white'
+                        }`}
+                      >
+                        {globalKillSwitch ? 'ACTIVE' : 'Standby'}
+                      </span>
+                      {canManageEntitlements ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setKillSwitchConfirm({
+                              scope: 'global',
+                              label: 'Global External API Kill Switch',
+                              nextActive: !globalKillSwitch,
+                            })
+                          }
+                          className={`rounded-lg px-2 py-1 text-[10px] font-bold uppercase ${
+                            globalKillSwitch
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-rose-600 text-white'
+                          }`}
+                        >
+                          {globalKillSwitch ? 'Resume' : 'Halt All'}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-[#263047] dark:bg-[#0F172A]">
                     <p className="text-[10px] font-semibold uppercase text-[#64748B]">Registered Adapters</p>
@@ -1610,7 +1673,9 @@ export function AdminConsole({
                 </div>
 
                 <div className="space-y-3">
-                  {integrationCenter.providers.map((prov) => (
+                  {integrationCenter.providers.map((prov) => {
+                    const isKilled = Boolean(providerKillSwitches[prov.id]);
+                    return (
                     <div
                       key={prov.id}
                       className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]"
@@ -1624,23 +1689,46 @@ export function AdminConsole({
                             </span>
                             <span
                               className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase ${
-                                prov.effectiveState === 'enabled_ready'
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]'
-                                  : prov.effectiveState === 'active_demo'
-                                    ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200'
-                                    : prov.effectiveState === 'circuit_open'
-                                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-200'
-                                      : 'bg-slate-200 text-slate-700 dark:bg-[#192337] dark:text-slate-300'
+                                isKilled
+                                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-200'
+                                  : prov.effectiveState === 'enabled_ready'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-[#34D399]'
+                                    : prov.effectiveState === 'active_demo'
+                                      ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200'
+                                      : prov.effectiveState === 'circuit_open'
+                                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-200'
+                                        : 'bg-slate-200 text-slate-700 dark:bg-[#192337] dark:text-slate-300'
                               }`}
                             >
-                              {prov.effectiveState.replace(/_/g, ' ')}
+                              {isKilled ? 'EMERGENCY HALTED' : prov.effectiveState.replace(/_/g, ' ')}
                             </span>
                           </div>
                           <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">{prov.description}</p>
                         </div>
-                        <span className="font-mono text-[10px] uppercase text-[#64748B]">
-                          Circuit: {prov.circuitState}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] uppercase text-[#64748B]">
+                            Circuit: {prov.circuitState}
+                          </span>
+                          {canManageEntitlements ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setKillSwitchConfirm({
+                                  scope: prov.id,
+                                  label: `${prov.name} (${prov.id})`,
+                                  nextActive: !isKilled,
+                                })
+                              }
+                              className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase ${
+                                isKilled
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300'
+                              }`}
+                            >
+                              {isKilled ? 'Clear Halt' : 'Emergency Halt'}
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
 
                       <div className="mt-3 grid gap-2 sm:grid-cols-3 text-[11px]">
@@ -1673,8 +1761,33 @@ export function AdminConsole({
                         </div>
                       </div>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
+
+                {distributedTelemetry && distributedTelemetry.recentPersistedErrors.length > 0 ? (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-4 text-xs dark:border-rose-900/50 dark:bg-rose-950/20">
+                    <h3 className="font-bold text-rose-900 dark:text-rose-200">
+                      Recent Persisted PostgreSQL API Errors ({distributedTelemetry.recentPersistedErrors.length})
+                    </h3>
+                    <div className="mt-2 space-y-1.5 font-mono text-[10px]">
+                      {distributedTelemetry.recentPersistedErrors.slice(0, 8).map((err) => (
+                        <div
+                          key={err.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-200/70 bg-white px-3 py-1.5 dark:border-rose-900/40 dark:bg-[#131C2E]"
+                        >
+                          <span>
+                            [{err.providerId}] {err.endpoint} → HTTP {err.statusCode}
+                            {err.latencyMs !== null ? ` (${err.latencyMs}ms)` : ''}
+                          </span>
+                          <span className="text-[#64748B]">
+                            {new Date(err.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs dark:border-[#263047] dark:bg-[#0F172A]">
                   <h3 className="font-bold text-[#0F172A] dark:text-white">
@@ -2056,6 +2169,42 @@ export function AdminConsole({
           </div>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={killSwitchConfirm !== null}
+        destructive={Boolean(killSwitchConfirm?.nextActive)}
+        busy={killSwitchBusy}
+        title={
+          killSwitchConfirm?.nextActive
+            ? `Activate emergency halt for ${killSwitchConfirm.label}?`
+            : `Clear emergency halt for ${killSwitchConfirm?.label ?? ''}?`
+        }
+        description={
+          killSwitchConfirm?.nextActive
+            ? 'This immediately persists the kill switch to PostgreSQL cost_budgets across all instances and blocks outbound requests for this scope.'
+            : 'This clears the persisted emergency halt in PostgreSQL. Providers still remain gated by their explicit PROVIDER_*_ENABLED server flags.'
+        }
+        confirmLabel={killSwitchConfirm?.nextActive ? 'Confirm Emergency Halt' : 'Clear Halt'}
+        onCancel={() => setKillSwitchConfirm(null)}
+        onConfirm={async () => {
+          if (!killSwitchConfirm) return;
+          setKillSwitchBusy(true);
+          const { scope, label, nextActive } = killSwitchConfirm;
+          const res = await runAction(
+            { type: 'toggle_api_kill_switch', scope, active: nextActive },
+            `${nextActive ? 'Activated' : 'Cleared'} persisted kill switch for ${label}.`
+          );
+          if (res.ok) {
+            if (scope === 'global') {
+              setGlobalKillSwitch(nextActive);
+            } else {
+              setProviderKillSwitches((prev) => ({ ...prev, [scope]: nextActive }));
+            }
+          }
+          setKillSwitchBusy(false);
+          setKillSwitchConfirm(null);
+        }}
+      />
     </div>
   );
 }

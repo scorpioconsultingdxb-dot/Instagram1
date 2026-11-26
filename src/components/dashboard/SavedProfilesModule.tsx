@@ -2,10 +2,13 @@
 
 import Link from 'next/link';
 import {
+  ChevronDown,
+  ChevronUp,
   FolderPlus,
   Loader2,
   NotebookPen,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
   Tag,
@@ -19,6 +22,7 @@ import type {
   SavedProfileRecord,
   UserWorkspaceState,
 } from '@/lib/dashboard/store';
+import { buildProfileIntelligenceSummary } from '@/lib/analytics/profile-intelligence';
 import { ProvenanceBadge } from '@/components/ui/ProvenanceBadge';
 import { EmptyState } from '@/components/ui/Primitives';
 import { ConfirmDialog, StatusBanner } from '@/components/layout/PageShell';
@@ -68,12 +72,14 @@ export function SavedProfilesModule({
   const [showNewFolder, setShowNewFolder] = useState(false);
 
   const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null);
+  const [expandedIntelFor, setExpandedIntelFor] = useState<string | null>(null);
+  const [refreshingHandle, setRefreshingHandle] = useState<string | null>(null);
   const [draftNote, setDraftNote] = useState('');
   const [draftTags, setDraftTags] = useState('');
   const [draftFolderId, setDraftFolderId] = useState<string>('');
 
   const [busy, setBusy] = useState(false);
-  const [banner, setBanner] = useState<{ tone: 'success' | 'error'; message: string } | null>(
+  const [banner, setBanner] = useState<{ tone: 'success' | 'error' | 'info'; message: string } | null>(
     null
   );
   const [confirmDelete, setConfirmDelete] = useState<
@@ -115,6 +121,47 @@ export function SavedProfilesModule({
       return false;
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleRefreshProfile = async (username: string) => {
+    setRefreshingHandle(username);
+    setBanner(null);
+    try {
+      const res = await fetch('/api/dashboard/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'refresh_profile', username }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        refreshed?: boolean;
+        message?: string;
+        error?: string;
+        workspace?: UserWorkspaceState;
+      } | null;
+      if (!res.ok || !json?.ok) {
+        setBanner({
+          tone: 'error',
+          message: json?.error ?? `Could not refresh @${username} (HTTP ${res.status}).`,
+        });
+        return;
+      }
+      if (json.workspace) {
+        onWorkspaceChange(json.workspace);
+      }
+      setBanner({
+        tone: json.refreshed ? 'success' : 'info',
+        message:
+          json.message ??
+          (json.refreshed
+            ? `Refreshed @${username}.`
+            : `Live external providers are disabled; preserved existing data for @${username}.`),
+      });
+    } catch {
+      setBanner({ tone: 'error', message: `Network error while refreshing @${username}.` });
+    } finally {
+      setRefreshingHandle(null);
     }
   };
 
@@ -536,6 +583,13 @@ export function SavedProfilesModule({
             {filteredProfiles.map((item) => {
               const folder = workspace.folders.find((f) => f.id === item.folderId);
               const isEditing = editingNoteFor === item.username;
+              const isIntelOpen = expandedIntelFor === item.username;
+              const intel = buildProfileIntelligenceSummary({
+                profile: item.profile,
+                dataClass: item.dataClass,
+                providerLabel: item.providerLabel,
+                capturedAt: item.savedAt,
+              });
               return (
                 <article
                   key={item.id}
@@ -557,20 +611,98 @@ export function SavedProfilesModule({
                       <ProvenanceBadge dataClass={item.dataClass} labels={dict.provenance} />
                     </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-xs tabular-nums dark:border-[#263047] dark:bg-[#131C2E]">
+                    <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-xs tabular-nums dark:border-[#263047] dark:bg-[#131C2E]">
                       <div>
                         <span className="text-[10px] text-[#64748B]">Followers</span>
                         <p className="font-bold text-[#0F172A] dark:text-white">
-                          {(item.profile.followersCount ?? 0).toLocaleString()}
+                          {item.profile.followersCount !== null
+                            ? item.profile.followersCount.toLocaleString()
+                            : 'Unavailable'}
                         </p>
                       </div>
                       <div>
                         <span className="text-[10px] text-[#64748B]">Est. ER</span>
                         <p className="font-bold text-[#6941EF] dark:text-[#A99AFF]">
-                          {item.profile.estimatedEngagementRate ?? '—'}%
+                          {item.profile.estimatedEngagementRate !== null
+                            ? `${item.profile.estimatedEngagementRate}%`
+                            : 'Unavailable'}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[#64748B]">Completeness</span>
+                        <p className="font-bold text-[#0F172A] dark:text-white">
+                          {intel.completenessScore}%
                         </p>
                       </div>
                     </div>
+
+                    <div className="mt-2 flex items-center justify-between text-[10px] text-[#64748B]">
+                      <span>{intel.freshnessLabel} · State: <strong className="uppercase">{intel.dataState}</strong></span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedIntelFor(isIntelOpen ? null : item.username)
+                        }
+                        className="inline-flex items-center gap-0.5 font-semibold text-[#6941EF] hover:underline dark:text-[#A99AFF]"
+                      >
+                        Intelligence
+                        {isIntelOpen ? (
+                          <ChevronUp className="h-3 w-3" aria-hidden="true" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
+
+                    {isIntelOpen ? (
+                      <div className="mt-2.5 space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-[11px] dark:border-[#263047] dark:bg-[#131C2E]">
+                        <div>
+                          <p className="font-semibold text-[#0F172A] dark:text-white">
+                            Public Bio Signal Analysis
+                          </p>
+                          <p className="mt-0.5 text-[#64748B] dark:text-[#94A3B8]">
+                            {intel.bioAnalysis.summary}
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5 rounded-lg bg-slate-50 p-2 text-center font-mono text-[10px] dark:bg-[#0F172A]">
+                          <div>
+                            <span className="block text-[#64748B]">Reels</span>
+                            <strong>{intel.formatMix.reel}%</strong>
+                          </div>
+                          <div>
+                            <span className="block text-[#64748B]">Carousels</span>
+                            <strong>{intel.formatMix.carousel}%</strong>
+                          </div>
+                          <div>
+                            <span className="block text-[#64748B]">Images</span>
+                            <strong>{intel.formatMix.image}%</strong>
+                          </div>
+                        </div>
+                        <p className="text-[#64748B] dark:text-[#94A3B8]">
+                          Cadence consistency: <strong className="text-[#0F172A] dark:text-white">{intel.postingConsistencyLabel}</strong>
+                          {intel.postingConsistencyScore !== null ? ` (${intel.postingConsistencyScore}/100)` : ''}
+                        </p>
+                        {intel.topHashtags.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {intel.topHashtags.slice(0, 5).map((h) => (
+                              <span
+                                key={h.tag}
+                                className="rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[10px] text-[#6941EF] dark:bg-violet-950/60 dark:text-[#A99AFF]"
+                              >
+                                {h.tag} ({h.count})
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {intel.limitations.length > 0 ? (
+                          <div className="rounded-lg border border-amber-200/80 bg-amber-50/70 p-2 text-[10px] text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                            {intel.limitations.map((lim, idx) => (
+                              <p key={idx}>{lim}</p>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
 
                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                       {folder ? (
@@ -668,7 +800,20 @@ export function SavedProfilesModule({
                     >
                       Open analytics →
                     </button>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={refreshingHandle === item.username}
+                        onClick={() => void handleRefreshProfile(item.username)}
+                        aria-label={`Refresh @${item.username}`}
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-[#64748B] hover:bg-slate-200/70 hover:text-[#0F172A] disabled:opacity-50 dark:text-[#94A3B8] dark:hover:bg-[#192337]"
+                      >
+                        <RefreshCw
+                          className={`h-3.5 w-3.5 ${refreshingHandle === item.username ? 'animate-spin' : ''}`}
+                          aria-hidden="true"
+                        />
+                        Refresh
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEditor(item)}

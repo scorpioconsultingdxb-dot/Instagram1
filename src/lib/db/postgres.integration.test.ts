@@ -67,6 +67,28 @@ import {
   persistDbSupportTicketUpdate,
 } from '@/lib/db/repositories/admin.repo';
 import { loadDbPlans, loadDbUserOverrides, upsertDbUserOverride } from '@/lib/db/repositories/entitlements.repo';
+import {
+  disconnectUserProviderConnection,
+  getDecryptedConnectionTokenForOwner,
+  listUserProviderConnections,
+  upsertUserProviderConnection,
+} from '@/lib/db/repositories/provider-connections.repo';
+import {
+  computeObservedHistoricalTrends,
+  listProfileSnapshotsWithEntitlement,
+  recordProfileSnapshotWithDedup,
+} from '@/lib/db/repositories/snapshots.repo';
+import {
+  claimNextDbBackgroundJob,
+  completeDbBackgroundJob,
+  enqueueDbBackgroundJob,
+  failDbBackgroundJob,
+} from '@/lib/db/repositories/jobs.repo';
+import {
+  loadPersistentIntegrationTelemetry,
+  reserveDistributedApiBudget,
+  setPersistentEmergencyKillSwitch,
+} from '@/lib/integrations/distributed-store';
 import { hasAdminCapability } from '@/lib/admin/rbac';
 import { withUserRlsContext } from '@/lib/db/prisma';
 import type { SavedProfileRecord } from '@/lib/dashboard/store';
@@ -1014,5 +1036,268 @@ describe('Mandatory Live PostgreSQL Integration Verification (viewora_test)', ()
     expect(preservedAudit?.actorId).toBeNull();
     expect(preservedAudit?.actorEmail).toBe(email1);
     expect(preservedAudit?.action).toBe('phase41.immutability.probe');
+  });
+
+  it('verifies Phase 5 (Stages 42–45) PostgreSQL persistence: encrypted provider_connections RLS, deduplicated profile_snapshots + history entitlement, FOR UPDATE SKIP LOCKED background_jobs, and atomic distributed API budget & kill switches', async () => {
+    const emailA = `p5-a-${randomUUID().slice(0, 8)}@viewora.test`;
+    const emailB = `p5-b-${randomUUID().slice(0, 8)}@viewora.test`;
+
+    const regA = await registerUserWithWorkspace(
+      {
+        email: emailA,
+        password: 'Phase5UserA!2026',
+        fullName: 'Phase 5 Alpha',
+        segment: 'business',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      appClient
+    );
+    const regB = await registerUserWithWorkspace(
+      {
+        email: emailB,
+        password: 'Phase5UserB!2026',
+        fullName: 'Phase 5 Beta',
+        segment: 'personal',
+        preferredLocale: 'en',
+        emailPreferences: { productUpdates: false, weeklyDigest: false, trackingAlerts: true, marketing: false },
+      },
+      appClient
+    );
+    expect(regA.ok && regB.ok).toBe(true);
+    if (!regA.ok || !regB.ok) return;
+    createdUserIds.push(regA.user.id, regB.user.id);
+
+    // 1. Encrypted provider_connections + strict RLS cross-user isolation + disconnect token scrub
+    const sampleToken = `EAAG-phase5-secret-token-${randomUUID()}`;
+    const conn = await upsertUserProviderConnection(
+      {
+        userId: regA.user.id,
+        providerId: 'meta_official',
+        externalAccountId: `ig-biz-${randomUUID().slice(0, 8)}`,
+        externalUsername: 'alpha.official',
+        grantedScopes: ['instagram_basic', 'instagram_manage_insights', 'pages_show_list'],
+        rawAccessToken: sampleToken,
+        tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+      appClient
+    );
+
+    // Raw DB column MUST contain AES-256-GCM ciphertext, NEVER plaintext token
+    const rawConn = await adminClient.providerConnection.findUnique({ where: { id: conn.id } });
+    expect(rawConn?.encryptedAccessToken?.startsWith('v1:')).toBe(true);
+    expect(rawConn?.encryptedAccessToken).not.toContain(sampleToken);
+
+    // Owner list never exposes encrypted token field; owner can decrypt; User B is blocked by RLS
+    const listA = await listUserProviderConnections(regA.user.id, appClient);
+    expect(listA).toHaveLength(1);
+    expect('encryptedAccessToken' in (listA[0] as unknown as Record<string, unknown>)).toBe(false);
+
+    const listB = await listUserProviderConnections(regB.user.id, appClient);
+    expect(listB).toHaveLength(0);
+
+    const decA = await getDecryptedConnectionTokenForOwner(regA.user.id, conn.id, appClient);
+    expect(decA.ok).toBe(true);
+    if (decA.ok) expect(decA.accessToken).toBe(sampleToken);
+
+    const decB = await getDecryptedConnectionTokenForOwner(regB.user.id, conn.id, appClient);
+    expect(decB.ok).toBe(false);
+
+    // Disconnect scrubs token immediately
+    expect(await disconnectUserProviderConnection(regA.user.id, conn.id, appClient)).toBe(true);
+    const afterDisconnect = await adminClient.providerConnection.findUnique({ where: { id: conn.id } });
+    expect(afterDisconnect?.status).toBe('revoked');
+    expect(afterDisconnect?.encryptedAccessToken).toBeNull();
+
+    // 2. Deduplicated observed profile_snapshots + membership history entitlement + RLS isolation
+    const { savedProfile } = await persistDbSavedProfile(
+      regA.user.id,
+      makeProfileFixture('phase5.tracked', 'Snapshot tracking verification'),
+      'Personal Workspace',
+      appClient,
+      { maxProfilesLimit: 10 }
+    );
+
+    const oldDate = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+    const recentDate = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+    const snapOld = await recordProfileSnapshotWithDedup(
+      {
+        userId: regA.user.id,
+        savedProfileId: savedProfile.id,
+        username: 'phase5.tracked',
+        dataClass: 'live',
+        providerId: 'meta_official',
+        followersCount: 18000,
+        followingCount: 300,
+        postsCount: 115,
+        engagementRate: 4.1,
+        capturedAt: oldDate,
+      },
+      appClient
+    );
+    expect(snapOld.created).toBe(true);
+
+    const snapRecent = await recordProfileSnapshotWithDedup(
+      {
+        userId: regA.user.id,
+        savedProfileId: savedProfile.id,
+        username: 'phase5.tracked',
+        dataClass: 'live',
+        providerId: 'meta_official',
+        followersCount: 18900,
+        followingCount: 305,
+        postsCount: 120,
+        engagementRate: 4.6,
+        capturedAt: recentDate,
+      },
+      appClient
+    );
+    expect(snapRecent.created).toBe(true);
+
+    // Identical metrics inside dedupe window MUST deduplicate (not create duplicate row)
+    const snapDup = await recordProfileSnapshotWithDedup(
+      {
+        userId: regA.user.id,
+        savedProfileId: savedProfile.id,
+        username: 'phase5.tracked',
+        dataClass: 'live',
+        providerId: 'meta_official',
+        followersCount: 18900,
+        followingCount: 305,
+        postsCount: 120,
+        engagementRate: 4.6,
+        dedupeWindowMinutes: 120,
+        capturedAt: new Date(recentDate.getTime() + 10 * 60 * 1000),
+      },
+      appClient
+    );
+    expect(snapDup.created).toBe(false);
+    expect(snapDup.deduplicated).toBe(true);
+
+    // 30-day lookback entitlement filters out 45-day-old snapshot; 90-day includes it
+    const within30d = await listProfileSnapshotsWithEntitlement(
+      { userId: regA.user.id, savedProfileId: savedProfile.id, maxHistoryDays: 30 },
+      appClient
+    );
+    const within90d = await listProfileSnapshotsWithEntitlement(
+      { userId: regA.user.id, savedProfileId: savedProfile.id, maxHistoryDays: 90 },
+      appClient
+    );
+    expect(within30d.some((s) => s.id === snapOld.snapshot.id)).toBe(false);
+    expect(within30d.some((s) => s.id === snapRecent.snapshot.id)).toBe(true);
+    expect(within90d.some((s) => s.id === snapOld.snapshot.id)).toBe(true);
+    expect(within90d.length).toBe(within30d.length + 1);
+
+    const trend = computeObservedHistoricalTrends([snapOld.snapshot, snapRecent.snapshot]);
+    expect(trend.status).toBe('ok');
+    expect(trend.followerGrowth.delta).toBe(900);
+    expect(trend.postsDelta).toBe(5);
+
+    // Cross-user RLS hides User A's snapshots from User B (both repository AND raw SQL under viewora_test_app)
+    const snapLeakB = await listProfileSnapshotsWithEntitlement(
+      { userId: regB.user.id, savedProfileId: savedProfile.id, maxHistoryDays: null },
+      appClient
+    );
+    expect(snapLeakB).toHaveLength(0);
+
+    const rawSnapLeakB = await withUserRlsContext(
+      { userId: regB.user.id, role: 'user' },
+      (tx) => tx.profileSnapshot.findMany({ where: { savedProfileId: savedProfile.id } }),
+      appClient
+    );
+    expect(rawSnapLeakB).toHaveLength(0);
+
+    // 3. Durable PostgreSQL background_jobs with idempotency_key + FOR UPDATE SKIP LOCKED
+    const jobKey = `p5-job-${randomUUID()}`;
+    const enq1 = await enqueueDbBackgroundJob(
+      { jobType: 'authorized_profile_refresh', idempotencyKey: jobKey, payload: { username: 'phase5.tracked' } },
+      appClient
+    );
+    const enq2 = await enqueueDbBackgroundJob(
+      { jobType: 'authorized_profile_refresh', idempotencyKey: jobKey, payload: { username: 'phase5.tracked' } },
+      appClient
+    );
+    expect(enq1.created).toBe(true);
+    expect(enq2.created).toBe(false);
+    expect(enq2.job.id).toBe(enq1.job.id);
+
+    // Two concurrent workers racing to claim MUST NOT double-claim the same job
+    const [claim1, claim2] = await Promise.all([
+      claimNextDbBackgroundJob('worker-a', 120, appClient),
+      claimNextDbBackgroundJob('worker-b', 120, appClient),
+    ]);
+    const claimedJobs = [claim1, claim2].filter((c) => c && c.id === enq1.job.id);
+    expect(claimedJobs).toHaveLength(1);
+
+    // Record failure -> schedules retry, then mark completed
+    await failDbBackgroundJob(enq1.job.id, 'worker-a', 'Simulated transient upstream 503', 45, 0, appClient);
+    const retried = await claimNextDbBackgroundJob('worker-b', 120, appClient);
+    expect(retried?.id).toBe(enq1.job.id);
+    const finished = await completeDbBackgroundJob(enq1.job.id, 'worker-b', 22, appClient);
+    expect(finished?.status).toBe('completed');
+
+    // 4. Atomic PostgreSQL distributed API budget reservation + persistent emergency kill switch
+    const budgetTestScope = 'licensed_third_party' as const;
+    try {
+      await setPersistentEmergencyKillSwitch({
+        scope: budgetTestScope,
+        active: true,
+        dailyBudgetUsd: 1,
+        monthlyBudgetUsd: 10,
+        client: appClient,
+      });
+      const killedRes = await reserveDistributedApiBudget({
+        providerId: budgetTestScope,
+        estimatedCostUsd: 0.1,
+        client: appClient,
+      });
+      expect(killedRes.allowed).toBe(false);
+      expect(killedRes.backend).toBe('postgresql');
+      expect(killedRes.reason).toMatch(/kill switch/i);
+
+      // Clear provider kill switch and set tight global daily cap ($1.00) to test concurrent atomic race
+      await setPersistentEmergencyKillSwitch({
+        scope: budgetTestScope,
+        active: false,
+        client: appClient,
+      });
+      await setPersistentEmergencyKillSwitch({
+        scope: 'global',
+        active: false,
+        dailyBudgetUsd: 1.0,
+        monthlyBudgetUsd: 10.0,
+        client: appClient,
+      });
+
+      const [rBudget1, rBudget2] = await Promise.all([
+        reserveDistributedApiBudget({
+          providerId: budgetTestScope,
+          estimatedCostUsd: 0.7,
+          client: appClient,
+        }),
+        reserveDistributedApiBudget({
+          providerId: budgetTestScope,
+          estimatedCostUsd: 0.7,
+          client: appClient,
+        }),
+      ]);
+      // Exactly 1 of the two $0.70 reservations fits under the $1.00 daily cap!
+      expect([rBudget1, rBudget2].filter((r) => r.allowed)).toHaveLength(1);
+      expect([rBudget1, rBudget2].filter((r) => !r.allowed)).toHaveLength(1);
+
+      const telemetry = await loadPersistentIntegrationTelemetry(appClient);
+      expect(telemetry.backend).toBe('postgresql');
+      expect(telemetry.dailySpentUsd).toBeGreaterThanOrEqual(0.7);
+    } finally {
+      // Clean up synthetic Phase 5 test rows in viewora_test
+      await adminClient.backgroundJob.deleteMany({ where: { id: enq1.job.id } }).catch(() => undefined);
+      await adminClient.operationalMetric
+        .deleteMany({ where: { metricName: 'api_spend_usd' } })
+        .catch(() => undefined);
+      await adminClient.costBudget
+        .deleteMany({ where: { scope: { in: ['global_api', `provider:${budgetTestScope}`] } } })
+        .catch(() => undefined);
+    }
   });
 });

@@ -28,6 +28,11 @@ import {
   persistPlanEntitlement,
 } from '@/lib/entitlements/service';
 import { persistReviewAffiliateApplication } from '@/lib/referrals/service';
+import {
+  defaultApiGateway,
+  setPersistentEmergencyKillSwitch,
+  type IntegrationProviderId,
+} from '@/lib/integrations';
 import type { FeatureKey } from '@/lib/entitlements/types';
 
 const featureKeySchema = z.enum([
@@ -133,6 +138,20 @@ const adminActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('revoke_user_sessions'),
     userId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('toggle_api_kill_switch'),
+    scope: z.enum([
+      'global',
+      'meta_official',
+      'authorized_insights',
+      'licensed_third_party',
+      'permitted_public_dataset',
+      'gemini_ai',
+      'resend_email',
+      'demo_fixture',
+    ]),
+    active: z.boolean(),
   }),
 ]);
 
@@ -581,6 +600,40 @@ async function handleAdminActionPost(request: NextRequest) {
       diff: { revokedCount },
     });
     return NextResponse.json({ ok: true, userId: action.userId, revokedCount, audit });
+  }
+
+  if (action.type === 'toggle_api_kill_switch') {
+    if (!hasAdminCapability(actor.role, 'manage_flags')) {
+      return NextResponse.json(
+        { ok: false, error: `Role "${actor.role}" is not permitted to toggle API emergency kill switches.` },
+        { status: 403 }
+      );
+    }
+    if (action.scope === 'global') {
+      defaultApiGateway.setGlobalKillSwitch(action.active);
+    } else {
+      defaultApiGateway.setProviderKillSwitch(action.scope as IntegrationProviderId, action.active);
+    }
+    if (isDatabaseConfigured()) {
+      await setPersistentEmergencyKillSwitch({
+        scope: action.scope as 'global' | IntegrationProviderId,
+        active: action.active,
+      });
+    }
+    const audit = await persistAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'admin.api_kill_switch.toggled',
+      targetType: 'cost_budget',
+      targetId: action.scope,
+      diff: { scope: action.scope, killSwitchActive: action.active },
+    });
+    return NextResponse.json({
+      ok: true,
+      scope: action.scope,
+      killSwitchActive: action.active,
+      audit,
+    });
   }
 
   // update_cms

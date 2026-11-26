@@ -1,28 +1,37 @@
-# Viewora — Data Provenance & Freshness Policy
+# Viewora — Data Provenance, Freshness & Analytical Integrity Policy (Updated Phase 5 — Stages 42–45)
 
 **Date:** 2026-11-26  
-**Governing Principle:** Every metric, profile card, chart, AI summary, and exported PDF/CSV document in Viewora MUST disclose its exact source class, retrieval timestamp, and methodological boundaries. Viewora never fabricates social intelligence, never scrapes private accounts, and never mislabels demo fixtures or template outputs as live data.
+**Governing Principle:** Every profile metric, bio signal, historical chart, competitor benchmark, AI report, and exported PDF/CSV document in Viewora MUST disclose its exact data state, provenance source, capture timestamp, and methodological boundaries. Viewora NEVER fabricates profile metrics, follower growth, or historical data, NEVER scrapes private accounts, and NEVER mislabels demo fixtures or deterministic templates as live data.
 
-## 1. Authoritative Data Classifications (`DataClass`)
+---
 
-| Badge / Class | Exact Definition | Permitted Sources | Prohibited Uses |
-| :--- | :--- | :--- | :--- |
-| **`LIVE`** | Freshly retrieved from an official first-party or authorized API within the current request (not served from TTL cache). | `meta_official` (fresh response), `authorized_insights` (account-owner OAuth). | NEVER applied to `demo_fixture`, CSV imports, or template fallbacks. |
-| **`CACHED`** | Previously retrieved from an official API, licensed commercial partner, or permitted public dataset and served within its configured server-side TTL (`freshness.ttlSeconds`). | `ExternalApiGateway` TTL cache hits (`fromCache: true`), `licensed_third_party`, `permitted_public_dataset`. | Must always carry original `fetchedAt` ISO timestamp and `isStale` boolean. |
-| **`ESTIMATE`** | Deterministically calculated derived metrics (e.g., engagement rate formula, posting cadence, template-generated analytical commentary) or user-provided CSV workspace datasets. | Viewora analytics engine, `Template-Generated` Report Studio briefs, User-Provided CSV imports. | Must never be labeled `LIVE` or `AI-Generated` when generated deterministically. |
-| **`DEMO`** | Synthetic sample data strictly for interface exploration and automated QA. | `demo_fixture` (`@viewora.studio`, `@aurora.coffee`, etc.) when explicitly enabled by user or preview toggle. | Hard invariant in [registry.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/providers/registry.ts) forces `dataClass = 'demo'` & `confidence = 'demo_only'`. Never inserted automatically into new customer accounts. |
+## 1. Six Explicit Profile Data States (`ProfileDataState` — Stage 43)
 
-## 2. Freshness Metadata Contract (`DataFreshness`)
+Implemented in [src/lib/analytics/profile-intelligence.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/analytics/profile-intelligence.ts) and surfaced directly in `SavedProfilesModule`:
 
-Every `ProviderResponse<T>` returns:
-- `fetchedAt`: ISO-8601 UTC timestamp when upstream data was actually fetched (preserved across cache hits).
-- `ttlSeconds`: Configured cache expiration window (e.g., `600s` Meta Business Discovery, `3600s` licensed partner, `0s` uncached).
-- `isStale`: Boolean indicating whether data has exceeded its freshness window or originated from an unavailable/fallback path.
-- `limitations[]` & `notice`: Plain-language disclosures rendered directly in UI provenance badges and exported PDF/Markdown reports.
+| State | Exact Meaning | Permitted Sources |
+| :--- | :--- | :--- |
+| **`LIVE`** | Freshly retrieved from an official or authorized API within the current request. | `meta_official`, `authorized_insights` (fresh response) |
+| **`CACHED`** | Retrieved from an official, licensed commercial, or permitted dataset provider and served within its configured TTL (`freshness.ttlSeconds`). | `ExternalApiGateway` TTL cache hits, `licensed_third_party`, `permitted_public_dataset` |
+| **`ESTIMATE`** | Deterministically derived metric (e.g., engagement rate formula, posting cadence, template brief). | Viewora analytics engine, Report Studio templates |
+| **`USER_PROVIDED`** | Metrics explicitly supplied by the customer via CSV workspace import. | Customer CSV import |
+| **`UNAVAILABLE`** | Core public metrics (`followersCount`, `postsCount`, `estimatedEngagementRate`) are absent or live external providers are disabled/returned no data. | Missing fields or disabled providers — **never coerced to `0`** |
+| **`DEMO`** | Synthetic sample fixtures (`@viewora.studio`, `@aurora.coffee`, `@nordic.design`) strictly for interface exploration and automated QA. | `demo_fixture` only when explicitly enabled by user/preview toggle |
+
+---
+
+## 2. Historical & Competitor Benchmarking Integrity Rules (Stages 44–45)
+
+1. **Observed vs. Calculated Separation:** `profile_snapshots` stores strictly observed timestamped checkpoints (`recordProfileSnapshotWithDedup` with `pg_advisory_xact_lock` deduplication). Viewora **never backdates** synthetic historical checkpoints prior to when observation began.
+2. **Minimum Observation Gate:** `computeObservedHistoricalTrends()` requires at least **2** observed snapshots; fewer than 2 returns `status: 'insufficient_history'` and `direction: 'unavailable'`.
+3. **Compatibility-Checked Competitor Benchmarking:** `buildCompatibleCompetitorBenchmark()` detects mixed provenance classes/providers (`hasMixedSources`) and differing capture calendar dates (`hasMixedCaptureDates`), rendering an explicit **Data Compatibility Notice** banner.
+4. **Null Exclusion Rule:** Group comparable averages (`comparableAvgEr`, `comparableAvgFollowers`) exclude `null`/unavailable values and require `>= 2` populated numeric profiles — missing fields are NEVER substituted with `0` or ranked misleadingly.
+
+---
 
 ## 3. Hard Privacy & Compliance Invariants
 
-1. **Private Accounts Strictly Refused:** When any provider reports `availability: 'private_account'`, `ProviderRegistry` halts immediately without falling back to any secondary provider.
-2. **Zero Credential Collection:** Every registered adapter in [catalog.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/integrations/catalog.ts) enforces `requiresInstagramCredentials: false` and `supportsPrivateAccounts: false`.
-3. **Private Customer Notes Excluded From Shared Exports:** Customer `profile_research_notes` are isolated by PostgreSQL RLS (`profile_notes_owner_only`) and excluded from Report Studio PDF, CSV, and Markdown exports by default.
+1. **Private Accounts Strictly Refused:** `availability: 'private_account'` immediately halts provider fallback in [registry.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/providers/registry.ts).
+2. **Zero Instagram Password Collection:** Every adapter hard-codes `requiresInstagramCredentials: false` and `supportsPrivateAccounts: false`.
+3. **Private Research Notes Isolated:** `profile_research_notes` are protected by PostgreSQL RLS and excluded from shared PDF/CSV/Markdown exports by default.
 4. **Honest Report Attribution:** Report Studio PDFs ([pdf.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/reports/pdf.ts)) and Markdown exports always stamp `Template-Generated (Not AI-Generated)` in header and footer blocks.

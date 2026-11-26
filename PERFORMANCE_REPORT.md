@@ -1,28 +1,34 @@
-# Viewora — Performance & Bundle Architecture Report (Stage 50.6)
+# Viewora — Performance & Core Web Vitals Readiness Report (Updated Stage 60)
 
 **Date:** 2026-11-26  
-**Local Build & DB Metrics:** **Verified** · **Hosted Lighthouse / Field RUM CWV:** **PENDING (Hosted HTTPS Staging Gate)**
+**Local Production Build & Database Measurements:** **VERIFIED**  
+**Hosted HTTPS Lighthouse & Field RUM Core Web Vitals:** **PENDING (Commercial Launch Gate #8 — Requires Hosted HTTPS Staging URL)**
 
 ---
 
-## 1. Verified Production Build & Runtime Measurements (`next build` 15.5.29)
+## 1. Verified Local Production Build & Runtime Metrics (`next build` 15.5.29)
 
-- **Static Generation Coverage:** **311/311** pre-rendered static pages across all 5 locales (`en`, `pt-BR`, `es`, `de`, `fr`) and 12 public tools (public routes zero-DB dependent).
-- **Production Bundle Sizes (Measured):**
-  - Shared First Load JS: **`103 kB`** (`chunks/1255` `46.6 kB` + `chunks/4bd1b696` `54.2 kB`)
-  - Homepage (`/[locale]`): **`3.83 kB`** page JS · **`121 kB`** First Load JS
-  - Tools Hub (`/[locale]/tools`): **`9.02 kB`** page JS · **`134 kB`** First Load JS
-  - Admin Console (`/[locale]/admin`): **`136 B`** route shell · **`131 kB`** First Load JS
-  - Middleware: **`34.9 kB`**
-  - Clean Client/Server Split: Extracted `conversations-shared.ts`, `financial-shared.ts`, and `email/catalog.ts` so zero server-only modules (`fs`, `crypto`, `PrismaClient`) enter browser bundles.
-- **Database Latency (Measured on Local PostgreSQL 14.25):**
-  - `viewora` runtime probe (`viewora_app`): **`50 ms`**
-  - `viewora_test` runtime probe (`viewora_test_app`): **`46 ms`**
-  - Full `db:health` multi-table check: **`92 ms`**
-  - Production compile time: **`6.6 s`**
+- **Static Pre-Rendering Coverage:** **322/322** static pages generated across all 5 locales (`en`, `pt-BR`, `es`, `de`, `fr`), 12 free tools, launch page (`/launch`), closed beta shell (`/beta`), guides, glossary, and legal pages — zero database round-trip required on public routes.
+- **Production Compile Time:** **`13.5 s`** full clean production build (`npm run build`).
+- **Client/Server Bundle Separation:** Server-only modules (`PrismaClient`, `crypto`, `fs`, provider secrets, billing/financial backend logic) remain strictly server-bundled with zero client bundle leakage.
+- **Live PostgreSQL 14.25 Latency (Local Measured):**
+  - `npm run db:health` multi-table health probe: **`136 ms`** (`healthy`, `users: 1`, `plans: 5`, `featureFlags: 5`).
+  - `npm run env:check` 4-connection verification (`viewora` + `viewora_test` runtime & admin pools): **4/4 reachable**.
+  - Full unit test suite (`vitest@5.1.2`, 23 files / 115 tests): **`9.31 s`**.
+  - Live PostgreSQL integration suite (`viewora_test`, 9 tests): **`11.41 s`**.
 
 ---
 
-## 2. Pending Hosted Performance Gate
+## 2. Hosted HTTPS Staging Performance Targets (Launch Gate #8 — Not Yet Measured)
 
-- Local Lighthouse CLI is not installed on this workstation; hosted Lighthouse desktop/mobile scores (`LCP`, `CLS`, `INP`, `TTFB`) and field RUM Core Web Vitals remain **pending** until deployed to hosted HTTPS staging.
+Once deployed to hosted HTTPS staging behind CDN/TLS 1.3, capture and archive verified Lighthouse & field RUM metrics against these release targets (do **not** claim attainment prior to hosted measurement):
+
+| Metric | Target Threshold | Current Status |
+| :--- | :---: | :---: |
+| Lighthouse Performance (Mobile & Desktop) | **≥ 90** | **Pending Hosted Staging** |
+| Lighthouse Accessibility | **≥ 95** | **Pending Hosted Staging** |
+| Lighthouse Best Practices | **≥ 95** | **Pending Hosted Staging** |
+| Lighthouse SEO | **≥ 95** | **Pending Hosted Staging** |
+| Largest Contentful Paint (LCP) | **≤ 2.5 s** | **Pending Hosted Staging** |
+| Cumulative Layout Shift (CLS) | **≤ 0.10** | **Pending Hosted Staging** |
+| Interaction to Next Paint (INP) | **≤ 200 ms** | **Pending Hosted Staging** |

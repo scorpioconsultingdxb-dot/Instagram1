@@ -28,7 +28,7 @@ describe('Phase 6 Security, SEO & Integration Guarantees', () => {
 
   it('generates localized sitemap entries for all 5 locales, 12 tools, and 9 public info pages with hreflang', () => {
     const entries = sitemap();
-    const expectedPaths = 3 + FREE_TOOLS.length + getAllInfoPageSlugs().length;
+    const expectedPaths = 4 + FREE_TOOLS.length + getAllInfoPageSlugs().length; // home, tools, pricing, launch + 12 tools + info pages
     expect(entries.length).toBe(expectedPaths * SUPPORTED_LOCALES.length);
 
     for (const locale of SUPPORTED_LOCALES) {

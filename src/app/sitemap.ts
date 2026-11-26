@@ -9,6 +9,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     '',
     '/tools',
     '/pricing',
+    '/launch',
     ...getAllToolSlugs().map((s) => `/${s}`),
     ...getAllInfoPageSlugs().map((s) => `/${s}`),
   ];

@@ -59,3 +59,39 @@ export function buildPageMetadata(params: {
       : { index: true, follow: true },
   };
 }
+
+export function buildSoftwareApplicationJsonLd(locale: Locale) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Viewora',
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Web',
+    url: buildLocalizedUrl(locale, ''),
+    description:
+      'Transparent public social profile research, engagement calculation, competitor benchmarking, and client reporting platform. No Instagram password required; private accounts are never accessed.',
+    offers: {
+      '@type': 'AggregateOffer',
+      priceCurrency: 'USD',
+      lowPrice: '0',
+      highPrice: '99.99',
+      offerCount: '5',
+    },
+  };
+}
+
+export function buildBreadcrumbJsonLd(
+  locale: Locale,
+  items: Array<{ name: string; path: string }>
+) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map((item, idx) => ({
+      '@type': 'ListItem',
+      position: idx + 1,
+      name: item.name,
+      item: buildLocalizedUrl(locale, item.path),
+    })),
+  };
+}

@@ -310,7 +310,34 @@ async function main() {
     await sleep(200);
     report.screenshots.push(await cdp.screenshot('phase5_home_dark_1440px.png'));
     await cdp.eval(`(() => { document.documentElement.classList.remove('dark'); })()`);
-    report.passed.push('Homepage & free tools verified across 6 viewports (375–1920px), 5 locales, and dark theme with zero overflow');
+    // Stage 58–59: Launch Landing Page & Controlled Invitation-Only Beta Verification
+    await cdp.goto(`${BASE_URL}/en/launch`, 900);
+    const launchOk = await cdp.eval(`document.body.innerText.includes('See Beyond the Profile') && !document.querySelector('[data-error-boundary]')`);
+    assert(launchOk, 'Launch landing page failed render check');
+    report.screenshots.push(await cdp.screenshot('phase6_launch_1440px.png'));
+    await cdp.setViewport(390, 844);
+    await sleep(250);
+    assert(!(await cdp.eval(`document.documentElement.scrollWidth > window.innerWidth`)), 'Launch 390px overflow');
+    report.screenshots.push(await cdp.screenshot('phase6_launch_390px.png'));
+    await cdp.setViewport(1440, 900);
+    await cdp.goto(`${BASE_URL}/en/beta`, 900);
+    const betaApiStatus = await cdp.eval(`(async () => {
+      const g = await (await fetch('/api/beta')).json();
+      const p = await fetch('/api/beta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'uninvited@viewora.test', fullName: 'No Invite', segment: 'creator', goals: 'Testing closed beta gate' })
+      });
+      return { mode: g.mode, open: g.publicRegistrationOpen, uninvitedStatus: p.status };
+    })()`);
+    assert(
+      betaApiStatus.mode === 'invitation_only' &&
+        betaApiStatus.open === false &&
+        betaApiStatus.uninvitedStatus === 403,
+      `Controlled beta invite-only check failed: ${JSON.stringify(betaApiStatus)}`
+    );
+    report.screenshots.push(await cdp.screenshot('phase6_beta_1440px.png'));
+    report.passed.push('Homepage, free tools, launch & controlled beta verified across 6 viewports (375–1920px), 5 locales, and dark theme');
 
     // 3. Real Registration via UI -> Onboarding -> Dashboard
     await cdp.setViewport(1440, 900);

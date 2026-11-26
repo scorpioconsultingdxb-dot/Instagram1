@@ -1,36 +1,42 @@
-# Viewora — External API, AI, Email & Automation Integration Architecture (Updated Stage 50)
+# Viewora — Platform Integration, Billing, SEO & Launch Architecture (Updated Stage 60)
 
 **Date:** 2026-11-26  
-**Architecture Baseline:** Independent PostgreSQL 14.25 (58 tables, 6 migrations, 24 RLS policies) · Next.js 15.5 App Router · **Zero Supabase** · **All External Paid Providers Default-Off (`PROVIDER_*_ENABLED=false`)**
+**Architecture Baseline:** Independent PostgreSQL 14.25 (58 tables, 6 migrations, 74 FKs, 147 indexes, 24 RLS policies) · Managed PostgreSQL 16/17 LTS recommended for hosted Staging/Production · Next.js `15.5.29` App Router · **Zero Supabase** · **Zero Workspace CVEs (`0/401`)** · **All External Paid Providers, Billing & Public Beta Default-Off**
 
 ---
 
-## 1. End-to-End Integration Architecture Layers
+## 1. End-to-End Platform Architecture Layers (Stages 41–60)
 
 ```text
-[Customer UI / Admin Console]
-        │  (CSRF origin check + Session cookie + RBAC / Entitlements)
-        ▼
-[Next.js Server Route Handlers]
-  ├── /api/search, /api/dashboard/workspace (refresh_profile)
+[Public SEO & Launch Layer (322 Zero-DB Static Pages · 5 Locales)]
+  ├── /[locale]/launch (Brand positioning + honest availability matrix)
+  ├── /[locale]/beta   (noIndex: true · Invitation-only closed beta shell)
+  ├── /robots.ts (Auth/admin/checkout/beta disallowed) & /sitemap.ts (135 hreflang URLs)
+  └── JSON-LD Metadata (SoftwareApplication + BreadcrumbList — zero fabricated ratings)
+         │
+         ▼
+[Authenticated Customer, Beta & Admin Server Route Handlers]
+  ├── /api/search, /api/dashboard/workspace (refresh_profile, saved profiles, notes)
   ├── /api/meta/{oauth/start, oauth/callback, connections} & /api/webhooks/meta
-  ├── /api/ai/{studio, report}
+  ├── /api/ai/{studio, report} · /api/reports/builder (binary %PDF-1.4 & CSV)
   ├── /api/webhooks/resend & /api/email/unsubscribe
   ├── /api/automation & /api/jobs/run (constant-time CRON_SECRET)
+  ├── /api/beta (SHA-256 hashed invites · HTTP 403 BETA_CLOSED default)
   └── /api/admin/{integrations, communications, actions, overview}
-        │
-        ▼
-[Centralized Governance & Security Plane (src/lib/integrations/)]
-  ├── catalog.ts & credentials.ts   (7 adapters, dual-key flags, placeholder rejection, secret/PII redaction)
-  ├── router.ts                     (capability routing, COMMERCIAL_RIGHTS_BY_PROVIDER, tenant cache keys)
-  ├── ssrf.ts                       (HTTPS port-443 host allowlists, 1 MB bounded JSON)
-  ├── gateway.ts                    (timeouts, bounded retries, circuit breakers, Zod validation)
-  ├── distributed-store.ts          (PG pg_advisory_xact_lock USD caps, durable kill switches, search_events)
-  ├── financial-controls.ts         (integer micro-USD math, 50/75/90/100% alerts, reconciliation, 10-pt approval)
-  └── cache-coordinator.ts          (ProcessLocalCoordinator + standby UpstashRedisCoordinator)
-        │
-        ▼
-[Independent PostgreSQL 14.25 (Restricted viewora_app role, NOBYPASSRLS)]
+         │
+         ▼
+[Centralized Governance, Acceptance, Billing & Commercial Plane]
+  ├── src/lib/integrations/  (7-adapter catalog, SSRF port-443 allowlists, 1 MB JSON ceiling,
+  │                           ExternalApiGateway, micro-USD budgets, 50/75/90/100% alerts,
+  │                           durable kill switches, 10-pt approval, Upstash Redis standby)
+  ├── src/lib/providers/acceptance.ts   (fixture_contract_test vs. live_provider_verified suite)
+  ├── src/lib/billing/lifecycle.ts      (PaymentGatewayAdapter, DisabledPaymentGateway, 7-day grace,
+  │                                      integer-cent published quotes & proration — zero Stripe SDK)
+  ├── src/lib/commercial/financial-model.ts (100–10,000 planning model + tier unit sustainability)
+  └── src/lib/beta/service.ts           (SHA-256 invites, 5 cohorts, S0–S3 defect taxonomy)
+         │
+         ▼
+[Independent PostgreSQL (Restricted viewora_app role, NOBYPASSRLS)]
   ├── Tenant RLS (24 policies): provider_connections (AES-256-GCM), profile_snapshots (Migration 6),
   │   saved_profiles, profile_research_notes, user_preferences._modules.{aiConversations,automation}
   ├── Durable Coordination: cost_budgets, operational_metrics, background_jobs (FOR UPDATE SKIP LOCKED),
@@ -40,8 +46,8 @@
 
 ---
 
-## 2. Core Design Invariants
+## 2. Core Non-Negotiable Architecture Invariants
 
-1. **Fail-Closed & Default-Off:** No external paid provider activates automatically when credentials appear; every provider requires an explicit server flag (`PROVIDER_*_ENABLED=true`) AND completion of the 10-point owner approval checklist.
-2. **Strict Privacy & Provenance Separation:** Zero private Instagram account access, zero password collection, zero fabricated metrics/AI/email statuses, and private customer research notes stay isolated under RLS and excluded from external AI unless explicitly opted in.
-3. **Unified Emergency Shutdown:** Activating Global or Per-Provider Emergency Halt in PostgreSQL `cost_budgets` blocks BOTH interactive gateway requests AND background workers immediately across all instances.
+1. **Fail-Closed & Default-Off:** No external paid provider, payment gateway, or public beta registration activates automatically when keys appear; every activation requires explicit server flags AND owner governance sign-off.
+2. **Strict Honesty & Data Provenance:** Zero scraping, zero private Instagram access, zero password collection, zero fabricated social/AI/email/revenue/testimonial metrics, and explicit separation of `fixture_contract_test` vs. `live_provider_verified` and `planning_model_assumption_not_actuals` vs. actual commercial metrics.
+3. **Unified Emergency Shutdown:** Durable PostgreSQL Global and Per-Provider Emergency Halts immediately block both interactive gateway calls and background workers across all stateless replicas without redeployment.

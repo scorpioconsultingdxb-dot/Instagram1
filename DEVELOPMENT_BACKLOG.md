@@ -1,25 +1,33 @@
-# Viewora — Development Backlog (Post Phase 5 Stages 41–50)
+# Viewora — Development & Launch Operations Backlog (Post Phase 6 — Stage 60)
 
 **Updated:** 2026-11-26
 
 ---
 
-## Priority 1 — Hosted Staging Deployment & Owner-Controlled Activations
+## Recently Completed (Resolved in Phase 6 Stage 60)
 
-1. **Managed Linux PostgreSQL 16 Staging & Fresh 6-Migration Backup/Restore Drill:** Execute encrypted `pg_dump -Fc` / `pg_restore` drill covering all 58 tables, 6 migrations, and 24 RLS policies outside workstation Windows Application Control restrictions.
-2. **Official Meta Business Discovery & Connected-Account OAuth Credentials:** Complete Meta Business Verification & App Review, complete the 10-point `meta_official` / `authorized_insights` approval checklist, and enable flags on staging first.
-3. **Resend Transactional Email Domain Verification:** Publish SPF, DKIM, DMARC, and return-path DNS records, register `/api/webhooks/resend`, and verify live staging delivery before enabling `PROVIDER_RESEND_ENABLED` + `EMAIL_NOTIFICATIONS_ENABLED`.
-4. **Gemini AI Live Activation:** Approve API key & monthly USD caps, complete the 10-point `gemini_ai` checklist, and verify live token accounting on staging.
-5. **Optional Commercial Social Data Vendor Onboarding:** Execute written SaaS redistribution agreement before enabling `PROVIDER_LICENSED_THIRD_PARTY_ENABLED`.
-6. **Optional Upstash Redis & External Cron Provisioning:** Provision Upstash Redis before multi-pod scaling and configure external cron calling `POST /api/jobs/run` (`CRON_SECRET`) when enabling `BACKGROUND_JOBS_ENABLED=true`.
-7. **External WORM Audit Log Sink:** Stream `audit_logs` inserts to immutable off-host SIEM/WORM storage.
+- **[DONE] Dev Toolchain Major Upgrade (`vitest` `3.2.4` → `5.1.2`):** Eliminated all 3 remaining dev-only advisories (`vitest`, `tinypool`, `@vitest/mocker`). Both `npm audit --omit=dev` and full `npm audit` across all **401 packages** now report **`0` vulnerabilities** with 115/115 unit tests and 9/9 live PG tests passing.
 
 ---
 
-## Priority 2 — Pre-Launch QA & Tooling Maintenance
+## Priority 1 — Hosted Linux Staging & Owner-Controlled Commercial Launch Gates
 
-8. **Hosted HTTPS Staging Lighthouse & Field RUM CWV Audit:** Capture verified Core Web Vitals scores on staging.
-9. **Manual Screen-Reader Accessibility Sign-Off:** Run the NVDA and VoiceOver scripts in [ACCESSIBILITY_REPORT.md](file:///c:/Users/Scorpio/Videos/Instagram/ACCESSIBILITY_REPORT.md).
-10. **Dev Toolchain Major Upgrade (`vitest` v3 → v5):** Upgrade local test runner to resolve the 3 dev-only `vitest` / `tinypool` / `@vitest/mocker` advisories.
-11. **Support Ticket Assignment UI:** Surface `support_tickets.assigned_to_id` assignment controls in the Admin Support tab.
-12. **Commercial Billing Activation (Explicit Owner Gate):** Keep `PAYMENTS_ENABLED=false` and `NEXT_PUBLIC_PAYMENTS_ENABLED=false` locked until formal commercial launch sign-off.
+1. **Managed Linux Staging & PostgreSQL 16/17 Provisioning (Gate #3):** Provision hosted Next.js compute, Managed PostgreSQL 16/17 HA, TLS 1.3, and cloud secret vault per [PRODUCTION_INFRASTRUCTURE_PLAN.md](file:///c:/Users/Scorpio/Videos/Instagram/PRODUCTION_INFRASTRUCTURE_PLAN.md).
+2. **Fresh Encrypted 6-Migration Backup & Restore Drill on Linux Staging (Gate #4):** Verify encrypted `pg_dump -Fc` / `pg_restore` covering all 58 tables, 6 migrations, and 24 RLS policies outside local Windows Application Control restrictions.
+3. **Off-Host WORM / SIEM Audit-Log Archival & Alerting (Gate #5):** Stream `public.audit_logs` to immutable off-host storage and wire `GET /api/health` + 5xx alerts.
+4. **Stage 52 External Provider Activations on Staging (Gates #6–#7):**
+   - **Resend Email:** Publish SPF/DKIM/DMARC records, register `/api/webhooks/resend` Svix secret, test live bounce/unsubscribe.
+   - **Gemini AI:** Set strict staging daily/monthly micro-USD caps and server API key; verify live token reconciliation.
+   - **Meta Official & OAuth:** Complete Meta Business Verification & App Review; pass `runProviderAcceptanceSuite()` in `live_provider_verified` mode.
+   - **Licensed Data Vendor (Optional):** Execute written SaaS redistribution contract before enabling.
+   - **Upstash Redis & External Cron:** Provision Redis before ≥2 stateless pods; schedule authenticated `POST /api/jobs/run` (`CRON_SECRET`) when enabling `BACKGROUND_JOBS_ENABLED=true`.
+5. **Qualified Legal Counsel Sign-Off (Gate #9):** Obtain formal UAE PDPL + GDPR counsel approval of Terms, Privacy, Cookie, Refund, DPA, Subprocessor Register, and Affiliate Agreement.
+
+---
+
+## Priority 2 — Pre-GA QA, Billing Sandbox & Controlled Beta
+
+6. **Hosted HTTPS Staging Lighthouse CWV & Manual NVDA/VoiceOver Sign-Off (Gate #8):** Capture verified mobile/desktop Lighthouse scores (90+/95+/95+/95+) and complete manual screen-reader verification scripts.
+7. **Stripe (or Approved Gateway) Sandbox Implementation (Gate #10):** Only after written owner approval — implement concrete `PaymentGatewayAdapter`, test HMAC webhooks, idempotency, proration, 7-day grace period, refunds, and VAT in Test Mode while keeping production `PAYMENTS_ENABLED=false`.
+8. **Controlled Invitation-Only Beta Pilot (Gate #11):** Issue SHA-256 invite codes to the 5 pilot cohorts for a 14-day soak targeting 0 open S0/S1 defects.
+9. **Support Ticket Assignment UI & Post-GA Enhancements:** Surface `support_tickets.assigned_to_id` assignment controls in the Admin Support tab and collect consented pilot testimonials after Stage 59 exit.

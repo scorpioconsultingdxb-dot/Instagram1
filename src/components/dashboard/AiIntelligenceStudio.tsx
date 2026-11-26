@@ -760,7 +760,11 @@ export function AiIntelligenceStudio({
         profiles.length === 0 ? (
           <EmptyState
             title="No profiles available for structured report generation"
-            description="Save an eligible public profile in Saved Profiles or turn on explicit Demo Preview Mode to generate structured briefs."
+            description={
+              onEnableDemoPreview
+                ? 'Save an eligible public profile in Saved Profiles or turn on explicit Demo Preview Mode to generate structured briefs.'
+                : 'Save an eligible public profile in Saved Profiles to generate structured briefs.'
+            }
             actionLabel={onEnableDemoPreview ? 'Enable Demo Preview Mode' : undefined}
             onAction={onEnableDemoPreview}
           />

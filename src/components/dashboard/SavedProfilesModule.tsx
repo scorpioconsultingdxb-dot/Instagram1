@@ -52,7 +52,7 @@ export function SavedProfilesModule({
   initialHandle?: string;
   onWorkspaceChange: (next: UserWorkspaceState) => void;
   onInspectProfile: (username: string) => void;
-  onEnableDemoPreview: () => void;
+  onEnableDemoPreview?: () => void;
 }) {
   const [addInput, setAddInput] = useState(initialHandle ? `@${initialHandle}` : '');
   const [scopeToActiveWorkspace, setScopeToActiveWorkspace] = useState(false);
@@ -515,25 +515,31 @@ export function SavedProfilesModule({
           <div className="space-y-3">
             <EmptyState
               title="Your real workspace starts clean"
-              description="Viewora never pre-populates fake or demo profiles into your account automatically. Save an eligible public profile above, or turn on explicit Demo Preview Mode to explore sample analytics."
-              actionLabel="Enable Explicit Demo Preview Mode"
+              description={
+                onEnableDemoPreview
+                  ? 'Viewora never pre-populates fake or demo profiles into your account automatically. Save an eligible public profile above, or turn on explicit Demo Preview Mode to explore sample analytics.'
+                  : 'Viewora never pre-populates fake or demo profiles into your account. Save an eligible public profile above once an authorized Instagram data provider is connected.'
+              }
+              actionLabel={onEnableDemoPreview ? 'Enable Explicit Demo Preview Mode' : undefined}
               onAction={onEnableDemoPreview}
             />
-            <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-[#64748B]">
-              <span>Or explicitly save a labeled demo fixture:</span>
-              {['viewora.studio', 'aurora.coffee', 'nordic.design'].map((h) => (
-                <button
-                  key={h}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void handleSaveProfile(h)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-mono text-xs font-semibold hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-slate-200"
-                >
-                  <Sparkles className="h-3 w-3 text-[#7957FF]" aria-hidden="true" />
-                  Save @{h}
-                </button>
-              ))}
-            </div>
+            {onEnableDemoPreview ? (
+              <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-[#64748B]">
+                <span>Or explicitly save a labeled demo fixture:</span>
+                {['viewora.studio', 'aurora.coffee', 'nordic.design'].map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleSaveProfile(h)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-mono text-xs font-semibold hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-slate-200"
+                  >
+                    <Sparkles className="h-3 w-3 text-[#7957FF]" aria-hidden="true" />
+                    Save @{h}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : filteredProfiles.length === 0 ? (
           <EmptyState

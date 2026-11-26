@@ -25,6 +25,7 @@ import {
   extractClientIp,
   resetAuthRateLimit,
 } from '@/lib/auth/rate-limit';
+import { emitStructuredLog, recordObservabilityEvent } from '@/lib/observability/metrics';
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -32,13 +33,27 @@ const loginSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   if (!isAllowedCsrfOrigin(request)) {
+    recordObservabilityEvent({
+      category: 'csrf_blocked',
+      route: '/api/auth/login',
+      statusCode: 403,
+      detail: 'origin_mismatch',
+    });
+    emitStructuredLog('warn', 'auth.login.csrf_blocked', { route: '/api/auth/login' });
     return NextResponse.json({ ok: false, error: 'Cross-origin request rejected.' }, { status: 403 });
   }
 
   try {
     assertValidProductionAuthConfig();
   } catch (err) {
+    recordObservabilityEvent({
+      category: 'app_error',
+      route: '/api/auth/login',
+      statusCode: 503,
+      detail: 'auth_config_invalid',
+    });
     return NextResponse.json(
       {
         ok: false,
@@ -54,6 +69,13 @@ export async function POST(request: NextRequest) {
   const ip = extractClientIp(request.headers);
   const ipLimit = checkAuthRateLimit({ scope: 'login', identifier: `ip:${ip}`, maxAttempts: 20 });
   if (!ipLimit.allowed) {
+    recordObservabilityEvent({
+      category: 'auth_rate_limited',
+      route: '/api/auth/login',
+      statusCode: 429,
+      detail: 'ip_rate_limit',
+    });
+    emitStructuredLog('warn', 'auth.login.rate_limited', { scope: 'ip' });
     return NextResponse.json(
       { ok: false, error: 'Too many sign-in attempts. Please wait and try again.' },
       { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } }
@@ -63,6 +85,12 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) {
+    recordObservabilityEvent({
+      category: 'auth_failure',
+      route: '/api/auth/login',
+      statusCode: 400,
+      detail: 'invalid_payload',
+    });
     return NextResponse.json(
       { ok: false, error: 'Please enter a valid email address and password (min 6 characters).' },
       { status: 400 }
@@ -76,6 +104,13 @@ export async function POST(request: NextRequest) {
     maxAttempts: 10,
   });
   if (!emailLimit.allowed) {
+    recordObservabilityEvent({
+      category: 'auth_rate_limited',
+      route: '/api/auth/login',
+      statusCode: 429,
+      detail: 'account_rate_limit',
+    });
+    emitStructuredLog('warn', 'auth.login.rate_limited', { scope: 'email' });
     return NextResponse.json(
       { ok: false, error: 'Too many sign-in attempts. Please wait and try again.' },
       { status: 429, headers: { 'Retry-After': String(emailLimit.retryAfterSeconds) } }
@@ -86,6 +121,14 @@ export async function POST(request: NextRequest) {
     try {
       const user = await verifyDbUserCredentials(email, parsed.data.password);
       if (!user) {
+        recordObservabilityEvent({
+          category: 'auth_failure',
+          route: '/api/auth/login',
+          statusCode: 401,
+          latencyMs: Date.now() - startedAt,
+          detail: 'invalid_credentials',
+        });
+        emitStructuredLog('warn', 'auth.login.failed', { statusCode: 401 });
         return NextResponse.json({ ok: false, error: 'Invalid email or password.' }, { status: 401 });
       }
 
@@ -97,6 +140,13 @@ export async function POST(request: NextRequest) {
       });
       resetAuthRateLimit('login', `email:${email}`);
 
+      recordObservabilityEvent({
+        category: 'auth_success',
+        route: '/api/auth/login',
+        statusCode: 200,
+        latencyMs: Date.now() - startedAt,
+      });
+
       const response = NextResponse.json({ ok: true, mode: 'database', user });
       const cookieOpts = buildSessionCookieOptions(Math.floor(SESSION_TTL_MS / 1000));
       response.cookies.set(SESSION_COOKIE_NAME, session.rawToken, cookieOpts);
@@ -105,6 +155,14 @@ export async function POST(request: NextRequest) {
       }
       return response;
     } catch {
+      recordObservabilityEvent({
+        category: 'app_error',
+        route: '/api/auth/login',
+        statusCode: 503,
+        latencyMs: Date.now() - startedAt,
+        detail: 'database_unavailable',
+      });
+      emitStructuredLog('error', 'auth.login.database_error', { statusCode: 503 });
       return NextResponse.json(
         { ok: false, error: 'Database authentication service is temporarily unavailable.' },
         { status: 503 }

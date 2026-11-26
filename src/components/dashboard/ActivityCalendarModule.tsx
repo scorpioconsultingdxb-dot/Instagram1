@@ -16,7 +16,7 @@ export function ActivityCalendarModule({
   mode: 'timeline' | 'calendar';
   dict: Dictionary;
   selectedEntry: SavedProfileRecord | null;
-  onEnableDemoPreview: () => void;
+  onEnableDemoPreview?: () => void;
 }) {
   const months = useMemo(() => {
     if (!selectedEntry) return [];
@@ -41,8 +41,12 @@ export function ActivityCalendarModule({
               ? 'No snapshot timeline checkpoints yet'
               : 'No publishing calendar posts yet'
           }
-          description="Save an eligible profile in Saved Profiles or turn on explicit Demo Preview Mode to explore longitudinal checkpoints and publishing cadence."
-          actionLabel="Enable Demo Preview Mode"
+          description={
+            onEnableDemoPreview
+              ? 'Save an eligible profile in Saved Profiles or turn on explicit Demo Preview Mode to explore longitudinal checkpoints and publishing cadence.'
+              : 'Save an eligible public profile in Saved Profiles to record longitudinal checkpoints and publishing cadence.'
+          }
+          actionLabel={onEnableDemoPreview ? 'Enable Demo Preview Mode' : undefined}
           onAction={onEnableDemoPreview}
         />
       </div>

@@ -1,0 +1,98 @@
+name: Neon PG18 Authenticated Backup & Isolated DR Restore Drill
+
+# Strict manual execution ONLY — never runs automatically on push or PR.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_isolated_branch:
+        description: "Type ISOLATED_DR_BRANCH to confirm restore target is a temporary child branch (never main)"
+        required: true
+        type: string
+      retention_days:
+        description: "Encrypted archive retention window in days (local runner cleanup)"
+        required: false
+        default: "14"
+        type: string
+      expected_tables:
+        description: "Minimum expected restored public tables"
+        required: false
+        default: "58"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neon-dr-backup-drill
+  cancel-in-progress: false
+
+jobs:
+  dr-backup-restore-drill:
+    name: Encrypted Backup & Isolated Branch Restore (PG18)
+    runs-on: ubuntu-latest
+    # Require owner approval via GitHub Environment protection rules (`production-dr`)
+    environment: production-dr
+    timeout-minutes: 20
+
+    steps:
+      - name: Validate manual confirmation gate
+        shell: bash
+        run: |
+          if [ "${{ inputs.confirm_isolated_branch }}" != "ISOLATED_DR_BRANCH" ]; then
+            echo "::error::Confirmation input must equal ISOLATED_DR_BRANCH. Aborting."
+            exit 1
+          fi
+
+      - name: Checkout repository (read-only)
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL 18 official client tools (PGDG)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl ca-certificates gnupg lsb-release openssl
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          pg_dump --version
+          pg_restore --version
+
+      - name: Execute authenticated encrypted backup & isolated branch restore drill
+        shell: bash
+        env:
+          NEON_ADMIN_SOURCE_URL: ${{ secrets.NEON_ADMIN_SOURCE_URL }}
+          NEON_RESTORE_TARGET_URL: ${{ secrets.NEON_RESTORE_TARGET_URL }}
+          NEON_PRODUCTION_MAIN_HOST: ${{ secrets.NEON_PRODUCTION_MAIN_HOST }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          CONFIRM_ISOLATED_BRANCH: ${{ inputs.confirm_isolated_branch }}
+          BACKUP_RETENTION_DAYS: ${{ inputs.retention_days }}
+          EXPECTED_TABLES: ${{ inputs.expected_tables }}
+          BACKUP_OUT_DIR: ${{ runner.temp }}/neon-dr-backups
+          SUMMARY_OUT_FILE: ${{ runner.temp }}/dr-summary.json
+        run: |
+          set -euo pipefail
+          chmod +x deploy/scripts/neon-encrypted-backup-drill.sh
+          bash deploy/scripts/neon-encrypted-backup-drill.sh
+
+      - name: Upload sanitized DR summary ONLY (never database dumps)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-dr-drill-summary-${{ github.run_id }}
+          path: ${{ runner.temp }}/dr-summary.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Shred runner temporary backup files
+        if: always()
+        shell: bash
+        run: |
+          if [ -d "${{ runner.temp }}/neon-dr-backups" ]; then
+            find "${{ runner.temp }}/neon-dr-backups" -type f -exec shred -u -z -n 1 {} + 2>/dev/null || true
+            rm -rf "${{ runner.temp }}/neon-dr-backups"
+          fi

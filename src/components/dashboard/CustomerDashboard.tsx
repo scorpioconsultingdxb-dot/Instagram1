@@ -128,8 +128,9 @@ export function CustomerDashboard({
   );
   const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab);
   const [workspace, setWorkspace] = useState<UserWorkspaceState>(initialWorkspace);
+  const demoPreviewAvailable = demoPreviewProfiles.length > 0;
   const [demoPreviewMode, setDemoPreviewMode] = useState<boolean>(
-    initialDemoPreview || initialWorkspace.settings.demoPreviewMode
+    demoPreviewAvailable && (initialDemoPreview || initialWorkspace.settings.demoPreviewMode)
   );
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [showAddWorkspace, setShowAddWorkspace] = useState(false);
@@ -237,11 +238,11 @@ export function CustomerDashboard({
   };
 
   const effectiveProfiles: SavedProfileRecord[] = useMemo(() => {
-    if (demoPreviewMode && workspace.savedProfiles.length === 0) {
+    if (demoPreviewAvailable && demoPreviewMode && workspace.savedProfiles.length === 0) {
       return demoPreviewProfiles;
     }
     return workspace.savedProfiles;
-  }, [demoPreviewMode, workspace.savedProfiles, demoPreviewProfiles]);
+  }, [demoPreviewAvailable, demoPreviewMode, workspace.savedProfiles, demoPreviewProfiles]);
 
   const [selectedUsername, setSelectedUsername] = useState<string>(
     effectiveProfiles[0]?.username ?? ''
@@ -250,7 +251,8 @@ export function CustomerDashboard({
   const selectedEntry =
     effectiveProfiles.find((p) => p.username === selectedUsername) ?? effectiveProfiles[0] ?? null;
 
-  const isViewingDemoOverlay = demoPreviewMode && workspace.savedProfiles.length === 0;
+  const isViewingDemoOverlay =
+    demoPreviewAvailable && demoPreviewMode && workspace.savedProfiles.length === 0;
 
   const trackedLimitLabel = formatQuotaLimit(entitlements.rules.tracked_profiles);
   const aiLimitLabel = formatQuotaLimit(entitlements.rules.ai_profile_reports);
@@ -265,6 +267,7 @@ export function CustomerDashboard({
   const unreadCount = workspace.notifications.filter((n) => !n.read).length;
 
   const toggleDemoPreview = async (next: boolean) => {
+    if (!demoPreviewAvailable && next) return;
     setDemoPreviewMode(next);
     if (next && !selectedUsername && demoPreviewProfiles[0]) {
       setSelectedUsername(demoPreviewProfiles[0].username);
@@ -535,19 +538,21 @@ export function CustomerDashboard({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                aria-pressed={demoPreviewMode}
-                onClick={() => void toggleDemoPreview(!demoPreviewMode)}
-                className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition ${
-                  demoPreviewMode
-                    ? 'border-amber-400 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200'
-                    : 'border-slate-200 bg-white text-[#64748B] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#94A3B8]'
-                }`}
-              >
-                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                {demoPreviewMode ? td.demoPreviewOn : td.demoPreview}
-              </button>
+              {demoPreviewAvailable ? (
+                <button
+                  type="button"
+                  aria-pressed={demoPreviewMode}
+                  onClick={() => void toggleDemoPreview(!demoPreviewMode)}
+                  className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition ${
+                    demoPreviewMode
+                      ? 'border-amber-400 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200'
+                      : 'border-slate-200 bg-white text-[#64748B] hover:border-[#7957FF] dark:border-[#263047] dark:bg-[#0F172A] dark:text-[#94A3B8]'
+                  }`}
+                >
+                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                  {demoPreviewMode ? td.demoPreviewOn : td.demoPreview}
+                </button>
+              ) : null}
 
               <button
                 type="button"
@@ -1134,7 +1139,9 @@ export function CustomerDashboard({
                 setSelectedUsername(handle);
                 setActiveTab('analytics');
               }}
-              onEnableDemoPreview={() => void toggleDemoPreview(true)}
+              onEnableDemoPreview={
+                demoPreviewAvailable ? () => void toggleDemoPreview(true) : undefined
+              }
             />
           ) : null}
 
@@ -1171,9 +1178,17 @@ export function CustomerDashboard({
               {!selectedEntry ? (
                 <EmptyState
                   title="Select or save a profile to inspect analytics"
-                  description="Add an eligible public profile in Saved Profiles or turn on Demo Preview Mode to explore interactive charts and tabular checkpoints."
-                  actionLabel="Enable Demo Preview Mode"
-                  onAction={() => void toggleDemoPreview(true)}
+                  description={
+                    demoPreviewAvailable
+                      ? 'Add an eligible public profile in Saved Profiles or turn on Demo Preview Mode to explore interactive charts and tabular checkpoints.'
+                      : 'Save an eligible public profile in Saved Profiles to inspect interactive charts and tabular checkpoints. Demo Preview Mode is disabled in production.'
+                  }
+                  actionLabel={demoPreviewAvailable ? 'Enable Demo Preview Mode' : 'Open Saved Profiles'}
+                  onAction={() =>
+                    demoPreviewAvailable
+                      ? void toggleDemoPreview(true)
+                      : setActiveTab('profiles')
+                  }
                 />
               ) : !canHistory ? (
                 <UpgradePreviewCard
@@ -1227,7 +1242,9 @@ export function CustomerDashboard({
                 canGenerateAi={canAi}
                 canPdf={canPdf}
                 canCsv={canCsv}
-                onEnableDemoPreview={() => void toggleDemoPreview(true)}
+                onEnableDemoPreview={
+                  demoPreviewAvailable ? () => void toggleDemoPreview(true) : undefined
+                }
                 onReportSaved={(savedEntry) => {
                   setWorkspace((prev) => ({
                     ...prev,
@@ -1243,7 +1260,9 @@ export function CustomerDashboard({
               mode="timeline"
               dict={dict}
               selectedEntry={selectedEntry}
-              onEnableDemoPreview={() => void toggleDemoPreview(true)}
+              onEnableDemoPreview={
+                demoPreviewAvailable ? () => void toggleDemoPreview(true) : undefined
+              }
             />
           ) : null}
 
@@ -1252,7 +1271,9 @@ export function CustomerDashboard({
               mode="calendar"
               dict={dict}
               selectedEntry={selectedEntry}
-              onEnableDemoPreview={() => void toggleDemoPreview(true)}
+              onEnableDemoPreview={
+                demoPreviewAvailable ? () => void toggleDemoPreview(true) : undefined
+              }
             />
           ) : null}
 
@@ -1264,6 +1285,7 @@ export function CustomerDashboard({
               workspace={workspace}
               activeProfiles={effectiveProfiles}
               isDemoPreview={isViewingDemoOverlay}
+              demoPreviewAvailable={demoPreviewAvailable}
               onWorkspaceChange={setWorkspace}
             />
           ) : null}

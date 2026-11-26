@@ -32,6 +32,7 @@ export function CompetitorStudio({
   workspace,
   activeProfiles,
   isDemoPreview,
+  demoPreviewAvailable = false,
   onWorkspaceChange,
 }: {
   locale: Locale;
@@ -40,6 +41,7 @@ export function CompetitorStudio({
   workspace: UserWorkspaceState;
   activeProfiles: SavedProfileRecord[];
   isDemoPreview: boolean;
+  demoPreviewAvailable?: boolean;
   onWorkspaceChange: (next: UserWorkspaceState) => void;
 }) {
   const [name, setName] = useState('');
@@ -403,7 +405,11 @@ export function CompetitorStudio({
         {activeProfiles.length < 2 ? (
           <EmptyState
             title="Save at least 2 profiles to run side-by-side comparisons"
-            description="Add two or more eligible public profiles in Saved Profiles (or enable Demo Preview Mode) to build persistent comparison projects."
+            description={
+              demoPreviewAvailable
+                ? 'Add two or more eligible public profiles in Saved Profiles (or enable Demo Preview Mode) to build persistent comparison projects.'
+                : 'Add two or more eligible public profiles in Saved Profiles to build persistent comparison projects.'
+            }
           />
         ) : (
           <>

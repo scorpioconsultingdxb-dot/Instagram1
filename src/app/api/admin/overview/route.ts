@@ -20,6 +20,10 @@ import { loadReferralOverview } from '@/lib/referrals/service';
 import { checkDatabaseHealth } from '@/lib/db/prisma';
 import { getBackupDirectorySummary } from '@/lib/admin/backup-status';
 import { defaultApiGateway, loadPersistentIntegrationTelemetry } from '@/lib/integrations';
+import {
+  getInternalMetricsSnapshot,
+  getRecentObservabilityEvents,
+} from '@/lib/observability/metrics';
 
 export async function GET() {
   try {
@@ -76,6 +80,10 @@ export async function GET() {
       integrationCenter: defaultApiGateway.getIntegrationCenterSnapshot(),
       distributedTelemetry,
       referralOverview,
+      observability: {
+        metrics: getInternalMetricsSnapshot(),
+        recentEvents: getRecentObservabilityEvents(25),
+      },
     });
   } catch {
     return NextResponse.json(

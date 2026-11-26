@@ -576,8 +576,9 @@ export default function OnboardingPage() {
                     Choose how you want to start
                   </h1>
                   <p className="mt-1.5 text-sm text-[#64748B] dark:text-[#94A3B8]">
-                    Real accounts start completely clean with zero fabricated activity. You can
-                    opt into clearly labeled Demo Preview Mode anytime.
+                    {process.env.NEXT_PUBLIC_DEMO_MODE === 'true'
+                      ? 'Real accounts start completely clean with zero fabricated activity. You can opt into clearly labeled Demo Preview Mode anytime.'
+                      : 'Real accounts start completely clean with zero fabricated activity or pre-loaded demo profiles.'}
                   </p>
                 </div>
 
@@ -610,12 +611,16 @@ export default function OnboardingPage() {
                         : 'Start with a Clean Empty Workspace (Recommended)',
                       desc: 'Zero pre-loaded sample accounts — build your own research projects, CSV imports, and private notes.',
                     },
-                    {
-                      id: 'demo_preview' as const,
-                      icon: BarChart3,
-                      title: 'Explore Explicit Demo Preview Mode',
-                      desc: 'Inspect clearly labeled sample charts, deterministic analytics, and report templates first.',
-                    },
+                    ...(process.env.NEXT_PUBLIC_DEMO_MODE === 'true'
+                      ? [
+                          {
+                            id: 'demo_preview' as const,
+                            icon: BarChart3,
+                            title: 'Explore Explicit Demo Preview Mode',
+                            desc: 'Inspect clearly labeled sample charts, deterministic analytics, and report templates first.',
+                          },
+                        ]
+                      : []),
                     {
                       id: 'tools' as const,
                       icon: Wrench,

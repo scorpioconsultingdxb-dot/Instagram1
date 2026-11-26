@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { computeCrc32, validateImageBuffer } from '@/lib/storage/image-validation';
 import { buildReportPdfBuffer } from '@/lib/reports/pdf';
 import { createDefaultSections, type CustomReportDocument } from '@/lib/reports/builder';
+import { getRuntimeDatabaseUrl } from '@/lib/env';
 
 function buildPngChunk(type: string, data: Buffer): Buffer {
   const len = Buffer.alloc(4);
@@ -184,6 +185,25 @@ describe('Phase 7 Stage 68 — Actual Image Decode Verification & Multilingual P
       expect(startxrefMatch).not.toBeNull();
       const xrefOffset = Number(startxrefMatch![1]);
       expect(raw.slice(xrefOffset, xrefOffset + 4)).toBe('xref');
+    }
+  });
+
+  it('prioritizes restricted VIEWORA_DATABASE_URL over Marketplace-managed DATABASE_URL', () => {
+    const prevViewora = process.env.VIEWORA_DATABASE_URL;
+    const prevDb = process.env.DATABASE_URL;
+    try {
+      process.env.DATABASE_URL = 'postgresql://neondb_owner:x@ep-test.neon.tech/neondb?sslmode=require';
+      process.env.VIEWORA_DATABASE_URL = 'postgresql://viewora_app:y@ep-test-pooler.neon.tech/neondb?sslmode=require&pgbouncer=true';
+      expect(getRuntimeDatabaseUrl()).toContain('viewora_app');
+      expect(getRuntimeDatabaseUrl()).toContain('-pooler.');
+
+      delete process.env.VIEWORA_DATABASE_URL;
+      expect(getRuntimeDatabaseUrl()).toContain('neondb_owner');
+    } finally {
+      if (prevViewora === undefined) delete process.env.VIEWORA_DATABASE_URL;
+      else process.env.VIEWORA_DATABASE_URL = prevViewora;
+      if (prevDb === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = prevDb;
     }
   });
 });

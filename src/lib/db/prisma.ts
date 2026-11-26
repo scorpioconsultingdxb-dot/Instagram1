@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { isDatabaseConfigured } from '@/lib/env';
+import { getRuntimeDatabaseUrl, isDatabaseConfigured } from '@/lib/env';
 
 declare global {
   var __vieworaPrisma: PrismaClient | undefined;
@@ -18,7 +18,9 @@ export interface RlsContext {
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function createPrismaClient(): PrismaClient {
+  const runtimeUrl = getRuntimeDatabaseUrl();
   return new PrismaClient({
+    ...(runtimeUrl ? { datasources: { db: { url: runtimeUrl } } } : {}),
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   });
 }

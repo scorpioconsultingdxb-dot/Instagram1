@@ -28,7 +28,15 @@
     "db:create-admin": "node scripts/db/env-loader.mjs admin npx tsx scripts/db/create-admin.ts",
     "db:bootstrap-admin": "node scripts/db/env-loader.mjs admin npx tsx scripts/db/create-admin.ts",
     "db:backup": "node scripts/db/env-loader.mjs backup",
-    "db:restore": "node scripts/db/env-loader.mjs restore"
+    "db:restore": "node scripts/db/env-loader.mjs restore",
+    "db:hosted:inspect": "node scripts/db/hosted-env-loader.mjs hosted-admin node scripts/db/hosted-inspect.mjs",
+    "db:hosted:setup-role": "node scripts/db/hosted-env-loader.mjs hosted-admin node scripts/db/hosted-setup-role.mjs",
+    "db:hosted:migrate": "node scripts/db/hosted-env-loader.mjs hosted-admin npx prisma migrate deploy",
+    "db:hosted:migrate:status": "node scripts/db/hosted-env-loader.mjs hosted-admin npx prisma migrate status",
+    "db:hosted:seed": "node scripts/db/hosted-env-loader.mjs hosted-admin npx tsx prisma/seed.ts",
+    "db:hosted:verify": "node scripts/db/hosted-env-loader.mjs hosted-runtime node scripts/db/hosted-verify-runtime.mjs",
+    "db:hosted:health": "node scripts/db/hosted-env-loader.mjs hosted-runtime node scripts/db/db-health.mjs",
+    "db:hosted:bootstrap-admin": "node scripts/db/hosted-env-loader.mjs hosted-admin npx tsx scripts/db/create-admin.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

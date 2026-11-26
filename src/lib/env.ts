@@ -3,6 +3,11 @@ import { z } from 'zod';
 const envSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default('Viewora'),
+  /**
+   * Optional highest-priority restricted runtime PostgreSQL URI (e.g. `viewora_app`
+   * pooled URL on Vercel when Marketplace integration manages `DATABASE_URL`).
+   */
+  VIEWORA_DATABASE_URL: z.string().optional().or(z.literal('')),
   DATABASE_URL: z.string().optional().or(z.literal('')),
   DATABASE_ADMIN_URL: z.string().optional().or(z.literal('')),
   TEST_DATABASE_URL: z.string().optional().or(z.literal('')),
@@ -63,6 +68,7 @@ export function getEnv(): AppEnv {
   const parsed = envSchema.safeParse({
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
     NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || 'Viewora',
+    VIEWORA_DATABASE_URL: process.env.VIEWORA_DATABASE_URL || '',
     DATABASE_URL: process.env.DATABASE_URL || '',
     DATABASE_ADMIN_URL: process.env.DATABASE_ADMIN_URL || '',
     TEST_DATABASE_URL: process.env.TEST_DATABASE_URL || '',
@@ -123,12 +129,24 @@ export function getEnv(): AppEnv {
 }
 
 /**
- * Returns true when an independent PostgreSQL DATABASE_URL is configured.
+ * Resolves the active restricted runtime PostgreSQL URI.
+ * Prioritizes `VIEWORA_DATABASE_URL` (used on Vercel when Marketplace-managed
+ * `DATABASE_URL` belongs to a privileged DB owner role) over `DATABASE_URL`.
+ */
+export function getRuntimeDatabaseUrl(): string {
+  const dedicated = (process.env.VIEWORA_DATABASE_URL || '').trim();
+  if (/^postgres(ql)?:\/\//i.test(dedicated)) return dedicated;
+  const standard = (process.env.DATABASE_URL || '').trim();
+  if (/^postgres(ql)?:\/\//i.test(standard)) return standard;
+  return '';
+}
+
+/**
+ * Returns true when an independent PostgreSQL runtime URL is configured.
  * Zero Supabase credentials are read or required.
  */
 export function isDatabaseConfigured(): boolean {
-  const url = (process.env.DATABASE_URL || '').trim();
-  return /^postgres(ql)?:\/\//i.test(url);
+  return getRuntimeDatabaseUrl().length > 0;
 }
 
 /**

@@ -1,38 +1,36 @@
-# Viewora — Comprehensive Test & Verification Report (Updated Phase 5 — Stages 42–45)
+# Viewora — Comprehensive Test & Verification Report (Stage 50 Final)
 
 **Date:** 2026-11-26  
-**Database Safety:** All synthetic and destructive integration/E2E tests executed **exclusively against isolated `viewora_test`** under restricted `viewora_test_app` (`NOBYPASSRLS`). Operational `viewora` verified **100% untouched** post-run.  
-**External API Honesty Note:** All external paid/live providers remain disabled by default (`PROVIDER_*_ENABLED=false`). External provider adapter tests verify local contracts, crypto, SSRF allowlists, bounded parsing, routing, and error normalization — **NOT** live upstream Meta/vendor/Gemini/Resend API calls.
+**Database Safety:** All synthetic and destructive tests ran **exclusively against isolated `viewora_test`** under restricted `viewora_test_app` (`NOBYPASSRLS`). Operational `viewora` verified **100% untouched**.  
+**External API Honesty:** All external paid providers remain disabled (`PROVIDER_*_ENABLED=false`). External adapter/Redis/webhook tests verify local contracts and isolated fixtures — **NOT** live upstream API calls.
 
 ---
 
-## 1. Executed Automated Verification Suite Summary
+## 1. Stage 50.8 Executed Verification Commands
 
-| Suite / Command | Scope | Result |
+| Command | Scope | Actual Result |
 | :--- | :--- | :--- |
-| `npm run env:check` | `.env.local` integrity, 4 live PG connection probes (`viewora`, `viewora_test`, runtime & admin), zero Supabase, `PAYMENTS_ENABLED=false` | **PASS — `ok: true`, 4/4 connections healthy, 0 errors, 0 warnings** |
-| `npm run db:health` | Live operational `viewora` PostgreSQL health check | **PASS — `healthy`, `95ms`, `users: 1`, `plans: 5`, `featureFlags: 5`** |
-| `prisma migrate deploy` (admin & test-admin) | Applied additive Migration 6 (`20261126000001_profile_snapshots_rls`) to both `viewora` and `viewora_test` | **PASS — 6/6 migrations applied cleanly on both DBs** |
-| `prisma validate` | Prisma schema validation | **PASS — valid** |
-| `npm run typecheck` | TypeScript `tsc --noEmit` across entire codebase | **PASS — 0 errors** |
-| `npm run lint` | ESLint `eslint .` | **PASS — 0 errors, 0 warnings** |
-| `npm audit --omit=dev` | Production dependency graph vulnerability audit | **PASS — 0 vulnerabilities** |
-| `npm test` (`vitest run`) | Unit, security, i18n, tools, entitlements, Phase 3–4.1, Stage 41 gateway, and **Stage 42–45** (AES-256-GCM crypto, Meta OAuth CSRF/scopes/errors/webhooks, SSRF allowlist & 1 MB JSON ceiling, capability router & tenant cache keys, Profile Intelligence, historical trends, Competitor Benchmarking) | **PASS — 21/21 files · 101/101 tests passed** |
-| `npm run test:db` | Live PostgreSQL 14.25 integration on `viewora_test` (`viewora_test_app` + `postgres`): 58 tables, 24 RLS policies, private notes, Migration 5 `audit_logs` immutability, concurrent media quota & Last-Super-Admin locks, **AND Stage 42–45** (encrypted `provider_connections` RLS + disconnect scrub, deduplicated `profile_snapshots` + SQL history entitlement + Migration 6 raw-SQL RLS check, `FOR UPDATE SKIP LOCKED` concurrent `background_jobs` claim + retry, concurrent `pg_advisory_xact_lock` distributed USD budget cap + persistent kill switch) | **PASS — 1/1 file · 8/8 live PostgreSQL tests passed** |
-| `npm run build` | Production Next.js `15.5.29` build (including `/api/jobs/run`, `/api/meta/*`, `/api/webhooks/meta`) | **PASS — 307/307 static pages generated** |
-| `npm run test:e2e:pg` | Full headless Chromium E2E against production `next start` + live `viewora_test` (process restart persistence, Free-tier `tracked_profiles` `403` enforcement, `refresh_profile` `live_providers_disabled`, `/api/meta/connections` `oauthEnabled: false`, Profile Intelligence expanded breakdown, Agency Competitor Studio matrix, `%PDF-1.4` download, Admin Integration Center `distributedTelemetry.backend === 'postgresql'` desktop `1440px` + mobile `390px`) | **PASS — 7/7 milestones · 19 screenshots · 0 consoleErrors · 0 pageErrors** |
+| `npm run env:check` | `.env.local` validation, 4 live PG connection probes, zero Supabase, `PAYMENTS_ENABLED=false` | **PASS — `ok: true`, 4/4 reachable, 0 errors, 0 warnings** |
+| `npm run db:health` | Live operational `viewora` health probe | **PASS — `healthy`, `92ms`, `users: 1`, `plans: 5`, `featureFlags: 5`** |
+| `prisma validate` & `npm run db:generate` | Schema validation & Prisma Client `6.19.3` generation | **PASS** |
+| `npm run typecheck` (`tsc --noEmit`) | Strict TypeScript verification | **PASS — 0 errors** |
+| `npm run lint` (`eslint .`) | Full codebase ESLint check | **PASS — 0 errors, 0 warnings** |
+| `npm audit --omit=dev` | Production dependency security audit | **PASS — 0 vulnerabilities** |
+| `npm audit` (full incl. devDependencies) | Full workspace audit | **3 dev-only advisories** (`vitest@3.2.7` / `tinypool` / `@vitest/mocker`; `0` prod impact) |
+| `npm test` (`vitest run`) | All unit, security, AI safety, 19×5 email templates, Redis mock contract, financial math, SSRF, OAuth, PDF & entitlement tests | **PASS — 22/22 files · 110/110 tests passed** |
+| `npm run test:db` | Live PostgreSQL 14.25 integration on `viewora_test` (58 tables, 24 RLS policies, Migration 5 & 6, encrypted `provider_connections`, `profile_snapshots` RLS, `FOR UPDATE SKIP LOCKED` jobs, atomic API budget & AI monthly quota locks, durable `email_deliveries` & webhook replay, spend reconciliation, retention dry-run) | **PASS — 1/1 file · 9/9 live PostgreSQL tests passed** |
+| `npm run build` | Production Next.js `15.5.29` build | **PASS — 311/311 static pages generated** |
+| `npm run test:e2e:pg` | Live PG headless Chromium E2E across 6 viewports (`375–1920px`), 5 locales, dark theme, process restart, AI Studio, Automation Center, Competitor Studio, Profile Intelligence, Integration Center 2.0, Communications Center, `%PDF-1.4` download & account deletion | **PASS — 7/7 milestones · 24 screenshots · 0 consoleErrors · 0 pageErrors** |
 | `inspect_test_data.mjs` | Read-only 58-table audit of operational `viewora` DB | **PASS — `users: 1` (`Scorpio Marketing Agency`), `support_tickets: 0`, `audit_logs: 6`** |
 
 ---
 
-## 2. Real Defect Caught & Remediated During Testing
+## 2. Production Resilience Scenarios (Stage 50.7)
 
-- **Cross-Tenant `profile_snapshots` Isolation Gap:** Live PostgreSQL test #8 caught that `profile_snapshots` lacked its own database-level RLS policy and `snapshots.repo.ts` lacked a parent `savedProfile: { userId }` ownership predicate. Remediated immediately at BOTH layers (`snapshots.repo.ts` + Migration 6 `20261126000001_profile_snapshots_rls`), then re-verified with both repository and raw SQL RLS assertions under `viewora_test_app` (`0` rows leaked).
-
----
-
-## 3. Recorded Environment Constraints (Honest Disclosure)
-
-- **Workstation Backup Re-Drill:** Local Windows Application Control policy blocks `pg_dump.exe` / `pg_restore.exe` (never bypassed). Verified baseline snapshot `backups/viewora_viewora_20261125T190858Z.dump` remains preserved; automated Linux drills are queued for hosted staging.
-- **Dev-Only Test Runner Advisories:** 3 advisories remain strictly inside `devDependencies` (`vitest@3.2.7` / `tinypool` / `@vitest/mocker`); zero production impact (`npm audit --omit=dev` = `0`).
-- **Live External Providers & Hosted Lighthouse:** External APIs remain disabled by owner policy; hosted Lighthouse/CWV and manual screen-reader verification require hosted HTTPS staging.
+| Scenario | Verification Status | Evidence |
+| :--- | :--- | :--- |
+| **Scenario A (PG Connected)** | **Verified** | `test:db` (9/9) & `test:e2e:pg` (7/7 milestones, restart persistence) |
+| **Scenario B (No DB + Read-Only FS)** | **Verified** | `runtime-recovery.test.ts` + prior `strict_recovery_qa.mjs` (`78/78` public routes HTTP 200; protected routes fail closed HTTP 503) |
+| **Scenario C (All External Providers Disabled)** | **Verified** | Zero fabricated social stats, `template_generated` AI labeling, `disabled` email status (`test:e2e:pg` + unit tests) |
+| **Scenario D (Simulated Failures/Timeouts/Malformed)** | **Verified** | `gateway.test.ts`, `phase5-stages-42-to-45.test.ts` (retries, circuit open, timeout, Zod validation fail-closed, 1 MB ceiling) |
+| **Scenario E (Global & Per-Provider Emergency Halt)** | **Verified** | Live PG `test:db` #8–#9 (`reserveDistributedApiBudget` & `canWorkerExecuteExternalJob` both blocked immediately by `cost_budgets.kill_switch_active`) |

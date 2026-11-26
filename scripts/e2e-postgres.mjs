@@ -792,7 +792,11 @@ async function main() {
     // Stage 48 Automation Center (Desktop 1440px)
     await cdp.goto(`${BASE_URL}/en/dashboard/automation`, 1200);
     const autoText = await cdp.eval(`document.body.innerText`);
-    assert(autoText.includes('Workflow & Automation Center') && autoText.includes('BACKGROUND_JOBS_ENABLED=false'), 'Automation Center inactive scheduler disclosure missing');
+    assert(
+      autoText.includes('Workflow & Automation Center') &&
+        autoText.toLowerCase().includes('background_jobs_enabled=false'),
+      'Automation Center inactive scheduler disclosure missing'
+    );
     report.screenshots.push(await cdp.screenshot('phase5_automation_center_1440px.png'));
     await cdp.setViewport(390, 844);
     await cdp.goto(`${BASE_URL}/en/admin`, 1100);

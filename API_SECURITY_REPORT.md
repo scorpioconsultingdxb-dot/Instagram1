@@ -1,30 +1,28 @@
-# Viewora — API & Data Security Report (Updated Phase 5 — Stages 42–45)
+# Viewora — API, AI, Email & Integration Security Report (Updated Stage 50)
 
 **Date:** 2026-11-26  
-**Scope:** External API credential handling, AES-256-GCM OAuth token encryption, HMAC user-bound OAuth CSRF state, outbound SSRF allowlists, bounded response decoding, webhook signature & replay verification, tenant-scoped caching, concurrent quota enforcement, safe image decoding, and PostgreSQL audit-log immutability.
+**Scope:** End-to-end security verification across Stages 41–50.
 
 ---
 
-## 1. Stage 41–45 External API & Integration Security Controls
+## 1. Verified Security Controls Matrix
 
-| Security Control | Implementation | Verified By |
+| Control Area | Implementation | Verified By |
 | :--- | :--- | :--- |
-| **Server-Side-Only Credentials & Dual-Key Activation** | All provider keys reside strictly in server `process.env` ([env.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/env.ts)); zero `NEXT_PUBLIC_*` secret variables. Every external provider requires BOTH `PROVIDER_*_ENABLED=true` AND non-placeholder secrets ([credentials.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/integrations/credentials.ts)). | `gateway.test.ts` |
-| **AES-256-GCM OAuth Token Encryption at Rest** | [token-crypto.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/security/token-crypto.ts) encrypts OAuth tokens using HKDF-SHA256 derived 256-bit key + fresh random 96-bit IV + GCM auth tag (`v1:<iv>:<tag>:<cipher>`). Raw DB column stores ciphertext only; `listUserProviderConnections()` strips token fields; disconnect immediately nulls `encrypted_access_token`. | `phase5-stages-42-to-45.test.ts`, live PG `test:db` (`viewora_test`) |
-| **User-Bound HMAC-SHA256 OAuth CSRF State** | [oauth.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/meta/oauth.ts) signs `userId.exp.nonce` with timing-safe verification (`10m` TTL) + `HttpOnly` `SameSite=Lax` cookie, rejecting cross-user or tampered callbacks. | `phase5-stages-42-to-45.test.ts` |
-| **Strict Outbound SSRF Allowlists** | [ssrf.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/integrations/ssrf.ts) enforces per-provider HTTPS port-443 host allowlists (`graph.facebook.com`, `graph.instagram.com`, configured vendor host) and blocks `http://`, loopback (`127.0.0.1`/`::1`), RFC1918 (`10/8`, `172.16/12`, `192.168/16`), cloud IMDS (`169.254.169.254`), embedded credentials, and non-443 ports. | `phase5-stages-42-to-45.test.ts` |
-| **Bounded Upstream JSON Decoding** | `readBoundedResponseJson()` enforces a hard `1 MB` payload ceiling before JSON parsing to prevent memory exhaustion from malicious/misbehaving upstreams. | `phase5-stages-42-to-45.test.ts` |
-| **Meta Webhook Integrity & Replay Protection** | [/api/webhooks/meta](file:///c:/Users/Scorpio/Videos/Instagram/src/app/api/webhooks/meta/route.ts) enforces `256 KB` body ceiling, timing-safe `X-Hub-Signature-256` HMAC-SHA256 verification, durable PostgreSQL `webhook_events` deduplication, and automatic token revocation on permission-revoke events. | `phase5-stages-42-to-45.test.ts` (signature/error normalization) |
-| **Tenant-Scoped Cache Isolation** | `buildTenantScopedCacheKey()` binds authorized-owner cache keys to `userId` and/or `workspaceId`, eliminating cross-customer authorized cache bleed. | `phase5-stages-42-to-45.test.ts` |
-| **Secret & PII Log Redaction** | `redactSecretsAndPii()` scrubs `Bearer ...`, query `key=`/`token=`/`secret=`, `AIza*`/`sk_*`/`EAA*` prefixes, `postgresql://` URLs, and emails before storing in memory or PostgreSQL `api_usage_logs`. | `gateway.test.ts` |
-| **Upstream Zod Validation, Timeouts & Circuit Breakers** | `ExternalApiGateway` enforces `AbortController` timeouts, bounded retries strictly on transient errors, circuit breakers, and strict Zod schema validation. | `gateway.test.ts` |
-| **RBAC-Protected Integration Center & Kill Switches** | `/api/admin/integrations` & `toggle_api_kill_switch` enforce `requireAdminApi()`, `Cache-Control: private, no-store`, CSRF origin checks, and append-only audit logging. | `test:e2e:pg`, `test:db` |
-| **Privacy & Compliance Guardrails** | Every adapter enforces `supportsPrivateAccounts: false` and `requiresInstagramCredentials: false`. Private account responses halt fallback immediately. | `gateway.test.ts`, `registry.test.ts` |
+| **OAuth CSRF, Expiration & User Binding** | HMAC-SHA256 signed `userId.exp.nonce` state (`10m` TTL, timing-safe check) + `HttpOnly` `SameSite=Lax` cookie ([oauth.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/meta/oauth.ts)) | `phase5-stages-42-to-45.test.ts` |
+| **OAuth Token Encryption & Revocation** | AES-256-GCM (`v1:<iv>:<tag>:<cipher>`) with HKDF-SHA256 derived key ([token-crypto.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/security/token-crypto.ts)); versioned `v1:` prefix supports future key rotation; disconnect immediately nulls `encrypted_access_token` | `phase5-stages-42-to-45.test.ts`, live PG `test:db` #8 |
+| **Outbound SSRF & Response Size Ceiling** | Per-provider HTTPS port-443 host allowlists blocking `http://`, loopback, RFC1918, IMDS `169.254.169.254`, embedded creds, non-443 ports ([ssrf.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/integrations/ssrf.ts)); `1 MB` JSON ceiling | `phase5-stages-42-to-45.test.ts` |
+| **Webhook Signature & Replay Protection** | Meta (`X-Hub-Signature-256`) & Resend (`svix-id`/`svix-timestamp`/`svix-signature` 5-min drift check), `256 KB` payload caps, durable PostgreSQL `webhook_events` unique `(provider, event_id)` replay dedup | `phase5-stages-42-to-45.test.ts`, `phase5-stages-46-to-50.test.ts`, live PG `test:db` #9 |
+| **AI Prompt-Injection & Data Minimization** | `<UNTRUSTED_PROFILE_DATA>` isolation, `sanitizeUntrustedAiContext`, `detectPromptInjectionSignals`, `detectUnsupportedClaims`, private notes excluded by default, secret/PII redaction | `phase5-stages-46-to-50.test.ts` |
+| **Email Token & Unsubscribe Security** | Single-use hashed verification/reset tokens never logged; HMAC-SHA256 signed unsubscribe tokens; HTML-escaped templates blocking XSS | `auth-security.test.ts`, `phase5-stages-46-to-50.test.ts` |
+| **Scheduler Authentication** | Constant-time `crypto.timingSafeEqual` check on `Bearer <CRON_SECRET>` (`>= 16` chars), rate limit (`20/min`), `runId` replay dedup, bounded batch (`1..10`) | `phase5-stages-46-to-50.test.ts` |
+| **Atomic Quotas, Budgets & Job Leasing** | `pg_advisory_xact_lock` on Last-Super-Admin, 3 MB media quota, daily/monthly API budgets, and monthly AI quotas; `FOR UPDATE SKIP LOCKED` on `background_jobs` | Live PG `test:db` #7, #8, #9 |
+| **Database RLS & Append-Only Audit Logs** | 24 PostgreSQL RLS policies (incl. Migration 6 `profile_snapshots_workspace_isolation`); Migration 5 `audit_logs` `REVOKE` + `trg_audit_logs_immutable` trigger | Live PG `test:db` #1–#9 |
+| **Production Dependencies** | `npm audit --omit=dev` = **0 vulnerabilities** (3 dev-only advisories remain strictly in `vitest@3.2.7` test runner) | `npm audit --omit=dev` |
 
 ---
 
-## 2. Phase 4.1 Security Hardening Baseline (Preserved & Verified)
+## 2. Documented Residual Security Limitations (Honest Disclosure)
 
-- **Atomic Media Quota Enforcement:** `saveDbUserMediaWithQuota()` uses `pg_advisory_xact_lock` to serialize concurrent avatar/cover uploads against the 3 MB per-customer cap (live PG `test:db`: 1 succeeds, 1 rejects `QUOTA_EXCEEDED`).
-- **Safe Image Decoding:** [image-validation.ts](file:///c:/Users/Scorpio/Videos/Instagram/src/lib/storage/image-validation.ts) parses PNG/JPEG/WebP binary headers in pure TypeScript, blocking SVG/HTML polyglots, MIME spoofing, zero dimensions, `> 8192px`, and `> 25 MP` decompression bombs.
-- **Append-Only Audit Logs (Migration 5) & Honest Superuser Limitation:** `REVOKE UPDATE, DELETE, TRUNCATE` on `public.audit_logs` + `trg_audit_logs_immutable` trigger (`ERRCODE 42501`, preserving `ON DELETE SET NULL` RI cascades). Honest limitation: a compromised DB superuser (`postgres`) could disable triggers via DDL; runtime apps strictly use restricted `viewora_app`, and an external WORM SIEM sink is recommended in hosted production.
+1. **DNS Rebinding Note:** Outbound SSRF allowlists enforce exact static HTTPS hostnames + TLS SNI/certificate validation on Node's `fetch`; if dynamic customer-supplied URLs are ever introduced in future phases, add pre-connect DNS IP validation.
+2. **DB Superuser DDL Limitation:** `audit_logs` immutability blocks runtime `viewora_app` and direct `postgres` DML, but a compromised OS/DB superuser can disable triggers via DDL — stream `audit_logs` to an off-host WORM SIEM sink in hosted production.

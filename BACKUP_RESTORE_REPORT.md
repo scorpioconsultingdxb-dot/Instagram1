@@ -1,42 +1,38 @@
-# Viewora — PostgreSQL Backup & Restore Verification Report
+# Viewora — Backup & Disaster Recovery Report (Stage 50.4)
 
-**Date:** 2026-11-25  
-**Status:** **LIVE BACKUP & DISPOSABLE RESTORE FIDELITY VERIFIED ON POSTGRESQL 14.25**
-
----
-
-## 1. Live Backup & Restore Execution Results
-
-Executed end-to-end against live local PostgreSQL 14.25 (`127.0.0.1:5432`) without modifying or overwriting the primary `viewora` database:
-
-### A. Primary Database Custom-Format Backup (`scripts/db/backup.ps1`)
-- **Command:** `scripts/db/backup.ps1 -DatabaseName viewora -Format custom`
-- **Artifact Created:** `backups/viewora_viewora_20261125T185143Z.dump` (`166,497` bytes) + `.sha256` checksum (`131ccb65a5f90c13c383bb73fd1b38bc3e21267b3bd9e9e2681bdf195a1287a2`)
-- **Retention Pruning:** Verified (`14` days default; `backups/` excluded from Git via `.gitignore`).
-
-### B. Full Disposable Restore & Fidelity Comparison (`viewora_test` → `viewora_restore_test`)
-1. Seeded synthetic customer (`backup.synthetic@viewora.test`), workspace, folder, saved profile, private note, Personal HQ preferences (`coverPreset: emerald`), and Premium subscription into `viewora_test` via `scripts/db/verify-backup-restore.mjs seed-synthetic`.
-2. Created SHA-256 verified plain-SQL backup via `scripts/db/backup.ps1 -Format plain` (`SHA-256: 6e9ba877d33de59466275851d1eeaf6b8eb472a4bbfdf6f8ab4a10b2fa579a8c`).
-3. Created disposable database `viewora_restore_test`, restored via `scripts/db/restore.ps1 -TargetDb viewora_restore_test -ConfirmRestore` (verified SHA-256 checksum + `psql -v ON_ERROR_STOP=1`), and re-applied least-privilege runtime grants (`20261125000004_runtime_role_grants_and_test_role/migration.sql`).
-4. Ran `scripts/db/verify-backup-restore.mjs compare` comparing source `viewora_test` vs restored `viewora_restore_test`:
-
-| Metric | Source (`viewora_test`) | Restored (`viewora_restore_test`) | Verdict |
-| --- | ---: | ---: | --- |
-| **Public Tables** | `58` | `58` | **MATCH** |
-| **Foreign Key Constraints** | `74` | `74` | **MATCH** |
-| **Indexes** | `147` | `147` | **MATCH** |
-| **RLS Policies** | `23` | `23` | **MATCH** |
-| **Plans / Billing Options / Entitlements** | `5 / 15 / 65` | `5 / 15 / 65` | **MATCH** |
-| **Feature Flags / CMS Content** | `5 / 6` | `5 / 6` | **MATCH** |
-| **Synthetic Customer, Workspace, Folder, Profile, Note, Subscription** | `1 / 1 / 1 / 1 / 1 / 1` | `1 / 1 / 1 / 1 / 1 / 1` | **MATCH** |
-| **Restricted Runtime Role (`viewora_test_app`) RLS Read** | Verified | `restrictedRoleReadVerified: true` | **PASS** |
-
-5. Dropped disposable `viewora_restore_test`, deleted temporary drill SQL file, and removed `backup.synthetic@viewora.test` from `viewora_test`.
+**Date:** 2026-11-26  
+**Fresh Workstation Re-Drill Gate Status:** **BLOCKED BY LOCAL WINDOWS APPLICATION CONTROL POLICY (KEPT PENDING — NEVER BYPASSED)**
 
 ---
 
-## 2. Real Bugs Fixed During Live Backup/Restore Testing
+## 1. Precise Workstation Blocker (Honest Disclosure)
 
-1. **Windows `pg_dump` Flag Ordering:** Fixed `scripts/db/backup.ps1` to pass flags (`-Fc`/`-Fp --no-owner --no-acl -f`) **before** `--dbname=<uri>` (Windows GNU `getopt` rejects flags placed after positional `dbname`).
-2. **Prisma `?schema=public` URI Stripping:** Both `backup.ps1` and `restore.ps1` now strip Prisma's `?schema=public` query parameter before passing URIs to `libpq` (`pg_dump`/`psql`/`pg_restore`).
-3. **Windows Application Control Compatibility:** Because `C:\Program Files\PostgreSQL\14\bin\pg_restore.exe` is blocked by this workstation's Windows Application Control policy, added `-Format plain` (`.sql` + `.sha256`) support to `backup.ps1` and automatic `.sql` restore via `psql.exe -v ON_ERROR_STOP=1` to `restore.ps1`. Custom `.dump` creation (`pg_dump -Fc`) works cleanly; to run `pg_restore.exe` locally on `.dump` archives, allowlist `pg_restore.exe` in Windows App Control or install signed PostgreSQL 16 binaries.
+- On this local Windows workstation, Windows Application Control / Device Guard policy blocks executing `C:\Program Files\PostgreSQL\14\bin\pg_dump.exe` and `pg_restore.exe`.
+- In strict accordance with Viewora security guidelines, this OS policy was **never bypassed**.
+- **Existing Verified Artifacts Preserved:**
+  - Protected baseline logical dump: `backups/viewora_viewora_20261125T190858Z.dump` (git-ignored, captured prior to policy lock)
+  - Prior disposable full-fidelity restoration drill verified on 2026-11-25 (`viewora_test` → `viewora_restore_test`: 58/58 tables, 74/74 FKs, 147/147 indexes, 23/23 RLS policies at Migration 5).
+- **Pending Verification Gate:** A fresh backup + disposable restore drill covering all **6 migrations** (including Migration 6 `20261126000001_profile_snapshots_rls` and all **24 RLS policies**) MUST be executed on hosted Linux staging before commercial public launch.
+
+---
+
+## 2. Production Linux Staging Backup & Restore Procedure (Ready to Execute)
+
+```bash
+# 1. Encrypted custom-format logical backup (daily cron on managed Linux host)
+umask 077
+pg_dump --format=custom --no-owner --no-privileges \
+  "$DATABASE_ADMIN_URL" \
+  | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_ENCRYPTION_KEY \
+  > "/var/backups/viewora/viewora_$(date -u +%Y%m%dT%H%M%SZ).dump.enc"
+
+# 2. Disposable restoration drill to verify all 58 tables, 6 migrations & 24 RLS policies
+createdb -h 127.0.0.1 -U postgres viewora_restore_drill
+openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_ENCRYPTION_KEY \
+  -in "/var/backups/viewora/<latest>.dump.enc" \
+  | pg_restore --no-owner --no-privileges -d viewora_restore_drill -h 127.0.0.1 -U postgres
+psql -h 127.0.0.1 -U postgres -d viewora_restore_drill -c \
+  "SELECT (SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename<>'_prisma_migrations') AS tables,
+          (SELECT count(*) FROM pg_policies WHERE schemaname='public') AS rls_policies;"
+dropdb -h 127.0.0.1 -U postgres viewora_restore_drill
+```

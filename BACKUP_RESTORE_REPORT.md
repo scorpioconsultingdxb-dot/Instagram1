@@ -1,65 +1,29 @@
-# Viewora — Backup & Restore Verification Report (Updated Stage 62)
+# Viewora — Backup & Restore Verification Report (Updated Task 3)
 
 **Date:** 2026-11-26  
-**Backup & Restore Gate Status:** **PENDING (BLOCKED ON LOCAL WINDOWS WORKSTATION BY WINDOWS APPLICATION CONTROL — NEVER BYPASSED)**
+**Backup & Restore Gate Status:** **PENDING — BLOCKED LOCALLY BY WINDOWS APPLICATION CONTROL POLICY (NEVER BYPASSED; MUST EXECUTE ON LINUX STAGING POSTGRESQL 17 BEFORE LAUNCH)**
 
 ---
 
-## 1. Honest Current State
+## 1. Honest Status & Prepared Executable Script
 
-- **Local Workstation Constraint:** Windows Application Control / Device Guard blocks executing `C:\Program Files\PostgreSQL\14\bin\pg_dump.exe` and `pg_restore.exe` on this workstation. Per security rules, this OS control was **never bypassed**, and **no fabricated backup/restore timing or success is claimed**.
-- **Historical Local Baseline Preserved:**
-  - Encrypted/git-ignored baseline dump captured prior to OS policy lock: `backups/viewora_viewora_20261125T190858Z.dump`.
-  - Earlier disposable restore verification (2026-11-25, Migration 5 baseline): 58/58 tables, 74/74 FKs, 147/147 indexes, 23/23 RLS policies.
-- **Mandatory Stage 62 Gate Before Commercial Launch:** As soon as Hosted Linux Staging (PostgreSQL 17/16) is provisioned by the owner, execute a **fresh encrypted custom-format `pg_dump -Fc` backup + disposable `pg_restore` drill** covering all **6 migrations** and **24 RLS policies**, recording actual measured backup duration and restoration duration below.
-
----
-
-## 2. Linux Staging Backup & Disposable Restore Execution Script (Ready to Run)
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-umask 077
-
-TS="$(date -u +%Y%m%dT%H%M%SZ)"
-OUT="/var/backups/viewora/viewora_staging_${TS}.dump.enc"
-
-# 1. Measure Encrypted Logical Backup Duration
-T0=$(date +%s)
-pg_dump --format=custom --no-owner --no-privileges "$STAGING_DATABASE_ADMIN_URL" \
-  | openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:BACKUP_ENCRYPTION_KEY \
-  > "$OUT"
-T1=$(date +%s)
-echo "BACKUP_DURATION_SECONDS=$((T1 - T0)) SIZE_BYTES=$(stat -c%s "$OUT")"
-
-# 2. Measure Disposable Restore Duration into Isolated Drill DB
-DRILL_DB="viewora_restore_drill_${TS}"
-createdb -h "$PGHOST" -U "$PGADMIN" "$DRILL_DB"
-T2=$(date +%s)
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:BACKUP_ENCRYPTION_KEY -in "$OUT" \
-  | pg_restore --no-owner --no-privileges -d "$DRILL_DB" -h "$PGHOST" -U "$PGADMIN"
-T3=$(date +%s)
-echo "RESTORE_DURATION_SECONDS=$((T3 - T2))"
-
-# 3. Validate All 58 Tables, 6 Migrations, 74 FKs, 147 Indexes, 24 RLS Policies & Immutable Audit Trigger
-psql -h "$PGHOST" -U "$PGADMIN" -d "$DRILL_DB" -c "
-  SELECT
-    (SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename<>'_prisma_migrations') AS tables,
-    (SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL) AS migrations,
-    (SELECT count(*) FROM pg_policies WHERE schemaname='public') AS rls_policies,
-    (SELECT count(*) FROM pg_trigger WHERE tgname='trg_audit_logs_immutable') AS audit_trigger;
-"
-dropdb -h "$PGHOST" -U "$PGADMIN" "$DRILL_DB"
-```
+- **Workstation Policy Constraint:** Local `pg_dump.exe` and `pg_restore.exe` remain blocked by Windows Application Control. No bypass was attempted and no backup/restore completion is claimed.
+- **Local Baseline Preserved:** Local PostgreSQL `14.25` was **not** auto-upgraded; historical pre-lock dump (`backups/viewora_viewora_20261125T190858Z.dump`, git-ignored) and prior Migration 5 restore drill record remain archived.
+- **Turnkey Linux Staging Verification Script Ready:** [`deploy/scripts/pg17-verify-and-backup.sh`](file:///c:/Users/Scorpio/Videos/Instagram/deploy/scripts/pg17-verify-and-backup.sh) is committed and ready to execute immediately upon Stage 61 Linux Staging provisioning. It runs:
+  1. `prisma migrate deploy` (all 6 forward-only migrations) on Managed PostgreSQL 17.
+  2. Double `prisma/seed.ts` execution verifying idempotency.
+  3. SQL assertion of exact schema & security counts (**58 tables, 6 migrations, 74 FKs, 147 indexes, 24 RLS policies, `trg_audit_logs_immutable`, `viewora_app` `NOBYPASSRLS`, revoked `PUBLIC` schema create**).
+  4. Measured AES-256 PBKDF2 (`-iter 600000`) encrypted `pg_dump --format=custom`.
+  5. Measured disposable restore into an isolated `viewora_restore_drill_<ts>` database with automatic `EXIT` cleanup and restored-table/RLS/entitlement parity assertions.
 
 ---
 
-## 3. Measured Drill Results Ledger (To Be Completed on Linux Staging)
+## 2. Staging PostgreSQL 17 Drill Recording Table (Pending Execution)
 
-| Drill Metric | Target | Measured Staging Value | Status |
+| Drill Metric | Target | Measured Linux PG 17 Value | Status |
 | :--- | :--- | :---: | :---: |
-| Fresh Encrypted `pg_dump -Fc` Duration | ≤ 120 s (staging baseline) | *Not yet measured (awaiting Linux staging)* | **PENDING** |
-| Disposable `pg_restore` Duration | ≤ 180 s (staging baseline) | *Not yet measured (awaiting Linux staging)* | **PENDING** |
-| Restored Schema Parity (58 tables / 6 migrations / 24 RLS / audit trigger) | 100% exact match | *Not yet executed* | **PENDING** |
-| Restored Application Smoke Login & RLS Isolation Check | 100% pass | *Not yet executed* | **PENDING** |
+| All 6 Migrations + Double Seed on PG 17 | 0 errors, exact 58 tables / 74 FKs / 147 indexes / 24 RLS | *Pending Linux Staging* | **PENDING** |
+| Encrypted `pg_dump -Fc` Duration & Size | Measured & archived | *Pending Linux Staging* | **PENDING** |
+| Disposable `pg_restore` Duration | Measured & archived | *Pending Linux Staging* | **PENDING** |
+| Restored Schema, Data, RLS & Audit Trigger Parity | 100% exact match | *Pending Linux Staging* | **PENDING** |
+| Off-Host WORM Bucket Upload Confirmation | Write-only PutObject verified | *Pending Linux Staging* | **PENDING** |

@@ -43,12 +43,12 @@ const LEGACY_SLUG_MAP: Record<string, ToolSlug> = {
 export const FREE_TOOLS: readonly ToolDefinition[] = [
   {
     slug: 'instagram-viewer',
-    name: 'Anonymous Public Instagram Viewer',
+    name: 'Public Instagram Profile Viewer',
     shortDescription:
-      'Explore legitimately available public Instagram profile details without signing into Instagram.',
-    seoTitle: 'Public Instagram Viewer — Explore Profiles Without Signing In',
+      'Explore legitimately available public Business and Creator Instagram profile details without signing into Instagram.',
+    seoTitle: 'Public Instagram Profile Viewer — Explore Eligible Profiles Transparently',
     seoDescription:
-      'Inspect publicly accessible Instagram profile information transparently with Viewora. No Instagram password required and zero private-account access.',
+      'Inspect publicly accessible Instagram Business and Creator profile metadata transparently with Viewora. No Instagram password required and zero private-account access.',
     category: 'Viewer',
     mode: 'public_provider_lookup',
     dataDisclosure:
@@ -68,12 +68,12 @@ export const FREE_TOOLS: readonly ToolDefinition[] = [
   },
   {
     slug: 'instagram-story-viewer',
-    name: 'Instagram Story Viewer',
+    name: 'Authorized Instagram Story Insights Checker',
     shortDescription:
-      'Check authorized Story availability with honest privacy, Meta API scope, and anonymity disclosures.',
-    seoTitle: 'Instagram Story Viewer — Authorized Availability & Privacy Disclosure',
+      'Verify official Meta API Story insights eligibility for authorized Business and Creator accounts with full privacy disclosures.',
+    seoTitle: 'Authorized Instagram Story Insights — Official Meta API Scope & Privacy Disclosure',
     seoDescription:
-      'Verify legitimate Instagram Story availability through authorized Meta OAuth connections with transparent limitations.',
+      'Verify legitimate first-party Instagram Story availability through authorized Meta OAuth connections. Zero third-party Story scraping.',
     category: 'Viewer',
     mode: 'authorized_status_check',
     dataDisclosure:

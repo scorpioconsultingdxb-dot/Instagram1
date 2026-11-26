@@ -1,0 +1,62 @@
+# ==============================================================================
+# Viewora — Alternative Staging Blueprint (Render — Frankfurt EU)
+# TEMPLATE ONLY — Do NOT apply automatically without Owner approval.
+# ==============================================================================
+services:
+  - type: web
+    name: viewora-staging-web
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /api/health
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: AUTH_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false # Set to private internal PG 17 URL using restricted `viewora_app` role
+      - key: AUTH_SECRET
+        sync: false
+      - key: DEMO_MODE_ENABLED
+        value: "false"
+      - key: PAYMENTS_ENABLED
+        value: "false"
+      - key: NEXT_PUBLIC_PAYMENTS_ENABLED
+        value: "false"
+      - key: BETA_PUBLIC_REGISTRATION_ENABLED
+        value: "false"
+      - key: PROVIDER_RESEND_ENABLED
+        value: "false"
+      - key: EMAIL_NOTIFICATIONS_ENABLED
+        value: "false"
+      - key: PROVIDER_GEMINI_ENABLED
+        value: "false"
+      - key: PROVIDER_META_ENABLED
+        value: "false"
+      - key: PROVIDER_AUTHORIZED_INSIGHTS_ENABLED
+        value: "false"
+      - key: PROVIDER_LICENSED_THIRD_PARTY_ENABLED
+        value: "false"
+      - key: BACKGROUND_JOBS_ENABLED
+        value: "false"
+      - key: AI_DAILY_BUDGET_USD
+        value: "2.00"
+      - key: AI_MONTHLY_BUDGET_USD
+        value: "15.00"
+      - key: API_DAILY_COST_CAP_USD
+        value: "5.00"
+      - key: API_MONTHLY_COST_CAP_USD
+        value: "25.00"
+
+databases:
+  - name: viewora-staging-pg17
+    region: frankfurt
+    plan: basic-1gb
+    postgresMajorVersion: "17"
+    ipAllowList: [] # Private internal network only — zero public internet access

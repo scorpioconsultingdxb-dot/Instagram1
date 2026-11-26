@@ -1,0 +1,67 @@
+# ==============================================================================
+# Viewora — Primary Recommended Staging Blueprint (DigitalOcean App Platform — FRA1)
+# TEMPLATE ONLY — Do NOT apply automatically without Owner approval.
+# Pair with DigitalOcean Managed PostgreSQL 17 (FRA1, VPC private networking + PgBouncer).
+# ==============================================================================
+name: viewora-staging
+region: fra
+services:
+  - name: web
+    dockerfile_path: Dockerfile
+    source_dir: /
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb
+    health_check:
+      http_path: /api/health
+      initial_delay_seconds: 25
+      period_seconds: 30
+      timeout_seconds: 5
+      failure_threshold: 3
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: NEXT_PUBLIC_APP_URL
+        type: GENERAL
+        value: https://staging.example.com
+      - key: AUTH_URL
+        type: GENERAL
+        value: https://staging.example.com
+      - key: DATABASE_URL
+        type: SECRET
+        value: SET_IN_DO_SECRET_MANAGER_PRIVATE_VPC_VIEWORA_APP_URL
+      - key: AUTH_SECRET
+        type: SECRET
+        value: SET_IN_DO_SECRET_MANAGER
+      - key: DEMO_MODE_ENABLED
+        value: "false"
+      - key: PAYMENTS_ENABLED
+        value: "false"
+      - key: NEXT_PUBLIC_PAYMENTS_ENABLED
+        value: "false"
+      - key: BETA_PUBLIC_REGISTRATION_ENABLED
+        value: "false"
+      - key: PROVIDER_RESEND_ENABLED
+        value: "false"
+      - key: EMAIL_NOTIFICATIONS_ENABLED
+        value: "false"
+      - key: PROVIDER_GEMINI_ENABLED
+        value: "false"
+      - key: PROVIDER_META_ENABLED
+        value: "false"
+      - key: PROVIDER_AUTHORIZED_INSIGHTS_ENABLED
+        value: "false"
+      - key: PROVIDER_LICENSED_THIRD_PARTY_ENABLED
+        value: "false"
+      - key: BACKGROUND_JOBS_ENABLED
+        value: "false"
+      - key: AI_DAILY_BUDGET_USD
+        value: "2.00"
+      - key: AI_MONTHLY_BUDGET_USD
+        value: "15.00"
+      - key: API_DAILY_COST_CAP_USD
+        value: "5.00"
+      - key: API_MONTHLY_COST_CAP_USD
+        value: "25.00"

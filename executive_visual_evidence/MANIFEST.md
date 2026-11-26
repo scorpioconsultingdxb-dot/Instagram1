@@ -31,9 +31,12 @@
 | 20 | Launch Page | `/en/launch` | `desktop/20_launch_page_desktop.png` (144 KB, `b4953fae529d613d`) | `mobile/20_launch_page_mobile.png` (64 KB, `f6460781f07dca01`) | NO (0px) |
 | 21 | Controlled Beta Page | `/en/beta` | `desktop/21_beta_page_desktop.png` (116 KB, `c8acd98109addc19`) | `mobile/21_beta_page_mobile.png` (61 KB, `682f8cd338a6573f`) | NO (0px) |
 
-## 2. Multilingual `%PDF-1.4` Visual Reader Verification (Chromium PDFium)
+## 2. Multilingual `%PDF-1.4` Visual Reader Verification Across All 5 Locales (Chromium PDFium)
 
 | Locale | PDF File | Size | PDFium Reader Proof Screenshot |
 | :--- | :--- | :---: | :--- |
-| `pt-BR` | `pdf_verification/sample_pt_br.pdf` | 4491 B | `pdf_verification/pdf_reader_pt_br_1440px.png` (`8383af2af3bb49ca`) |
-| `de` | `pdf_verification/sample_de.pdf` | 3891 B | `pdf_verification/pdf_reader_de_1440px.png` (`da4f834846ac4a71`) |
+| `en` | `pdf_verification/sample_en.pdf` | 3340 B | `pdf_verification/pdf_reader_en_1440px.png` |
+| `pt-BR` | `pdf_verification/sample_pt_br.pdf` | 3376 B | `pdf_verification/pdf_reader_pt_br_1440px.png` (`a6db48a2bea010b5`) |
+| `es` | `pdf_verification/sample_es.pdf` | 3353 B | `pdf_verification/pdf_reader_es_1440px.png` (`5d832d0c83f7e1e9`) |
+| `de` | `pdf_verification/sample_de.pdf` | 3328 B | `pdf_verification/pdf_reader_de_1440px.png` (`e5b61a6655c4cc14`) |
+| `fr` | `pdf_verification/sample_fr.pdf` | 3383 B | `pdf_verification/pdf_reader_fr_1440px.png` (`dc02da81221a61f5`) |
